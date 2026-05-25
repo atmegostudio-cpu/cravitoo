@@ -320,6 +320,8 @@ async def startup_event():
     await db.menu_items.create_index("vendor_id")
     await db.orders.create_index("user_id")
     await db.orders.create_index("vendor_id")
+    await db.notifications.create_index("user_id")
+    await db.notifications.create_index("created_at")
     
     await seed_admin()
     await seed_demo_data()
@@ -1099,17 +1101,26 @@ async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_curr
     bulk_order_id = str(ObjectId())
     total_amount = 0.0
     individual_orders = []
+    skipped = []
     
     for bulk_item in data.orders:
         target_user = await db.users.find_one({"email": bulk_item.user_email.lower()})
         if not target_user:
+            skipped.append({"email": bulk_item.user_email, "reason": "user_not_found"})
             continue
         
         validated_items = []
         order_total = 0.0
+        invalid_item_ids = []
         for item in bulk_item.items:
-            menu_item = await db.menu_items.find_one({"_id": safe_objectid(item.menu_item_id, "Menu item")})
+            try:
+                menu_obj_id = ObjectId(item.menu_item_id)
+            except Exception:
+                invalid_item_ids.append(item.menu_item_id)
+                continue
+            menu_item = await db.menu_items.find_one({"_id": menu_obj_id})
             if not menu_item or not menu_item.get("is_available", False):
+                invalid_item_ids.append(item.menu_item_id)
                 continue
             actual_price = menu_item["price"]
             validated_items.append({
@@ -1121,6 +1132,7 @@ async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_curr
             order_total += actual_price * item.quantity
         
         if not validated_items:
+            skipped.append({"email": bulk_item.user_email, "reason": "no_valid_items", "invalid_item_ids": invalid_item_ids})
             continue
         
         order_doc = {
@@ -1163,7 +1175,7 @@ async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_curr
         "created_at": datetime.now(timezone.utc)
     })
     
-    return {"bulk_order_id": bulk_order_id, "total_amount": total_amount, "orders": individual_orders}
+    return {"bulk_order_id": bulk_order_id, "total_amount": total_amount, "orders": individual_orders, "skipped": skipped}
 
 # Event Catering
 @api_router.post("/events")
@@ -1227,12 +1239,20 @@ async def approve_event(event_id: str, user: dict = Depends(get_current_user)):
     if user["role"] not in ["corporate_admin", "vendor"]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    result = await db.events.update_one(
+    event = await db.events.find_one({"_id": safe_objectid(event_id, "Event")})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Ownership scoping
+    if user["role"] == "vendor" and event.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="Not your event")
+    if user["role"] == "corporate_admin" and event.get("company_id") != user.get("company_id"):
+        raise HTTPException(status_code=403, detail="Not your company's event")
+    
+    await db.events.update_one(
         {"_id": safe_objectid(event_id, "Event")},
         {"$set": {"status": "approved", "approved_by": user["id"]}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Event not found")
     return {"message": "Event approved"}
 
 # Notifications
@@ -1416,15 +1436,30 @@ async def redeem_loyalty(data: LoyaltyRedeemRequest, user: dict = Depends(get_cu
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
+    if order.get("payment_status") == "paid":
+        raise HTTPException(status_code=400, detail="Cannot redeem on already paid order")
+    
+    existing_redemption = await db.loyalty_redemptions.find_one({"order_id": data.order_id})
+    if existing_redemption:
+        raise HTTPException(status_code=400, detail="Points already redeemed for this order")
+    
+    discount = min(data.points, order["total_amount"])
+    new_total = max(0, order["total_amount"] - discount)
+    
     await db.loyalty_redemptions.insert_one({
         "user_id": user["id"],
         "order_id": data.order_id,
-        "points": data.points,
-        "discount_inr": data.points,  # 1 point = 1 INR
+        "points": discount,
+        "discount_inr": discount,
         "created_at": datetime.now(timezone.utc)
     })
     
-    return {"message": f"{data.points} points redeemed", "discount_inr": data.points}
+    await db.orders.update_one(
+        {"_id": safe_objectid(data.order_id, "Order")},
+        {"$set": {"total_amount": new_total, "loyalty_discount": discount}}
+    )
+    
+    return {"message": f"{discount} points redeemed", "discount_inr": discount, "new_total": new_total}
 
 app.include_router(api_router)
 
