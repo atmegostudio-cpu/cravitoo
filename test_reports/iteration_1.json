@@ -1,0 +1,46 @@
+{
+  "summary": "Comprehensive backend + frontend smoke test of Cravitoo MVP. Found and fixed a critical KeyError: 'id' in get_current_user that broke orders, payments and AI endpoints. After fix all 15 pytest cases pass (auth, vendors, menu, orders, analytics, AI/GPT-5.2, Stripe checkout). Frontend landing, login, employee dashboard render correctly with all credentials.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "get_current_user dependency", "issue": "FIXED - user dict only had '_id' (string) but POST /api/orders, /api/payments/checkout, /api/ai/recommendations all access user['id'] -> KeyError -> 500. Patched server.py to also set user['id'] = user['_id'].", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "/api/orders POST", "issue": "Only validates role==employee; corporate_admin/super_admin cannot place test orders."},
+      {"endpoint": "/api/payments/status/{session_id}", "issue": "No auth scoping to the order owner; any authenticated user can query any session_id."},
+      {"endpoint": "PATCH /api/orders/{order_id}", "issue": "status accepted as raw query/body Dict without enum validation - vendor can set arbitrary strings."},
+      {"endpoint": "POST /api/auth/login", "issue": "No brute-force lockout despite login_attempts index being created at startup (playbook expects lockout after 5 fails)."},
+      {"endpoint": "Cookies", "issue": "secure=False on access/refresh cookies even though preview URL is HTTPS; should be True in prod."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Employee Dashboard", "issues": ["AI Recommendations card lacks visible icon contrast on light bg; minor."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Verify the server.py fix (line ~68: added user['id'] = user['_id']) aligns with intended pattern; consider doing it inside get_current_user permanently and across all consumers.",
+    "Add brute-force lockout in /api/auth/login using existing login_attempts collection (playbook compliance).",
+    "Set cookie secure=True when behind HTTPS (or read from env).",
+    "Scope /api/payments/status to verify session belongs to current user.",
+    "Validate order status transitions with Enum in PATCH /api/orders/{order_id}."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~690 lines and mixes auth, payments, AI, analytics - split into routers/services modules.",
+    "ObjectId conversion is repeated; create a helper to_id_str().",
+    "OrderItemInput.price is taken from client - server should look up menu_item price to prevent tampering.",
+    "AI prompt embeds raw menu_items list (Python repr) - prefer JSON-serialised structured prompt.",
+    "Stripe webhook does not verify signature when signature header absent (handle_webhook may raise) - ensure 400 vs 200 behaviour.",
+    "seed_demo_data writes to /app/memory/test_credentials.md on every startup - side-effect; should be gated."
+  ],
+  "updated_files": ["/app/backend/server.py", "/app/backend/tests/backend_test.py", "/app/test_reports/iteration_1.json"],
+  "success_rate": {"backend": "100% (15/15 after fix)", "frontend": "100% on smoke (landing, login, employee dashboard render with live data, AI/Stripe APIs reachable)"},
+  "test_credentials": "Using /app/memory/test_credentials.md - all 4 role logins verified successfully.",
+  "seed_data_creation": "Used existing seeded data (Tech Corp company, Spice Kitchen vendor with 5 menu items). Test created TEST_user_<ts>@cravitoo.com via /api/auth/register (left in DB).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/backend_test.py covers auth (5), vendors/menu (2), orders (2), analytics (2), protected (2), AI (1), payments/Stripe checkout (1). The critical fix applied: in /app/backend/server.py get_current_user now adds user['id']=user['_id']. Frontend deeper flows (Menu cart add/checkout UI, Vendor dashboard orders status update, Super Admin lists, Corporate Admin dashboard) NOT yet exercised via Playwright - only employee dashboard verified. Stripe checkout flow tested only up to URL generation, not full payment confirmation. AI recommendations call returns >10 chars from GPT-5.2 successfully.",
+  "rca_of_the_issue": "Root cause: get_current_user (server.py L53-74) constructed the user dict from Mongo doc, stringified _id but never exposed an 'id' key, while three downstream handlers (create_order, create_checkout_session, AI recommendations session_id) reference user['id']. Reproduction: login as employee then POST /api/orders -> 500 with KeyError 'id' in backend.err.log. Mitigation applied: set user['id'] = user['_id'] right after stringification in get_current_user. All 15 tests now pass."
+}
