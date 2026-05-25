@@ -12,7 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.cravitoo.app",
@@ -29,6 +31,14 @@
     "web": {
       "favicon": "./assets/icon.png"
     },
-    "plugins": ["expo-secure-store"]
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8e1d75df-6b09-4130-b2f6-49ece283b9eb"
+      }
+    },
+    "owner": "atmego"
   }
 }
