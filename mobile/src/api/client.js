@@ -1,8 +1,7 @@
 import axios from 'axios';
-import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'https://corporate-feast.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const client = axios.create({
   baseURL: `${API_URL}/api`,

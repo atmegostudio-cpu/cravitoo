@@ -28,9 +28,6 @@
     "web": {
       "favicon": "./assets/icon.png"
     },
-    "extra": {
-      "apiUrl": "https://corporate-feast.preview.emergentagent.com"
-    },
     "plugins": ["expo-secure-store"]
   }
 }
