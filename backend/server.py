@@ -201,6 +201,42 @@ class SubscriptionCreate(BaseModel):
     meal_type: str
     duration_days: int
 
+class EmployeeCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+
+class BulkOrderItem(BaseModel):
+    user_email: EmailStr
+    items: List[OrderItemInput]
+
+class BulkOrderCreate(BaseModel):
+    vendor_id: str
+    orders: List[BulkOrderItem]
+    delivery_type: str = "pickup"
+    sponsored: bool = False
+    occasion: Optional[str] = None
+
+class EventCateringCreate(BaseModel):
+    vendor_id: str
+    event_name: str
+    event_date: str
+    headcount: int
+    menu_items: List[OrderItemInput]
+    notes: Optional[str] = None
+
+class NotificationCreate(BaseModel):
+    user_id: str
+    title: str
+    message: str
+    type: str = "info"
+
+class LoyaltyRedeemRequest(BaseModel):
+    points: int
+    order_id: str
+
 from enum import Enum
 
 class OrderStatus(str, Enum):
@@ -628,6 +664,16 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     qr_code = generate_pickup_qr(order_id)
     await db.orders.update_one({"_id": result.inserted_id}, {"$set": {"pickup_qr": qr_code}})
     
+    # Notify vendor of new order
+    vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
+    for vu in vendor_users:
+        await create_notification(
+            str(vu["_id"]),
+            "New Order Received",
+            f"You have a new order for ₹{total_amount:.2f}",
+            "order"
+        )
+    
     return {"id": order_id, "total_amount": total_amount, "status": "pending", "pickup_qr": qr_code}
 
 @api_router.get("/orders")
@@ -957,6 +1003,428 @@ async def get_subscriptions(user: dict = Depends(get_current_user)):
         if isinstance(sub.get("created_at"), datetime):
             sub["created_at"] = sub["created_at"].isoformat()
     return subs
+
+# Notifications Helper
+async def create_notification(user_id: str, title: str, message: str, notif_type: str = "info"):
+    await db.notifications.insert_one({
+        "user_id": user_id,
+        "title": title,
+        "message": message,
+        "type": notif_type,
+        "read": False,
+        "created_at": datetime.now(timezone.utc)
+    })
+
+# Menu CRUD - DELETE
+@api_router.delete("/menu/{item_id}")
+async def delete_menu_item(item_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can delete menu items")
+    result = await db.menu_items.delete_one({"_id": safe_objectid(item_id, "Menu item"), "vendor_id": user.get("vendor_id")})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return {"message": "Menu item deleted"}
+
+@api_router.get("/menu/vendor/all")
+async def get_my_menu(user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can access this")
+    items = await db.menu_items.find({"vendor_id": user.get("vendor_id")}).to_list(1000)
+    for item in items:
+        item["id"] = str(item.pop("_id"))
+        if isinstance(item.get("created_at"), datetime):
+            item["created_at"] = item["created_at"].isoformat()
+    return items
+
+# Employee Management (Corporate Admin)
+@api_router.post("/companies/employees")
+async def add_employee(data: EmployeeCreate, user: dict = Depends(get_current_user)):
+    if user["role"] != "corporate_admin":
+        raise HTTPException(status_code=403, detail="Only corporate admins can add employees")
+    
+    email_lower = data.email.lower()
+    existing = await db.users.find_one({"email": email_lower})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    employee_doc = {
+        "email": email_lower,
+        "password_hash": hash_password(data.password),
+        "name": data.name,
+        "role": "employee",
+        "company_id": user.get("company_id"),
+        "department": data.department,
+        "employee_id": data.employee_id,
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await db.users.insert_one(employee_doc)
+    return {"id": str(result.inserted_id), "email": email_lower, "name": data.name, "department": data.department}
+
+@api_router.get("/companies/employees")
+async def list_employees(user: dict = Depends(get_current_user)):
+    if user["role"] not in ["corporate_admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    query = {"role": "employee"}
+    if user["role"] == "corporate_admin":
+        query["company_id"] = user.get("company_id")
+    
+    employees = await db.users.find(query, {"_id": 1, "email": 1, "name": 1, "department": 1, "employee_id": 1, "created_at": 1}).to_list(1000)
+    for emp in employees:
+        emp["id"] = str(emp.pop("_id"))
+        if isinstance(emp.get("created_at"), datetime):
+            emp["created_at"] = emp["created_at"].isoformat()
+    return employees
+
+@api_router.delete("/companies/employees/{employee_id}")
+async def remove_employee(employee_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] != "corporate_admin":
+        raise HTTPException(status_code=403, detail="Only corporate admins can remove employees")
+    
+    result = await db.users.delete_one({
+        "_id": safe_objectid(employee_id, "Employee"),
+        "company_id": user.get("company_id"),
+        "role": "employee"
+    })
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return {"message": "Employee removed"}
+
+# Bulk Team Ordering
+@api_router.post("/orders/bulk")
+async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_current_user)):
+    if user["role"] not in ["corporate_admin", "employee"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    bulk_order_id = str(ObjectId())
+    total_amount = 0.0
+    individual_orders = []
+    
+    for bulk_item in data.orders:
+        target_user = await db.users.find_one({"email": bulk_item.user_email.lower()})
+        if not target_user:
+            continue
+        
+        validated_items = []
+        order_total = 0.0
+        for item in bulk_item.items:
+            menu_item = await db.menu_items.find_one({"_id": safe_objectid(item.menu_item_id, "Menu item")})
+            if not menu_item or not menu_item.get("is_available", False):
+                continue
+            actual_price = menu_item["price"]
+            validated_items.append({
+                "menu_item_id": item.menu_item_id,
+                "name": menu_item["name"],
+                "quantity": item.quantity,
+                "price": actual_price
+            })
+            order_total += actual_price * item.quantity
+        
+        if not validated_items:
+            continue
+        
+        order_doc = {
+            "user_id": str(target_user["_id"]),
+            "vendor_id": data.vendor_id,
+            "items": validated_items,
+            "total_amount": order_total,
+            "status": "pending",
+            "payment_status": "paid" if data.sponsored else "pending",
+            "delivery_type": data.delivery_type,
+            "bulk_order_id": bulk_order_id,
+            "sponsored": data.sponsored,
+            "sponsored_by": user["id"] if data.sponsored else None,
+            "occasion": data.occasion,
+            "created_at": datetime.now(timezone.utc)
+        }
+        result = await db.orders.insert_one(order_doc)
+        order_id = str(result.inserted_id)
+        qr_code = generate_pickup_qr(order_id)
+        await db.orders.update_one({"_id": result.inserted_id}, {"$set": {"pickup_qr": qr_code, "status": "confirmed" if data.sponsored else "pending"}})
+        
+        await create_notification(
+            str(target_user["_id"]),
+            f"New {'Sponsored ' if data.sponsored else ''}Order",
+            f"You have a new order{' (sponsored by company)' if data.sponsored else ''}{' - ' + data.occasion if data.occasion else ''}",
+            "order"
+        )
+        
+        total_amount += order_total
+        individual_orders.append({"order_id": order_id, "user_email": bulk_item.user_email, "amount": order_total})
+    
+    await db.bulk_orders.insert_one({
+        "_id": ObjectId(bulk_order_id),
+        "created_by": user["id"],
+        "vendor_id": data.vendor_id,
+        "total_amount": total_amount,
+        "order_count": len(individual_orders),
+        "sponsored": data.sponsored,
+        "occasion": data.occasion,
+        "created_at": datetime.now(timezone.utc)
+    })
+    
+    return {"bulk_order_id": bulk_order_id, "total_amount": total_amount, "orders": individual_orders}
+
+# Event Catering
+@api_router.post("/events")
+async def create_event_catering(data: EventCateringCreate, user: dict = Depends(get_current_user)):
+    if user["role"] not in ["corporate_admin", "employee"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    total_amount = 0.0
+    validated_items = []
+    for item in data.menu_items:
+        menu_item = await db.menu_items.find_one({"_id": safe_objectid(item.menu_item_id, "Menu item")})
+        if not menu_item:
+            continue
+        actual_price = menu_item["price"]
+        qty_for_event = item.quantity * data.headcount
+        validated_items.append({
+            "menu_item_id": item.menu_item_id,
+            "name": menu_item["name"],
+            "quantity_per_person": item.quantity,
+            "total_quantity": qty_for_event,
+            "price": actual_price
+        })
+        total_amount += actual_price * qty_for_event
+    
+    event_doc = {
+        "created_by": user["id"],
+        "company_id": user.get("company_id"),
+        "vendor_id": data.vendor_id,
+        "event_name": data.event_name,
+        "event_date": data.event_date,
+        "headcount": data.headcount,
+        "menu_items": validated_items,
+        "total_amount": total_amount,
+        "notes": data.notes,
+        "status": "pending_approval",
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await db.events.insert_one(event_doc)
+    return {"id": str(result.inserted_id), "total_amount": total_amount, "status": "pending_approval"}
+
+@api_router.get("/events")
+async def list_events(user: dict = Depends(get_current_user)):
+    query = {}
+    if user["role"] == "employee" or user["role"] == "corporate_admin":
+        if user.get("company_id"):
+            query["company_id"] = user.get("company_id")
+        else:
+            query["created_by"] = user["id"]
+    elif user["role"] == "vendor":
+        query["vendor_id"] = user.get("vendor_id")
+    
+    events = await db.events.find(query).sort("created_at", -1).to_list(500)
+    for event in events:
+        event["id"] = str(event.pop("_id"))
+        if isinstance(event.get("created_at"), datetime):
+            event["created_at"] = event["created_at"].isoformat()
+    return events
+
+@api_router.patch("/events/{event_id}/approve")
+async def approve_event(event_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] not in ["corporate_admin", "vendor"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    result = await db.events.update_one(
+        {"_id": safe_objectid(event_id, "Event")},
+        {"$set": {"status": "approved", "approved_by": user["id"]}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Event approved"}
+
+# Notifications
+@api_router.get("/notifications")
+async def list_notifications(user: dict = Depends(get_current_user)):
+    notifs = await db.notifications.find({"user_id": user["id"]}).sort("created_at", -1).limit(50).to_list(50)
+    for n in notifs:
+        n["id"] = str(n.pop("_id"))
+        if isinstance(n.get("created_at"), datetime):
+            n["created_at"] = n["created_at"].isoformat()
+    return notifs
+
+@api_router.patch("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, user: dict = Depends(get_current_user)):
+    await db.notifications.update_one(
+        {"_id": safe_objectid(notif_id, "Notification"), "user_id": user["id"]},
+        {"$set": {"read": True}}
+    )
+    return {"message": "Marked as read"}
+
+@api_router.post("/notifications/mark-all-read")
+async def mark_all_notifications_read(user: dict = Depends(get_current_user)):
+    await db.notifications.update_many({"user_id": user["id"], "read": False}, {"$set": {"read": True}})
+    return {"message": "All notifications marked as read"}
+
+# AI Demand Forecasting
+@api_router.post("/ai/demand-forecast")
+async def get_demand_forecast(user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can access demand forecasting")
+    
+    vendor_id = user.get("vendor_id")
+    # Aggregate item-level orders
+    pipeline = [
+        {"$match": {"vendor_id": vendor_id, "payment_status": "paid"}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.name",
+            "total_quantity": {"$sum": "$items.quantity"},
+            "total_revenue": {"$sum": {"$multiply": ["$items.price", "$items.quantity"]}}
+        }},
+        {"$sort": {"total_quantity": -1}},
+        {"$limit": 10}
+    ]
+    top_items = await db.orders.aggregate(pipeline).to_list(10)
+    
+    total_orders = await db.orders.count_documents({"vendor_id": vendor_id})
+    
+    if total_orders < 1:
+        return {"forecast": "Not enough data for forecasting. Need at least a few orders to generate predictions.", "top_items": []}
+    
+    chat = LlmChat(
+        api_key=os.environ["EMERGENT_LLM_KEY"],
+        session_id=f"forecast_{vendor_id}",
+        system_message="You are an AI demand forecasting analyst for a corporate cafeteria. Provide actionable demand predictions and recommendations."
+    ).with_model("openai", "gpt-5.2")
+    
+    prompt = f"""Based on the following order history data, provide a demand forecast for next week.
+
+Top selling items (last period):
+{top_items}
+
+Total orders in history: {total_orders}
+
+Provide:
+1. Top 3 items expected to be in highest demand next week
+2. Suggested inventory levels (low/medium/high) for each top item
+3. One actionable insight to maximize revenue
+
+Keep response concise and bullet-point friendly (under 200 words)."""
+    
+    response = await chat.send_message(UserMessage(text=prompt))
+    
+    return {
+        "forecast": response,
+        "top_items": [{"name": item["_id"], "quantity": item["total_quantity"], "revenue": item["total_revenue"]} for item in top_items]
+    }
+
+# AI Food Wastage Analysis
+@api_router.post("/ai/wastage-analysis")
+async def get_wastage_analysis(user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can access wastage analysis")
+    
+    vendor_id = user.get("vendor_id")
+    cancelled_orders = await db.orders.count_documents({"vendor_id": vendor_id, "status": "cancelled"})
+    completed_orders = await db.orders.count_documents({"vendor_id": vendor_id, "status": "completed"})
+    total_orders = await db.orders.count_documents({"vendor_id": vendor_id})
+    
+    cancellation_rate = (cancelled_orders / total_orders * 100) if total_orders > 0 else 0
+    
+    chat = LlmChat(
+        api_key=os.environ["EMERGENT_LLM_KEY"],
+        session_id=f"wastage_{vendor_id}",
+        system_message="You are a food wastage reduction expert for corporate cafeterias. Provide actionable strategies."
+    ).with_model("openai", "gpt-5.2")
+    
+    prompt = f"""Vendor metrics:
+- Total orders: {total_orders}
+- Completed: {completed_orders}
+- Cancelled: {cancelled_orders}
+- Cancellation rate: {cancellation_rate:.1f}%
+
+Provide 3 actionable strategies to reduce food wastage and improve order fulfillment. Keep under 150 words."""
+    
+    response = await chat.send_message(UserMessage(text=prompt))
+    
+    return {
+        "analysis": response,
+        "metrics": {
+            "total_orders": total_orders,
+            "completed_orders": completed_orders,
+            "cancelled_orders": cancelled_orders,
+            "cancellation_rate": round(cancellation_rate, 2)
+        }
+    }
+
+# Loyalty System
+@api_router.get("/loyalty")
+async def get_loyalty(user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees have loyalty programs")
+    
+    # Calculate points: 1 point per ₹100 spent on paid orders
+    pipeline = [
+        {"$match": {"user_id": user["id"], "payment_status": "paid"}},
+        {"$group": {"_id": None, "total_spent": {"$sum": "$total_amount"}, "order_count": {"$sum": 1}}}
+    ]
+    result = await db.orders.aggregate(pipeline).to_list(1)
+    
+    total_spent = result[0]["total_spent"] if result else 0
+    order_count = result[0]["order_count"] if result else 0
+    
+    # Calculate points earned (1 per 100 INR)
+    points_earned = int(total_spent / 100)
+    
+    # Get redeemed points
+    redeemed = await db.loyalty_redemptions.find({"user_id": user["id"]}).to_list(1000)
+    points_redeemed = sum(r.get("points", 0) for r in redeemed)
+    
+    available_points = points_earned - points_redeemed
+    
+    # Tier calculation
+    if total_spent >= 10000:
+        tier = "Gold"
+        next_tier_at = None
+    elif total_spent >= 5000:
+        tier = "Silver"
+        next_tier_at = 10000 - total_spent
+    elif total_spent >= 1000:
+        tier = "Bronze"
+        next_tier_at = 5000 - total_spent
+    else:
+        tier = "Starter"
+        next_tier_at = 1000 - total_spent
+    
+    return {
+        "tier": tier,
+        "total_spent": total_spent,
+        "order_count": order_count,
+        "points_earned": points_earned,
+        "points_redeemed": points_redeemed,
+        "available_points": available_points,
+        "next_tier_at": next_tier_at,
+        "point_value_inr": 1  # 1 point = 1 INR discount
+    }
+
+@api_router.post("/loyalty/redeem")
+async def redeem_loyalty(data: LoyaltyRedeemRequest, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can redeem points")
+    
+    # Get available points
+    loyalty = await get_loyalty(user)
+    if data.points > loyalty["available_points"]:
+        raise HTTPException(status_code=400, detail="Insufficient points")
+    if data.points < 100:
+        raise HTTPException(status_code=400, detail="Minimum 100 points to redeem")
+    
+    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    await db.loyalty_redemptions.insert_one({
+        "user_id": user["id"],
+        "order_id": data.order_id,
+        "points": data.points,
+        "discount_inr": data.points,  # 1 point = 1 INR
+        "created_at": datetime.now(timezone.utc)
+    })
+    
+    return {"message": f"{data.points} points redeemed", "discount_inr": data.points}
 
 app.include_router(api_router)
 

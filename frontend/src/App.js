@@ -6,17 +6,27 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+
 import EmployeeDashboard from './pages/employee/Dashboard';
 import EmployeeMenu from './pages/employee/Menu';
 import EmployeeOrders from './pages/employee/Orders';
 import EmployeePreferences from './pages/employee/Preferences';
 import EmployeeSubscriptions from './pages/employee/Subscriptions';
+import EmployeeLoyalty from './pages/employee/Loyalty';
+import BulkOrder from './pages/employee/BulkOrder';
+
 import VendorDashboard from './pages/vendor/Dashboard';
 import VendorOrders from './pages/vendor/Orders';
 import VendorMenu from './pages/vendor/Menu';
 import VendorVerifyPickup from './pages/vendor/VerifyPickup';
+import VendorAIInsights from './pages/vendor/AIInsights';
+
 import CorporateAdminDashboard from './pages/admin/Dashboard';
+import CorporateAdminEmployees from './pages/admin/Employees';
+
 import SuperAdminDashboard from './pages/superadmin/Dashboard';
+
+import EventCatering from './pages/shared/EventCatering';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -43,6 +53,7 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to={getDefaultRoute()} replace /> : <RegisterPage />} />
       
+      {/* Employee Routes */}
       <Route path="/employee/dashboard" element={
         <ProtectedRoute allowedRoles={['employee']}>
           <EmployeeDashboard />
@@ -68,7 +79,23 @@ function AppRoutes() {
           <EmployeeSubscriptions />
         </ProtectedRoute>
       } />
+      <Route path="/employee/loyalty" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <EmployeeLoyalty />
+        </ProtectedRoute>
+      } />
+      <Route path="/employee/bulk-order" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <BulkOrder />
+        </ProtectedRoute>
+      } />
+      <Route path="/employee/events" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <EventCatering />
+        </ProtectedRoute>
+      } />
       
+      {/* Vendor Routes */}
       <Route path="/vendor/dashboard" element={
         <ProtectedRoute allowedRoles={['vendor']}>
           <VendorDashboard />
@@ -89,13 +116,30 @@ function AppRoutes() {
           <VendorVerifyPickup />
         </ProtectedRoute>
       } />
+      <Route path="/vendor/ai-insights" element={
+        <ProtectedRoute allowedRoles={['vendor']}>
+          <VendorAIInsights />
+        </ProtectedRoute>
+      } />
       
+      {/* Corporate Admin Routes */}
       <Route path="/admin/dashboard" element={
         <ProtectedRoute allowedRoles={['corporate_admin']}>
           <CorporateAdminDashboard />
         </ProtectedRoute>
       } />
+      <Route path="/admin/employees" element={
+        <ProtectedRoute allowedRoles={['corporate_admin']}>
+          <CorporateAdminEmployees />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/events" element={
+        <ProtectedRoute allowedRoles={['corporate_admin']}>
+          <EventCatering />
+        </ProtectedRoute>
+      } />
       
+      {/* Super Admin Routes */}
       <Route path="/super-admin/dashboard" element={
         <ProtectedRoute allowedRoles={['super_admin']}>
           <SuperAdminDashboard />

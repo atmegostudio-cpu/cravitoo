@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 3 verified: Menu CRUD, Employees, Bulk Orders (sponsored auto-confirm+paid+notification w/ occasion), Event Catering (total = price x qty x headcount), Notifications (vendor receives notif on new order; mark-all-read works), AI Demand Forecast + Wastage (GPT-5.2 returns real text + metrics), Loyalty (tier, points, redeem validation). 15/15 new backend tests pass; full suite 43/43 pass. Frontend pages all rendered and integrated against live API.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/orders/bulk", "issue": "Silently skips bulk items whose user_email is not found and items not available - no warning returned to caller (would help debugging)."},
+      {"endpoint": "PATCH /api/events/{id}/approve", "issue": "Vendor can approve ANY event (no vendor_id ownership check). Corporate admin can approve events from other companies (no company_id check)."},
+      {"endpoint": "POST /api/loyalty/redeem", "issue": "Does not lock points to an order (no enforcement that order is unpaid or that discount actually gets applied to order total). Redemption is recorded but no order amount is adjusted."},
+      {"endpoint": "GET /api/menu/vendor/all", "issue": "Returns raw mongo doc fields without projection; safe but inconsistent with other endpoints that use field projections."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Employees", "issues": ["Employees with no department render under 'Unassigned' header which is fine, but the empty state when only 1 employee exists is sparse - consider adding a CTA."]},
+      {"screen": "Vendor Menu", "issues": ["Delete is an icon-only button (trash) without aria-label/data-testid - hard to discover and to automate."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter3_features.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iter3.xml",
+    "/app/test_reports/pytest/pytest_all_iter3.xml"
+  ],
+  "action_items": [
+    "Add vendor_id and company_id ownership checks to PATCH /api/events/{id}/approve.",
+    "Return list of skipped/invalid emails+items from POST /api/orders/bulk so caller knows what failed.",
+    "Apply redeemed loyalty points as actual discount on the order (or move redeem to checkout flow).",
+    "Add data-testid + aria-label to vendor Menu delete icon button.",
+    "Optional: split server.py (~1440 lines now) into routers (auth/orders/menu/loyalty/events/ai).",
+    "Carryover from iter2: still raw ObjectId parsing without try/except in some endpoints (verify-pickup edge case, payments) -> 500 on garbage input."
+  ],
+  "critical_code_review_comments": [
+    "PATCH /events/{event_id}/approve missing authorization scoping (any vendor can approve any event, any corp admin can approve cross-company events).",
+    "Loyalty redemption persists a row but does NOT mutate the order's total_amount or create a discount_applied field; UI cannot honor the discount end-to-end.",
+    "Bulk order silently drops invalid items/emails; should surface as 'skipped: [...]' in response for traceability.",
+    "server.py is now ~1440 lines; should be split into routers and a services layer.",
+    "Notifications collection has no TTL or index on user_id; will grow unbounded.",
+    "AI endpoints have no rate limiting; expensive GPT-5.2 calls can be triggered repeatedly.",
+    "get_loyalty is called inside POST /loyalty/redeem - inefficient (recomputes full aggregation); acceptable for now."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter3_features.py",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {"backend": "100% (43/43 incl. 15 new + 28 regression)", "frontend": "100% on iteration-3 pages: Loyalty, BulkOrder, EventCatering, Menu(multi-vendor), NotificationBell, Vendor Menu CRUD, AIInsights (Forecast generated real GPT-5.2 output), Admin Employees, Admin Events approve."},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged.",
+  "seed_data_creation": "Test artifacts created: 1 TEST_dish menu item (deleted), 1 TEST_emp_* employee (deleted), 1 bulk sponsored order for employee with occasion=TEST_TeamLunch, 2 TEST_event_* events approved, several employee orders, redemption attempts failed as expected (no successful redemption persisted).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Three backend test files: backend_test.py (iter1 regression 15), test_new_features.py (iter2 13), test_iter3_features.py (iter3 15). Run all: pytest /app/backend/tests/ -v. AI endpoints take ~5-10s due to GPT-5.2; timeout set to 60s. Outstanding gaps: event approve has no ownership check, loyalty redeem doesn't mutate orders.",
+  "rca_of_the_issue": "N/A - all new features pass functional tests. Logged authorization scope gap on /events approve and redemption side-effect gap as action items for main agent."
+}
