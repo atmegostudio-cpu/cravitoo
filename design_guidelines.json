@@ -1,0 +1,154 @@
+{
+  "theme_and_archetype": {
+    "primary_archetype": "Archetype 1 (Organic & Earthy) blended with Archetype 4 (Swiss & High-Contrast)",
+    "reasoning": "Food tech requires trust, warmth, and sensory appeal (Organic), while the enterprise dashboards (Stripe/Apple inspired) demand absolute clarity and structure (Swiss). The result is a highly functional but warm corporate-tech UI.",
+    "theme_mode": "hybrid",
+    "details": "Light theme for Employee App and Corporate Admin. Dark theme for Super Admin and Vendor Dashboard for high-contrast focus."
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#FF5A1F",
+      "hover": "#E04815",
+      "active": "#C23B0F",
+      "light": "#FFE5DC"
+    },
+    "accent": {
+      "DEFAULT": "#FACC15",
+      "hover": "#EAB308",
+      "light": "#FEFCE8"
+    },
+    "background": {
+      "app": "#F9FAFB",
+      "card": "#FFFFFF",
+      "dark_sections": "#111827",
+      "dark_card": "#1F2937"
+    },
+    "text": {
+      "primary": "#111111",
+      "secondary": "#4B5563",
+      "muted": "#9CA3AF",
+      "inverse": "#FFFFFF"
+    },
+    "border": {
+      "light": "#E5E7EB",
+      "dark": "#374151"
+    },
+    "forbidden_colors": ["#9D4CDD", "#1B93A4", "#7351B7", "#000000", "#808080"]
+  },
+  "typography": {
+    "rules": {
+      "forbidden_fonts": ["Inter", "Roboto", "Open Sans", "Lato", "Syne", "Space Grotesk"],
+      "tracking": "tight for headings (tracking-tight), loose for body (tracking-normal to relaxed)",
+      "line_height": "leading-none for headers, leading-relaxed for body"
+    },
+    "font_families": {
+      "heading": "Outfit",
+      "body": "Work Sans",
+      "mono": "JetBrains Mono"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-semibold",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-medium",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base",
+      "small": "text-sm",
+      "overline": "text-xs uppercase tracking-[0.2em] font-semibold"
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "p-1, p-2, p-4, p-6, p-8, p-12, p-16, p-24, p-32",
+    "general_rules": [
+      "Generous spacing: use p-6 or p-8 inside cards to prevent text collision.",
+      "Mobile-first responsive grids.",
+      "Optical alignment over geometrical alignment.",
+      "Avoid 100% transparent backgrounds for headers, use glassmorphism."
+    ],
+    "bento_grid_marketing": {
+      "wrapper": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-6 lg:gap-8",
+      "hero_tile": "col-span-full md:col-span-8 row-span-2",
+      "square_tile": "col-span-4 row-span-1",
+      "tall_tile": "col-span-4 row-span-2"
+    },
+    "bento_grid_dashboard": {
+      "wrapper": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+      "summary_widget": "col-span-1",
+      "main_chart": "col-span-2 row-span-2 lg:col-span-3",
+      "feed_list": "col-span-1 row-span-2"
+    }
+  },
+  "surface_styles": {
+    "glassmorphism": "backdrop-blur-xl bg-white/70 border border-white/40 shadow-sm (Light mode) or bg-gray-900/60 border-white/10 (Dark mode)",
+    "cards_light": "bg-white border border-gray-200 shadow-sm rounded-xl md:rounded-2xl",
+    "cards_dark": "bg-gray-800 border border-gray-700 shadow-lg rounded-xl md:rounded-2xl",
+    "the_tracing_beam": "High-conversion cards can use animated gradient borders.",
+    "dashboard_cards": "Flat background, 1px subtle border (border-gray-200), hover: shadow-md -translate-y-0.5 transition-all"
+  },
+  "components": {
+    "shadcn_customization": {
+      "button": "Rounded-lg or full, font-medium, hover must increase contrast, active state scaling.",
+      "card": "Override default padding, use p-6 or p-8.",
+      "input": "Rounded-lg, focus:ring-2 focus:ring-primary/20 focus:border-primary",
+      "tabs": "Override fixed h-9, use h-auto. Minimal pill-shaped indicators.",
+      "dropdown_menu": "Use for all selects, no native <select>."
+    },
+    "icons": {
+      "library": "lucide-react",
+      "style": "Clean, consistent stroke width."
+    },
+    "motion": {
+      "hover": "transition-all duration-200 ease-in-out",
+      "entrance": "Staggered fade-in-up for lists",
+      "accessibility": "Respect prefers-reduced-motion"
+    }
+  },
+  "media_and_images": {
+    "rules": [
+      "No placeholder images (e.g. via.placeholder.com).",
+      "Images on mobile max-h-[80vh]."
+    ],
+    "image_urls": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/1c60e779-4d9f-4612-a5fc-aea4121ed517/images/062b1c693ac2158f2ceb57e8bdde872c29adbfb5544089ac7fba431547124f6a.png",
+        "description": "Modern glass office building cafeteria with warm sunlight and orange accents, premium corporate feel. Great for main landing page hero."
+      },
+      {
+        "category": "abstract_shape_decoration",
+        "url": "https://static.prod-images.emergentagent.com/jobs/1c60e779-4d9f-4612-a5fc-aea4121ed517/images/8c3855149c1fc4a7fc3c3ffb864aeb61ccab99cfa4ab8aa8636c6f3826ae5514.png",
+        "description": "Abstract 3D glassmorphism geometric shapes floating with glowing inner lights. Perfect for decorative accents in dark sections or super admin login."
+      },
+      {
+        "category": "corporate_cafeteria",
+        "url": "https://images.unsplash.com/photo-1517740642137-bc729c123aa5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjV8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjBjYWZldGVyaWElMjBwZW9wbGV8ZW58MHx8fHwxNzc5NzE2NzIzfDA&ixlib=rb-4.1.0&q=85",
+        "description": "People sitting and chatting in a cafeteria setting, ideal for 'Employee App' or 'Event Catering' feature sections."
+      },
+      {
+        "category": "team_discussion",
+        "url": "https://images.pexels.com/photos/8067743/pexels-photo-8067743.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "A multicultural group discussing ideas over coffee in a modern cafe setting. Use for 'Corporate Admin' or 'Team Ordering'."
+      },
+      {
+        "category": "gourmet_meal",
+        "url": "https://images.unsplash.com/photo-1533777324565-a040eb52facd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwxfHxnb3VybWV0JTIwbWVhbCUyMGZsYXRsYXl8ZW58MHx8fHwxNzc5NzE2NzIzfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Assorted fresh gourmet dishes on white plates, flatlay. Perfect for AI Food Recommendations or Menu display."
+      },
+      {
+        "category": "premium_dining",
+        "url": "https://images.unsplash.com/photo-1674649203068-e9fd9c4a5620?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwyfHxnb3VybWV0JTIwbWVhbCUyMGZsYXRsYXl8ZW58MHx8fHwxNzc5NzE2NzIzfDA&ixlib=rb-4.1.0&q=85",
+        "description": "A plate of premium food on a wooden table. Good for individual meal item preview."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette provided. Use #FF5A1F (Primary) and #FACC15 (Accent) carefully for CTAs and highlights. Never use them as massive background blocks.",
+    "Avoid Inter font. Use Outfit for Headings and Work Sans for body. They provide a modern SaaS, slightly approachable tech look.",
+    "For Dashboard views (Vendor, Corporate, Super Admin), implement a strict Bento Grid layout with 16-24px gaps. The most critical metric gets the largest tile.",
+    "Employee App should feel like Swiggy Minis mixed with Apple—clean white spaces, large appetizing food images, very soft shadows, and rounded corners (rounded-2xl).",
+    "All interactive elements MUST have `data-testid` attribute (e.g., `data-testid='order-meal-btn'`).",
+    "Use glassmorphism for sticky headers and modal overlays.",
+    "DO NOT use placeholder text or generic placeholder image services. Use the image URLs provided in media_and_images.",
+    "When applying dark sections (#111827), use border-white/10 and light typography to ensure contrast ratio >= 4.5:1.",
+    "Implement navigation carefully. Employee App needs bottom nav on mobile, top bar on desktop. Dashboards need collapsible sidebars."
+  ]
+}
