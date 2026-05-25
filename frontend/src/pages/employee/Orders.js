@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Package, Clock, CheckCircle } from 'lucide-react';
+import { Package, Clock, CheckCircle, QrCode, Star } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,6 +12,11 @@ const EmployeeOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checkingPayment, setCheckingPayment] = useState(!!sessionId);
+  const [showQRFor, setShowQRFor] = useState(null);
+  const [reviewFor, setReviewFor] = useState(null);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [reviewMessage, setReviewMessage] = useState('');
 
   useEffect(() => {
     if (sessionId) {
@@ -60,6 +65,28 @@ const EmployeeOrders = () => {
     }
   };
 
+  const submitReview = async (order) => {
+    try {
+      await axios.post(
+        `${API}/reviews`,
+        {
+          vendor_id: order.vendor_id,
+          order_id: order.id,
+          rating: rating,
+          comment: comment
+        },
+        { withCredentials: true }
+      );
+      setReviewMessage('Review submitted!');
+      setReviewFor(null);
+      setComment('');
+      setRating(5);
+      setTimeout(() => setReviewMessage(''), 3000);
+    } catch (error) {
+      setReviewMessage(error.response?.data?.detail || 'Failed to submit review');
+    }
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'confirmed':
@@ -95,6 +122,12 @@ const EmployeeOrders = () => {
             <div data-testid="payment-checking-banner" className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center space-x-3">
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
               <p className="text-blue-800 font-medium">Verifying your payment...</p>
+            </div>
+          )}
+
+          {reviewMessage && (
+            <div data-testid="review-message" className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+              {reviewMessage}
             </div>
           )}
 
@@ -147,7 +180,7 @@ const EmployeeOrders = () => {
                     <div className="space-y-2">
                       {order.items.map((item, index) => (
                         <div key={index} className="flex justify-between text-sm">
-                          <span className="text-text-secondary">{item.quantity}x Item</span>
+                          <span className="text-text-secondary">{item.quantity}x {item.name || 'Item'}</span>
                           <span className="text-text-primary">₹{(item.price * item.quantity).toFixed(2)}</span>
                         </div>
                       ))}
@@ -155,19 +188,114 @@ const EmployeeOrders = () => {
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-border-light">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
                       <span className={`px-4 py-2 rounded-lg text-sm font-medium ${
                         order.status === 'confirmed' ? 'bg-green-100 text-green-700' :
                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        order.status === 'ready' ? 'bg-primary-light text-primary' :
+                        order.status === 'completed' ? 'bg-gray-100 text-gray-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
                         {order.status === 'confirmed' ? 'Order Confirmed' :
                          order.status === 'pending' ? 'Order Pending' :
+                         order.status === 'ready' ? 'Ready for Pickup' :
+                         order.status === 'completed' ? 'Completed' :
+                         order.status === 'preparing' ? 'Preparing' :
                          'Processing'}
                       </span>
-                      <span className="text-xs text-text-muted capitalize">{order.delivery_type}</span>
+                      
+                      <div className="flex gap-2">
+                        {(order.status === 'ready' || order.status === 'confirmed') && order.pickup_qr && (
+                          <button
+                            onClick={() => setShowQRFor(showQRFor === order.id ? null : order.id)}
+                            data-testid={`qr-btn-${order.id}`}
+                            className="flex items-center space-x-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                          >
+                            <QrCode className="h-4 w-4" />
+                            <span>Pickup QR</span>
+                          </button>
+                        )}
+                        {(order.status === 'completed' || order.status === 'ready') && (
+                          <button
+                            onClick={() => setReviewFor(reviewFor === order.id ? null : order.id)}
+                            data-testid={`review-btn-${order.id}`}
+                            className="flex items-center space-x-2 bg-accent-hover hover:bg-accent text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                          >
+                            <Star className="h-4 w-4" />
+                            <span>Review</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {showQRFor === order.id && order.pickup_qr && (
+                    <div data-testid={`qr-display-${order.id}`} className="mt-4 p-6 bg-gradient-to-br from-primary-light to-accent-light rounded-xl text-center">
+                      <p className="text-sm text-text-secondary mb-2">Show this QR code at pickup:</p>
+                      <div className="bg-white p-4 rounded-lg inline-block mb-2">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(order.pickup_qr)}`}
+                          alt="Pickup QR Code"
+                          className="w-48 h-48"
+                        />
+                      </div>
+                      <p className="text-xs text-text-muted font-mono mt-2 break-all">{order.pickup_qr}</p>
+                    </div>
+                  )}
+
+                  {reviewFor === order.id && (
+                    <div data-testid={`review-form-${order.id}`} className="mt-4 p-6 bg-background rounded-xl">
+                      <h4 className="font-heading text-lg font-medium text-text-primary mb-3">Write a Review</h4>
+                      
+                      <div className="mb-4">
+                        <label className="text-sm font-medium text-text-primary block mb-2">Rating</label>
+                        <div className="flex space-x-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              data-testid={`rating-${star}`}
+                              onClick={() => setRating(star)}
+                              className="transition-all duration-200 hover:scale-110"
+                            >
+                              <Star
+                                className={`h-8 w-8 ${
+                                  star <= rating ? 'fill-accent text-accent-hover' : 'text-text-muted'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="text-sm font-medium text-text-primary block mb-2">Comment (optional)</label>
+                        <textarea
+                          data-testid="review-comment"
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          className="w-full px-4 py-3 border border-border-light rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary bg-card"
+                          rows="3"
+                          placeholder="Share your experience..."
+                        />
+                      </div>
+
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => submitReview(order)}
+                          data-testid={`submit-review-${order.id}`}
+                          className="bg-primary hover:bg-primary-hover text-white px-6 py-2 rounded-lg font-medium transition-all duration-200"
+                        >
+                          Submit Review
+                        </button>
+                        <button
+                          onClick={() => setReviewFor(null)}
+                          className="bg-background border border-border-light text-text-secondary hover:text-text-primary px-6 py-2 rounded-lg font-medium transition-all duration-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

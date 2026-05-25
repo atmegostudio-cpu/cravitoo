@@ -23,7 +23,7 @@ const EmployeeDashboard = () => {
         axios.get(`${API}/vendors`, { withCredentials: true }),
         axios.get(`${API}/orders`, { withCredentials: true })
       ]);
-      setVendors(vendorsRes.data.slice(0, 3));
+      setVendors(vendorsRes.data);
       setRecentOrders(ordersRes.data.slice(0, 3));
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -34,9 +34,21 @@ const EmployeeDashboard = () => {
 
   const getAIRecommendations = async () => {
     try {
+      let prefsBody = { user_preferences: 'I like healthy options', dietary_restrictions: 'None' };
+      try {
+        const { data: prefs } = await axios.get(`${API}/preferences`, { withCredentials: true });
+        if (prefs.favorite_cuisines?.length || prefs.dietary_preferences?.length) {
+          prefsBody = {
+            user_preferences: `Favorite cuisines: ${prefs.favorite_cuisines?.join(', ') || 'any'}. Dietary: ${prefs.dietary_preferences?.join(', ') || 'no preference'}`,
+            dietary_restrictions: prefs.allergies?.length ? `Allergic to: ${prefs.allergies.join(', ')}` : 'None'
+          };
+        }
+      } catch (e) {
+        // Ignore preferences fetch error and use defaults
+      }
       const { data } = await axios.post(
         `${API}/ai/recommendations`,
-        { user_preferences: 'I like healthy options', dietary_restrictions: 'None' },
+        prefsBody,
         { withCredentials: true }
       );
       setRecommendations(data.recommendations);

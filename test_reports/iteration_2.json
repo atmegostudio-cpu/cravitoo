@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 2: Validated all NEW security fixes (Option B) and NEW features (Option C). 28/28 backend pytests pass (15 regression + 13 new). All new frontend pages (Preferences, Subscriptions, Orders w/ QR+Review, Vendor VerifyPickup) work end-to-end against live API.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/orders/{id}/verify-pickup", "issue": "Returns 500 (not 404) when called with a non-existent ObjectId (e.g., bson.errors.InvalidId not caught). Same pattern likely applies to other endpoints accepting raw order/vendor ids."},
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force record uses both ip:email and email-only identifiers but never clears the email-only lockout after lockout_minutes; lockout will be cleared only when next attempt arrives after window. Acceptable but worth noting."},
+      {"endpoint": "POST /api/reviews", "issue": "Allows reviewing 'ready' orders too (status check is ['completed','ready']). Spec says completed only; tighten to status=='completed' only."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Vendor VerifyPickup standalone page", "issue": "When QR is malformed/order not found, the frontend shows generic 'Verification failed' (the backend actually returned 500 due to invalid ObjectId). Functionally fine for happy path but error surface masks the 500.", "affected_selectors": ["[data-testid=verify-result]"]}
+    ],
+    "design_issues": [
+      {"screen": "Employee Subscriptions", "issues": ["Configure-Your-Subscription panel renders ONLY after selecting a plan; not discoverable on first load (minor UX)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_new_features.xml"
+  ],
+  "action_items": [
+    "Wrap ObjectId(...) parsing in a helper that returns 404/400 instead of raising 500 (verify-pickup, get_vendor, update_menu_item, payments/checkout, reviews, PATCH /orders/{id}).",
+    "Tighten review eligibility to status == 'completed' only (not 'ready').",
+    "Optional: also cap brute-force lockout cleanup on the email-only key to align TTL with ip:email key."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to ~965 lines mixing auth, orders, payments, preferences, subs, reviews - split into FastAPI routers (auth_router, order_router, etc.) and move helpers to /app/backend/utils.",
+    "verify_pickup, get_vendor, update_menu_item, payments routes call ObjectId(id) without try/except -> uncaught bson InvalidId -> HTTP 500 on garbage inputs.",
+    "PATCH /api/orders/{id} accepts status as query param (FastAPI default for non-model arg); document this in the API contract or move to JSON body to match REST conventions.",
+    "Brute force keys never expire from MongoDB; consider TTL index on locked_until or a periodic cleanup.",
+    "Reviews logic permits 'ready' status which contradicts spec 'only completed orders can be reviewed'.",
+    "seed_demo_data still writes /app/memory/test_credentials.md on every startup - side effect, gate behind env flag."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "100% on new pages (Preferences toggle+save, Subscriptions plan+subscribe, Orders QR+Review form, Vendor VerifyPickup)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. Brute-force test created TEST_brute_<ts>@cravitoo.com and locked it for 15 min (cleared automatically).",
+  "seed_data_creation": "No seed data added. Test artifacts: subscriptions for employee@techcorp.com, preferences row for employee, one TEST_great! review on completed order, multiple TEST orders. Safe to leave.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two backend test files exist: backend_test.py (15 regression) and test_new_features.py (13 new). Run both via: pytest /app/backend/tests/ -v. Frontend new pages all rendered; data-testids in place. Known minor issues: (a) verify-pickup returns 500 on invalid ObjectId, (b) reviews allow 'ready' status orders. Stripe checkout flow only tested to URL creation, not full payment confirmation. No retest needed for Option B/C scope.",
+  "rca_of_the_issue": "N/A - all targeted features pass. Minor 500-on-invalid-ObjectId is a defensive-coding gap (no try/except around ObjectId()), not a feature bug."
+}

@@ -184,6 +184,88 @@ class CheckoutRequest(BaseModel):
     order_id: str
     origin_url: str
 
+class ReviewCreate(BaseModel):
+    vendor_id: str
+    order_id: str
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+
+class PreferencesUpdate(BaseModel):
+    dietary_preferences: Optional[List[str]] = None
+    allergies: Optional[List[str]] = None
+    favorite_cuisines: Optional[List[str]] = None
+
+class SubscriptionCreate(BaseModel):
+    vendor_id: str
+    plan_type: str
+    meal_type: str
+    duration_days: int
+
+from enum import Enum
+
+class OrderStatus(str, Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    preparing = "preparing"
+    ready = "ready"
+    completed = "completed"
+    cancelled = "cancelled"
+
+# Helper - detect if request is HTTPS
+def is_secure_request(request: Request) -> bool:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    return forwarded_proto == "https" or request.url.scheme == "https"
+
+# Helper - generate QR code data for order pickup
+def generate_pickup_qr(order_id: str) -> str:
+    import hashlib
+    qr_hash = hashlib.sha256(f"{order_id}{JWT_SECRET}".encode()).hexdigest()[:16]
+    return f"CRAVITOO-PICKUP-{order_id}-{qr_hash}"
+
+def verify_pickup_qr(qr_code: str, order_id: str) -> bool:
+    import hashlib
+    qr_hash = hashlib.sha256(f"{order_id}{JWT_SECRET}".encode()).hexdigest()[:16]
+    expected = f"CRAVITOO-PICKUP-{order_id}-{qr_hash}"
+    return qr_code == expected
+
+# Brute force protection
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+async def check_brute_force(identifier: str) -> bool:
+    """Returns True if locked out, False if OK to proceed"""
+    record = await db.login_attempts.find_one({"identifier": identifier})
+    if not record:
+        return False
+    if record.get("attempts", 0) >= MAX_LOGIN_ATTEMPTS:
+        locked_until = record.get("locked_until")
+        if locked_until:
+            # MongoDB returns naive datetime - convert to aware
+            if locked_until.tzinfo is None:
+                locked_until = locked_until.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) < locked_until:
+                return True
+            await db.login_attempts.delete_one({"identifier": identifier})
+    return False
+
+async def record_failed_login(identifier: str):
+    record = await db.login_attempts.find_one({"identifier": identifier})
+    if record:
+        new_attempts = record.get("attempts", 0) + 1
+        update = {"attempts": new_attempts, "last_attempt": datetime.now(timezone.utc)}
+        if new_attempts >= MAX_LOGIN_ATTEMPTS:
+            update["locked_until"] = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+        await db.login_attempts.update_one({"identifier": identifier}, {"$set": update})
+    else:
+        await db.login_attempts.insert_one({
+            "identifier": identifier,
+            "attempts": 1,
+            "last_attempt": datetime.now(timezone.utc)
+        })
+
+async def clear_login_attempts(identifier: str):
+    await db.login_attempts.delete_one({"identifier": identifier})
+
 # Startup Events
 @app.on_event("startup")
 async def startup_event():
@@ -332,7 +414,7 @@ async def seed_demo_data():
 
 # Auth Routes
 @api_router.post("/auth/register")
-async def register(data: RegisterRequest, response: Response):
+async def register(data: RegisterRequest, request: Request, response: Response):
     email_lower = data.email.lower()
     existing = await db.users.find_one({"email": email_lower})
     if existing:
@@ -355,25 +437,44 @@ async def register(data: RegisterRequest, response: Response):
     access_token = create_access_token(user_id, email_lower, data.role)
     refresh_token = create_refresh_token(user_id)
     
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    secure_cookie = is_secure_request(request)
+    samesite_value = "none" if secure_cookie else "lax"
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
     
     return {"id": user_id, "email": email_lower, "name": data.name, "role": data.role}
 
 @api_router.post("/auth/login")
-async def login(data: LoginRequest, response: Response):
+async def login(data: LoginRequest, request: Request, response: Response):
     email_lower = data.email.lower()
+    # Use X-Forwarded-For header if available (for behind proxy/LB), else fallback to client.host
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_ip = forwarded_for.split(",")[0].strip() if forwarded_for else (request.client.host if request.client else "unknown")
+    # Also track by email-only to catch attacks from different IPs
+    identifier = f"{client_ip}:{email_lower}"
+    email_identifier = f"email:{email_lower}"
+    
+    if await check_brute_force(identifier) or await check_brute_force(email_identifier):
+        raise HTTPException(status_code=429, detail=f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes.")
+    
     user = await db.users.find_one({"email": email_lower})
     
     if not user or not verify_password(data.password, user["password_hash"]):
+        await record_failed_login(identifier)
+        await record_failed_login(email_identifier)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    await clear_login_attempts(identifier)
+    await clear_login_attempts(email_identifier)
     
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email_lower, user["role"])
     refresh_token = create_refresh_token(user_id)
     
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    secure_cookie = is_secure_request(request)
+    samesite_value = "none" if secure_cookie else "lax"
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
     
     return {
         "id": user_id,
@@ -483,12 +584,28 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     if user["role"] != "employee":
         raise HTTPException(status_code=403, detail="Only employees can create orders")
     
-    total_amount = sum(item.price * item.quantity for item in data.items)
+    # Server-side price validation - look up actual prices from DB
+    validated_items = []
+    total_amount = 0.0
+    for item in data.items:
+        menu_item = await db.menu_items.find_one({"_id": ObjectId(item.menu_item_id)})
+        if not menu_item:
+            raise HTTPException(status_code=400, detail=f"Menu item {item.menu_item_id} not found")
+        if not menu_item.get("is_available", False):
+            raise HTTPException(status_code=400, detail=f"Menu item {menu_item['name']} is not available")
+        actual_price = menu_item["price"]
+        validated_items.append({
+            "menu_item_id": item.menu_item_id,
+            "name": menu_item["name"],
+            "quantity": item.quantity,
+            "price": actual_price
+        })
+        total_amount += actual_price * item.quantity
     
     order_doc = {
         "user_id": user["id"],
         "vendor_id": data.vendor_id,
-        "items": [item.model_dump() for item in data.items],
+        "items": validated_items,
         "total_amount": total_amount,
         "status": "pending",
         "payment_status": "pending",
@@ -500,7 +617,11 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     result = await db.orders.insert_one(order_doc)
     order_id = str(result.inserted_id)
     
-    return {"id": order_id, "total_amount": total_amount, "status": "pending"}
+    # Generate QR code for pickup
+    qr_code = generate_pickup_qr(order_id)
+    await db.orders.update_one({"_id": result.inserted_id}, {"$set": {"pickup_qr": qr_code}})
+    
+    return {"id": order_id, "total_amount": total_amount, "status": "pending", "pickup_qr": qr_code}
 
 @api_router.get("/orders")
 async def get_orders(user: dict = Depends(get_current_user)):
@@ -510,18 +631,38 @@ async def get_orders(user: dict = Depends(get_current_user)):
     elif user["role"] == "vendor":
         query["vendor_id"] = user.get("vendor_id")
     
-    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1}).sort("created_at", -1).to_list(1000)
+    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1}).sort("created_at", -1).to_list(1000)
     for order in orders:
         order["id"] = str(order.pop("_id"))
     return orders
 
 @api_router.patch("/orders/{order_id}")
-async def update_order_status(order_id: str, status: str, user: dict = Depends(get_current_user)):
+async def update_order_status(order_id: str, status: OrderStatus, user: dict = Depends(get_current_user)):
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can update order status")
     
-    await db.orders.update_one({"_id": ObjectId(order_id), "vendor_id": user.get("vendor_id")}, {"$set": {"status": status}})
-    return {"message": "Order status updated"}
+    result = await db.orders.update_one(
+        {"_id": ObjectId(order_id), "vendor_id": user.get("vendor_id")},
+        {"$set": {"status": status.value}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found or not yours")
+    return {"message": "Order status updated", "status": status.value}
+
+@api_router.post("/orders/{order_id}/verify-pickup")
+async def verify_pickup(order_id: str, qr_code: str, user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can verify pickup")
+    
+    order = await db.orders.find_one({"_id": ObjectId(order_id), "vendor_id": user.get("vendor_id")})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if not verify_pickup_qr(qr_code, order_id):
+        raise HTTPException(status_code=400, detail="Invalid QR code")
+    
+    await db.orders.update_one({"_id": ObjectId(order_id)}, {"$set": {"status": "completed"}})
+    return {"message": "Pickup verified successfully", "order_id": order_id}
 
 # Payment Routes
 @api_router.post("/payments/checkout")
@@ -564,11 +705,18 @@ async def create_checkout_session(data: CheckoutRequest, request: Request, user:
 
 @api_router.get("/payments/status/{session_id}")
 async def get_checkout_status(session_id: str, user: dict = Depends(get_current_user)):
+    transaction = await db.payment_transactions.find_one({"session_id": session_id})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Payment session not found")
+    
+    # Authorization scope - only owner or vendor of the order can check
+    if transaction["user_id"] != user["id"] and user["role"] != "super_admin":
+        raise HTTPException(status_code=403, detail="Not authorized to view this payment")
+    
     stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
     status = await stripe_checkout.get_checkout_status(session_id)
     
-    transaction = await db.payment_transactions.find_one({"session_id": session_id})
-    if transaction and transaction["payment_status"] != "paid" and status.payment_status == "paid":
+    if transaction["payment_status"] != "paid" and status.payment_status == "paid":
         await db.payment_transactions.update_one(
             {"session_id": session_id},
             {"$set": {"payment_status": "paid"}}
@@ -675,6 +823,133 @@ async def get_corporate_analytics(user: dict = Depends(get_current_user)):
         "total_orders": total_orders,
         "total_spend": total_spend
     }
+
+# Review Routes
+@api_router.post("/reviews")
+async def create_review(data: ReviewCreate, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can write reviews")
+    
+    order = await db.orders.find_one({"_id": ObjectId(data.order_id), "user_id": user["id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.get("status") not in ["completed", "ready"]:
+        raise HTTPException(status_code=400, detail="Can only review completed orders")
+    
+    existing = await db.reviews.find_one({"order_id": data.order_id})
+    if existing:
+        raise HTTPException(status_code=400, detail="Review already exists for this order")
+    
+    review_doc = {
+        "user_id": user["id"],
+        "vendor_id": data.vendor_id,
+        "order_id": data.order_id,
+        "rating": data.rating,
+        "comment": data.comment,
+        "user_name": user.get("name", "Anonymous"),
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await db.reviews.insert_one(review_doc)
+    
+    # Update vendor average rating
+    pipeline = [
+        {"$match": {"vendor_id": data.vendor_id}},
+        {"$group": {"_id": None, "avg_rating": {"$avg": "$rating"}, "count": {"$sum": 1}}}
+    ]
+    rating_result = await db.reviews.aggregate(pipeline).to_list(1)
+    if rating_result:
+        await db.vendors.update_one(
+            {"_id": ObjectId(data.vendor_id)},
+            {"$set": {"rating": round(rating_result[0]["avg_rating"], 1)}}
+        )
+    
+    return {"id": str(result.inserted_id), "message": "Review submitted successfully"}
+
+@api_router.get("/reviews/vendor/{vendor_id}")
+async def get_vendor_reviews(vendor_id: str):
+    reviews = await db.reviews.find({"vendor_id": vendor_id}, {"_id": 1, "rating": 1, "comment": 1, "user_name": 1, "created_at": 1}).sort("created_at", -1).to_list(100)
+    for review in reviews:
+        review["id"] = str(review.pop("_id"))
+    return reviews
+
+# Preferences Routes
+@api_router.get("/preferences")
+async def get_preferences(user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access preferences")
+    
+    prefs = await db.preferences.find_one({"user_id": user["id"]})
+    if not prefs:
+        return {"dietary_preferences": [], "allergies": [], "favorite_cuisines": []}
+    
+    return {
+        "dietary_preferences": prefs.get("dietary_preferences", []),
+        "allergies": prefs.get("allergies", []),
+        "favorite_cuisines": prefs.get("favorite_cuisines", [])
+    }
+
+@api_router.post("/preferences")
+async def update_preferences(data: PreferencesUpdate, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can update preferences")
+    
+    update_doc = {
+        "user_id": user["id"],
+        "updated_at": datetime.now(timezone.utc)
+    }
+    if data.dietary_preferences is not None:
+        update_doc["dietary_preferences"] = data.dietary_preferences
+    if data.allergies is not None:
+        update_doc["allergies"] = data.allergies
+    if data.favorite_cuisines is not None:
+        update_doc["favorite_cuisines"] = data.favorite_cuisines
+    
+    await db.preferences.update_one(
+        {"user_id": user["id"]},
+        {"$set": update_doc},
+        upsert=True
+    )
+    return {"message": "Preferences updated successfully"}
+
+# Subscription Routes
+@api_router.post("/subscriptions")
+async def create_subscription(data: SubscriptionCreate, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can subscribe")
+    
+    start_date = datetime.now(timezone.utc)
+    end_date = start_date + timedelta(days=data.duration_days)
+    
+    sub_doc = {
+        "user_id": user["id"],
+        "vendor_id": data.vendor_id,
+        "plan_type": data.plan_type,
+        "meal_type": data.meal_type,
+        "duration_days": data.duration_days,
+        "start_date": start_date,
+        "end_date": end_date,
+        "status": "active",
+        "created_at": start_date
+    }
+    result = await db.subscriptions.insert_one(sub_doc)
+    return {"id": str(result.inserted_id), "message": "Subscription created", "end_date": end_date.isoformat()}
+
+@api_router.get("/subscriptions")
+async def get_subscriptions(user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can view subscriptions")
+    
+    subs = await db.subscriptions.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    for sub in subs:
+        sub["id"] = str(sub.pop("_id"))
+        if isinstance(sub.get("start_date"), datetime):
+            sub["start_date"] = sub["start_date"].isoformat()
+        if isinstance(sub.get("end_date"), datetime):
+            sub["end_date"] = sub["end_date"].isoformat()
+        if isinstance(sub.get("created_at"), datetime):
+            sub["created_at"] = sub["created_at"].isoformat()
+    return subs
 
 app.include_router(api_router)
 

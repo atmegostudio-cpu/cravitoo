@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Utensils, Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Building2, Users } from 'lucide-react';
+import { Utensils, Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Building2, Users, Heart, Calendar, QrCode } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -19,13 +19,16 @@ const Navbar = () => {
         return [
           { path: '/employee/dashboard', label: 'Dashboard', icon: Home },
           { path: '/employee/menu', label: 'Menu', icon: UtensilsCrossed },
-          { path: '/employee/orders', label: 'My Orders', icon: ShoppingBag },
+          { path: '/employee/orders', label: 'Orders', icon: ShoppingBag },
+          { path: '/employee/subscriptions', label: 'Subscriptions', icon: Calendar },
+          { path: '/employee/preferences', label: 'Preferences', icon: Heart },
         ];
       case 'vendor':
         return [
           { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
           { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
-          { path: '/vendor/menu', label: 'Menu Management', icon: UtensilsCrossed },
+          { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
+          { path: '/vendor/verify-pickup', label: 'Verify Pickup', icon: QrCode },
         ];
       case 'corporate_admin':
         return [

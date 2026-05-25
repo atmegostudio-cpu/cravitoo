@@ -9,9 +9,12 @@ import RegisterPage from './pages/RegisterPage';
 import EmployeeDashboard from './pages/employee/Dashboard';
 import EmployeeMenu from './pages/employee/Menu';
 import EmployeeOrders from './pages/employee/Orders';
+import EmployeePreferences from './pages/employee/Preferences';
+import EmployeeSubscriptions from './pages/employee/Subscriptions';
 import VendorDashboard from './pages/vendor/Dashboard';
 import VendorOrders from './pages/vendor/Orders';
 import VendorMenu from './pages/vendor/Menu';
+import VendorVerifyPickup from './pages/vendor/VerifyPickup';
 import CorporateAdminDashboard from './pages/admin/Dashboard';
 import SuperAdminDashboard from './pages/superadmin/Dashboard';
 
@@ -55,6 +58,16 @@ function AppRoutes() {
           <EmployeeOrders />
         </ProtectedRoute>
       } />
+      <Route path="/employee/preferences" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <EmployeePreferences />
+        </ProtectedRoute>
+      } />
+      <Route path="/employee/subscriptions" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <EmployeeSubscriptions />
+        </ProtectedRoute>
+      } />
       
       <Route path="/vendor/dashboard" element={
         <ProtectedRoute allowedRoles={['vendor']}>
@@ -69,6 +82,11 @@ function AppRoutes() {
       <Route path="/vendor/menu" element={
         <ProtectedRoute allowedRoles={['vendor']}>
           <VendorMenu />
+        </ProtectedRoute>
+      } />
+      <Route path="/vendor/verify-pickup" element={
+        <ProtectedRoute allowedRoles={['vendor']}>
+          <VendorVerifyPickup />
         </ProtectedRoute>
       } />
       
