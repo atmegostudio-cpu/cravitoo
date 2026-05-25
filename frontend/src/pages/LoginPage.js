@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Utensils, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+
+const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/lpcd18p4_29aaeaa4-ac4d-4437-8a14-0af8214d6039.png';
 
 const formatApiErrorDetail = (detail) => {
   if (detail == null) return 'Something went wrong. Please try again.';
@@ -55,9 +57,8 @@ const LoginPage = () => {
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center space-x-2 mb-6">
-            <Utensils className="h-10 w-10 text-primary" />
-            <span className="font-heading text-3xl font-semibold text-text-primary">Cravitoo</span>
+          <Link to="/" className="inline-flex items-center justify-center mb-6">
+            <img src={LOGO_URL} alt="Cravitoo" className="h-20 w-auto object-contain" />
           </Link>
           <h1 className="font-heading text-3xl font-semibold text-text-primary mb-2">Welcome Back</h1>
           <p className="text-text-secondary">Sign in to your account to continue</p>

@@ -2,14 +2,15 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Utensils, Building2, TrendingUp, Sparkles, ChevronRight } from 'lucide-react';
 
+const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/lpcd18p4_29aaeaa4-ac4d-4437-8a14-0af8214d6039.png';
+
 const LandingPage = () => {
   return (
     <div className="min-h-screen bg-background">
       <nav className="sticky top-0 z-50 glass border-b border-border-light px-6 py-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-2">
-            <Utensils className="h-8 w-8 text-primary" />
-            <span className="font-heading text-2xl font-semibold tracking-tight text-text-primary">Cravitoo</span>
+            <img src={LOGO_URL} alt="Cravitoo" className="h-12 w-auto object-contain" />
           </div>
           <div className="flex items-center space-x-4">
             <Link to="/login" data-testid="nav-login-btn" className="text-text-secondary hover:text-text-primary transition-all duration-200 font-medium">Login</Link>
@@ -146,11 +147,10 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-center flex-wrap gap-8">
             <div className="flex items-center space-x-2">
-              <Utensils className="h-6 w-6 text-primary" />
-              <span className="font-heading text-xl font-semibold">Cravitoo</span>
+              <img src={LOGO_URL} alt="Cravitoo" className="h-10 w-auto object-contain bg-white p-1 rounded" />
             </div>
             <p className="text-gray-400 text-sm">
-              © 2026 Cravitoo. Transforming corporate food experiences.
+              © 2026 Cravitoo. Good Food. Easy Order. Happy Team.
             </p>
           </div>
         </div>

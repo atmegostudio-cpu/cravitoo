@@ -2,7 +2,9 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Utensils, Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Building2, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays } from 'lucide-react';
+
+const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/lpcd18p4_29aaeaa4-ac4d-4437-8a14-0af8214d6039.png';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -53,8 +55,7 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
         <div className="flex items-center space-x-6 flex-wrap">
           <Link to="/" className="flex items-center space-x-2 flex-shrink-0">
-            <Utensils className="h-7 w-7 text-primary" />
-            <span className="font-heading text-xl font-semibold text-text-primary">Cravitoo</span>
+            <img src={LOGO_URL} alt="Cravitoo" className="h-10 w-auto object-contain" />
           </Link>
           
           <div className="hidden md:flex items-center space-x-1 flex-wrap">
