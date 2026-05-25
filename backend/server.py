@@ -487,7 +487,7 @@ async def register(data: RegisterRequest, request: Request, response: Response):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
     
-    return {"id": user_id, "email": email_lower, "name": data.name, "role": data.role}
+    return {"id": user_id, "email": email_lower, "name": data.name, "role": data.role, "access_token": access_token, "refresh_token": refresh_token}
 
 @api_router.post("/auth/login")
 async def login(data: LoginRequest, request: Request, response: Response):
@@ -527,7 +527,9 @@ async def login(data: LoginRequest, request: Request, response: Response):
         "name": user["name"],
         "role": user["role"],
         "company_id": user.get("company_id"),
-        "vendor_id": user.get("vendor_id")
+        "vendor_id": user.get("vendor_id"),
+        "access_token": access_token,
+        "refresh_token": refresh_token
     }
 
 @api_router.get("/auth/me")

@@ -115,6 +115,33 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - Iteration 3: 43/43 backend tests passed (15 new + 28 regression)
 - All frontend pages verified end-to-end via Playwright
 
+## Mobile App (Iteration 4 - React Native + Expo)
+
+Built a native iOS/Android mobile app at `/app/mobile/` using Expo SDK 52:
+
+**Screens** (Employee role only):
+- Login & Register (with secure token storage via expo-secure-store)
+- Home (AI recommendations, vendor list, notifications bell)
+- Menu (vendor tabs, multi-vendor cart)
+- Cart (quantity controls, place order)
+- Orders (list with status badges)
+- Order Detail (with QR code for pickup)
+- Loyalty (tier card, points, stats)
+- Notifications (in-app, polled)
+- Profile (sign out)
+
+**Tech**: React Native 0.76, React Navigation 7 (Stack + Tabs), Axios, expo-secure-store, expo-linear-gradient, @expo/vector-icons
+
+**Backend update**: `/api/auth/login` and `/api/auth/register` now return `access_token` + `refresh_token` in response body (mobile uses Bearer auth). Web continues to use httpOnly cookies.
+
+**How to test**:
+1. Install Expo Go on phone (iOS App Store / Google Play)
+2. Run `cd /app/mobile && yarn start`
+3. Scan QR with Camera (iOS) or Expo Go (Android)
+4. Login: `employee@techcorp.com` / `employee123`
+
+**Build for stores**: `eas build --platform android|ios` (requires Expo account + Apple Developer / Google Play account)
+
 ## Prioritized Backlog (Remaining)
 
 ### P0 (Critical for production)

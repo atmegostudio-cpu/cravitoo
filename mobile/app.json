@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Cravitoo",
+    "slug": "cravitoo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cravitoo.app",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#FF5A1F"
+      },
+      "package": "com.cravitoo.app",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "apiUrl": "https://corporate-feast.preview.emergentagent.com"
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}
