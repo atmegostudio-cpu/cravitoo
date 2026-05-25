@@ -62,7 +62,7 @@ async def get_current_user(request: Request) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        user = await db.users.find_one({"_id": safe_objectid(payload["sub"], "User")})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         user["_id"] = str(user["_id"])
@@ -210,6 +210,13 @@ class OrderStatus(str, Enum):
     ready = "ready"
     completed = "completed"
     cancelled = "cancelled"
+
+# Helper - safe ObjectId parsing
+def safe_objectid(id_str: str, entity_name: str = "Resource") -> ObjectId:
+    try:
+        return ObjectId(id_str)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"{entity_name} not found")
 
 # Helper - detect if request is HTTPS
 def is_secure_request(request: Request) -> bool:
@@ -543,7 +550,7 @@ async def get_vendors():
 
 @api_router.get("/vendors/{vendor_id}")
 async def get_vendor(vendor_id: str):
-    vendor = await db.vendors.find_one({"_id": ObjectId(vendor_id)})
+    vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     vendor["id"] = str(vendor.pop("_id"))
@@ -575,7 +582,7 @@ async def update_menu_item(item_id: str, data: Dict[str, Any], user: dict = Depe
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can update menu items")
     
-    await db.menu_items.update_one({"_id": ObjectId(item_id), "vendor_id": user.get("vendor_id")}, {"$set": data})
+    await db.menu_items.update_one({"_id": safe_objectid(item_id, "Menu item"), "vendor_id": user.get("vendor_id")}, {"$set": data})
     return {"message": "Menu item updated"}
 
 # Order Routes
@@ -588,7 +595,7 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     validated_items = []
     total_amount = 0.0
     for item in data.items:
-        menu_item = await db.menu_items.find_one({"_id": ObjectId(item.menu_item_id)})
+        menu_item = await db.menu_items.find_one({"_id": safe_objectid(item.menu_item_id, "Menu item")})
         if not menu_item:
             raise HTTPException(status_code=400, detail=f"Menu item {item.menu_item_id} not found")
         if not menu_item.get("is_available", False):
@@ -642,7 +649,7 @@ async def update_order_status(order_id: str, status: OrderStatus, user: dict = D
         raise HTTPException(status_code=403, detail="Only vendors can update order status")
     
     result = await db.orders.update_one(
-        {"_id": ObjectId(order_id), "vendor_id": user.get("vendor_id")},
+        {"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")},
         {"$set": {"status": status.value}}
     )
     if result.matched_count == 0:
@@ -654,20 +661,20 @@ async def verify_pickup(order_id: str, qr_code: str, user: dict = Depends(get_cu
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can verify pickup")
     
-    order = await db.orders.find_one({"_id": ObjectId(order_id), "vendor_id": user.get("vendor_id")})
+    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
     if not verify_pickup_qr(qr_code, order_id):
         raise HTTPException(status_code=400, detail="Invalid QR code")
     
-    await db.orders.update_one({"_id": ObjectId(order_id)}, {"$set": {"status": "completed"}})
+    await db.orders.update_one({"_id": safe_objectid(order_id, "Order")}, {"$set": {"status": "completed"}})
     return {"message": "Pickup verified successfully", "order_id": order_id}
 
 # Payment Routes
 @api_router.post("/payments/checkout")
 async def create_checkout_session(data: CheckoutRequest, request: Request, user: dict = Depends(get_current_user)):
-    order = await db.orders.find_one({"_id": ObjectId(data.order_id)})
+    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order")})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
@@ -830,11 +837,11 @@ async def create_review(data: ReviewCreate, user: dict = Depends(get_current_use
     if user["role"] != "employee":
         raise HTTPException(status_code=403, detail="Only employees can write reviews")
     
-    order = await db.orders.find_one({"_id": ObjectId(data.order_id), "user_id": user["id"]})
+    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    if order.get("status") not in ["completed", "ready"]:
+    if order.get("status") != "completed":
         raise HTTPException(status_code=400, detail="Can only review completed orders")
     
     existing = await db.reviews.find_one({"order_id": data.order_id})
@@ -860,7 +867,7 @@ async def create_review(data: ReviewCreate, user: dict = Depends(get_current_use
     rating_result = await db.reviews.aggregate(pipeline).to_list(1)
     if rating_result:
         await db.vendors.update_one(
-            {"_id": ObjectId(data.vendor_id)},
+            {"_id": safe_objectid(data.vendor_id, "Vendor")},
             {"$set": {"rating": round(rating_result[0]["avg_rating"], 1)}}
         )
     
