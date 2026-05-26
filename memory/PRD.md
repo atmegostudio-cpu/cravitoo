@@ -46,7 +46,7 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - JWT Bearer auth via expo-secure-store
 - APK builds via EAS
 
-### Iteration 5: Real-time + Mobile Vendor + Razorpay ✅ (CURRENT)
+### Iteration 5: Real-time + Mobile Vendor + Razorpay ✅
 - **WebSockets**:
   - Backend `ConnectionManager` with user_id and vendor_id rooms
   - `/ws/orders` for employees, `/ws/vendor` for vendors
@@ -63,6 +63,31 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - 5 vendor screens: Dashboard, Orders (with filter chips + status transition), Menu (CRUD with modal), QR Scanner (expo-camera), AI Insights
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
+
+### Iteration 6: Master Admin & Site Admin (CURRENT — Feb 2026) ✅
+- **Backend** (85/85 tests passing, hardened authz):
+  - `/api/sites/*` CRUD (master_admin / site_admin scoped)
+  - `/api/sites/{id}/vendors` mapping management
+  - `/api/sites/{id}/schedule` meal periods (breakfast/lunch/snacks/dinner) with time windows
+  - `/api/sites/{id}/menu` site-scoped menu, `/api/menu/{id}/site-control` per-item toggles (is_available / price / show_price / meal_periods)
+  - `/api/sites/{id}/menu/upload-excel` openpyxl-powered bulk upload (5 MB max, validates required columns)
+  - `/api/admin/site-admins`, `/api/admin/super-admins`, `/api/admin/master-admins` (master-only; master-email constraint `@cravitoo.com`)
+  - `/api/admin/admins` list/delete
+  - `/api/reports/master-dashboard` platform-wide KPIs + top_sites + top_vendors
+  - `/api/reports/site/{id}` site-scoped KPIs + per-vendor revenue
+  - `/api/employee/my-site` returns site + vendors + meal_schedule + current_meal_period + ordering_modes
+  - Validation hardening: site_id validated in admin creation, status field master-only
+- **Web Frontend**:
+  - `/master/dashboard` — platform KPIs, top sites & vendors
+  - `/master/sites` — list/create sites (with ordering modes)
+  - `/master/sites/:id` — vendors / menu / schedule / settings tabs (also reusable for `/site-admin/site/:id`)
+  - `/master/admins` — list/create/delete site/super/master admins
+  - `/site-admin/dashboard` — single-site overview + KPIs + per-vendor revenue
+  - Excel upload UI for menu items
+- **Mobile (Partner App)**:
+  - New role routing: vendor → vendor tabs; master_admin → MasterAdminTabs; site_admin → AdminDashboard + SiteManagement
+  - 4 new screens: `AdminDashboard`, `AdminSites`, `AdminAdmins`, `SiteManagement` (with Vendors/Menu/Schedule/Settings tabs)
+  - Menu controls: in-row toggle for availability / show_price + inline price editor
 
 ## API Endpoints (Comprehensive)
 

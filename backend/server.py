@@ -1953,7 +1953,10 @@ async def update_site(site_id: str, updates: Dict[str, Any], user: dict = Depend
     if not can_access_site(user, site_id):
         raise HTTPException(status_code=403, detail="Access denied")
     allowed = {"name", "address", "city", "contact_email", "contact_phone",
-               "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid", "status"}
+               "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
+    # `status` field can only be changed by master_admin
+    if is_master_admin(user):
+        allowed = allowed | {"status"}
     cleaned = {k: v for k, v in updates.items() if k in allowed}
     if not cleaned:
         raise HTTPException(status_code=400, detail="No valid fields to update")
@@ -2157,7 +2160,10 @@ async def create_site_admin(data: SiteAdminCreate, user: dict = Depends(get_curr
     email_lower = data.email.lower()
     if await db.users.find_one({"email": email_lower}):
         raise HTTPException(status_code=400, detail="Email already registered")
-    await db.sites.find_one({"_id": safe_objectid(data.site_id, "Site")})  # validates
+    # Validate site exists
+    site = await db.sites.find_one({"_id": safe_objectid(data.site_id, "Site")})
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
     result = await db.users.insert_one({
         "email": email_lower,
         "password_hash": hash_password(data.password),
@@ -2175,6 +2181,12 @@ async def create_super_admin(data: SuperAdminCreate, user: dict = Depends(get_cu
     email_lower = data.email.lower()
     if await db.users.find_one({"email": email_lower}):
         raise HTTPException(status_code=400, detail="Email already registered")
+    # Validate assigned_sites exist
+    if data.assigned_sites:
+        site_oids = [safe_objectid(sid, "Site") for sid in data.assigned_sites]
+        existing = await db.sites.count_documents({"_id": {"$in": site_oids}})
+        if existing != len(data.assigned_sites):
+            raise HTTPException(status_code=404, detail="One or more assigned_sites not found")
     result = await db.users.insert_one({
         "email": email_lower,
         "password_hash": hash_password(data.password),
