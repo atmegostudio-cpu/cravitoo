@@ -1,0 +1,452 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { useParams } from 'react-router-dom';
+import Navbar from '../../components/Navbar';
+import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet } from 'lucide-react';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
+
+const SiteDetail = () => {
+  const { siteId } = useParams();
+  const [site, setSite] = useState(null);
+  const [tab, setTab] = useState('vendors');
+  const [loading, setLoading] = useState(true);
+
+  const reload = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/sites/${siteId}`, { withCredentials: true });
+      setSite(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [siteId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </>
+    );
+  }
+
+  if (!site) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <p className="text-text-secondary">Site not found</p>
+        </div>
+      </>
+    );
+  }
+
+  const tabs = [
+    { key: 'vendors', label: 'Vendors', icon: Store },
+    { key: 'menu', label: 'Menu', icon: UtensilsCrossed },
+    { key: 'schedule', label: 'Schedule', icon: Calendar },
+    { key: 'settings', label: 'Settings', icon: Settings },
+  ];
+
+  return (
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-background">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-start gap-4 mb-8 flex-wrap">
+            <div className="bg-primary-light rounded-2xl p-4">
+              <Building2 className="h-8 w-8 text-primary" />
+            </div>
+            <div className="flex-1">
+              <h1 className="font-heading text-3xl sm:text-4xl tracking-tighter font-semibold text-text-primary">{site.name}</h1>
+              <p className="text-text-secondary mt-1">{site.address}, {site.city}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 border-b border-border-light mb-6 overflow-x-auto">
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  data-testid={`tab-${t.key}`}
+                  onClick={() => setTab(t.key)}
+                  className={`flex items-center gap-2 px-4 py-3 font-medium text-sm transition-all border-b-2 ${active ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                >
+                  <Icon className="h-4 w-4" /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {tab === 'vendors' && <VendorsTab siteId={siteId} />}
+          {tab === 'menu' && <MenuTab siteId={siteId} />}
+          {tab === 'schedule' && <ScheduleTab siteId={siteId} />}
+          {tab === 'settings' && <SettingsTab site={site} reload={reload} />}
+        </div>
+      </div>
+    </>
+  );
+};
+
+const VendorsTab = ({ siteId }) => {
+  const [mapped, setMapped] = useState([]);
+  const [allVendors, setAllVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [m, all] = await Promise.all([
+        axios.get(`${API}/sites/${siteId}/vendors`, { withCredentials: true }),
+        axios.get(`${API}/vendors`, { withCredentials: true }),
+      ]);
+      setMapped(m.data);
+      setAllVendors(all.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addVendor = async (vendorId) => {
+    setAdding(true);
+    try {
+      await axios.post(`${API}/sites/${siteId}/vendors`, { vendor_id: vendorId, site_id: siteId }, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+    finally { setAdding(false); }
+  };
+
+  const removeVendor = async (vendorId) => {
+    if (!window.confirm('Remove this vendor from this site?')) return;
+    try {
+      await axios.delete(`${API}/sites/${siteId}/vendors/${vendorId}`, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  if (loading) return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />;
+
+  const mappedIds = new Set(mapped.map((v) => v.id));
+  const unmapped = allVendors.filter((v) => !mappedIds.has(v.id));
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-xl font-medium mb-4">Active Vendors ({mapped.length})</h3>
+        {mapped.length === 0 && <p className="text-text-muted text-sm">No vendors mapped to this site yet.</p>}
+        <div className="space-y-2">
+          {mapped.map((v) => (
+            <div key={v.id} data-testid={`mapped-vendor-${v.id}`} className="flex items-center justify-between p-3 bg-background rounded-lg">
+              <div>
+                <p className="font-medium text-text-primary text-sm">{v.name}</p>
+                <p className="text-text-muted text-xs">{v.cuisine_type}</p>
+              </div>
+              <button data-testid={`unmap-vendor-${v.id}`} onClick={() => removeVendor(v.id)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-xl font-medium mb-4">Add Vendors</h3>
+        {unmapped.length === 0 && <p className="text-text-muted text-sm">All available vendors are already mapped.</p>}
+        <div className="space-y-2">
+          {unmapped.map((v) => (
+            <div key={v.id} className="flex items-center justify-between p-3 bg-background rounded-lg">
+              <div>
+                <p className="font-medium text-text-primary text-sm">{v.name}</p>
+                <p className="text-text-muted text-xs">{v.cuisine_type}</p>
+              </div>
+              <button data-testid={`add-vendor-${v.id}`} onClick={() => addVendor(v.id)} disabled={adding} className="bg-primary text-white px-3 py-1.5 rounded-lg text-sm disabled:opacity-50 hover:bg-primary-hover flex items-center gap-1">
+                <Plus className="h-3 w-3" /> Add
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MenuTab = ({ siteId }) => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [vendors, setVendors] = useState([]);
+  const [selectedVendor, setSelectedVendor] = useState('');
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [m, v] = await Promise.all([
+        axios.get(`${API}/sites/${siteId}/menu`, { withCredentials: true }),
+        axios.get(`${API}/sites/${siteId}/vendors`, { withCredentials: true }),
+      ]);
+      setItems(m.data);
+      setVendors(v.data);
+      if (v.data.length > 0 && !selectedVendor) setSelectedVendor(v.data[0].id);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [siteId, selectedVendor]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleAvailable = async (item) => {
+    try {
+      await axios.patch(`${API}/menu/${item.id}/site-control`, { is_available: !item.is_available }, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const updatePrice = async (item, newPrice) => {
+    const price = parseFloat(newPrice);
+    if (isNaN(price) || price < 0) return;
+    try {
+      await axios.patch(`${API}/menu/${item.id}/site-control`, { price }, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const toggleShowPrice = async (item) => {
+    try {
+      await axios.patch(`${API}/menu/${item.id}/site-control`, { show_price: !item.show_price }, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const uploadExcel = async (e) => {
+    e.preventDefault();
+    if (!file || !selectedVendor) {
+      setUploadMsg('Please choose a vendor and Excel file');
+      return;
+    }
+    setUploading(true);
+    setUploadMsg('');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const { data } = await axios.post(`${API}/sites/${siteId}/menu/upload-excel?vendor_id=${selectedVendor}`, fd, {
+        withCredentials: true,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setUploadMsg(`✓ Inserted ${data.inserted} items${data.errors?.length ? ` (${data.errors.length} errors)` : ''}`);
+      setFile(null);
+      await load();
+    } catch (e) {
+      setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Upload failed'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (loading) return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-xl font-medium mb-3 flex items-center gap-2">
+          <FileSpreadsheet className="h-5 w-5 text-primary" /> Upload Menu via Excel
+        </h3>
+        <p className="text-text-muted text-xs mb-4">Required columns: <code>name, description, category, price</code>. Optional: <code>is_vegetarian, image_url, meal_periods</code> (comma-separated).</p>
+        <form onSubmit={uploadExcel} className="flex flex-col md:flex-row gap-3">
+          <select
+            data-testid="upload-vendor-select"
+            value={selectedVendor}
+            onChange={(e) => setSelectedVendor(e.target.value)}
+            className="px-3 py-2 border border-border-light rounded-lg flex-1"
+          >
+            <option value="">-- Select vendor --</option>
+            {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <input
+            data-testid="upload-excel-file"
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => setFile(e.target.files[0])}
+            className="px-3 py-2 border border-border-light rounded-lg flex-1"
+          />
+          <button data-testid="upload-excel-submit" type="submit" disabled={uploading || !file || !selectedVendor} className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center gap-2">
+            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
+          </button>
+        </form>
+        {uploadMsg && <p className={`mt-3 text-sm ${uploadMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>{uploadMsg}</p>}
+      </div>
+
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-xl font-medium mb-4">Menu Items ({items.length})</h3>
+        {items.length === 0 && <p className="text-text-muted text-sm">No menu items yet. Upload via Excel or have vendors add them.</p>}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-xs text-text-muted uppercase border-b border-border-light">
+                <th className="pb-2">Name</th>
+                <th className="pb-2">Category</th>
+                <th className="pb-2">Price (₹)</th>
+                <th className="pb-2">Show Price</th>
+                <th className="pb-2">Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id} data-testid={`menu-row-${it.id}`} className="border-b border-border-light/50">
+                  <td className="py-3">
+                    <div>
+                      <p className="font-medium text-text-primary text-sm">{it.name}</p>
+                      <p className="text-text-muted text-xs">{it.is_vegetarian ? '🟢 Veg' : '🔴 Non-veg'} · {(it.meal_periods || []).join(', ') || 'any'}</p>
+                    </div>
+                  </td>
+                  <td className="py-3 text-sm text-text-secondary">{it.category}</td>
+                  <td className="py-3">
+                    <input
+                      data-testid={`price-input-${it.id}`}
+                      type="number"
+                      defaultValue={it.price}
+                      onBlur={(e) => e.target.value != it.price && updatePrice(it, e.target.value)}
+                      className="w-20 px-2 py-1 border border-border-light rounded text-sm"
+                      step="0.01"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <button data-testid={`toggle-show-price-${it.id}`} onClick={() => toggleShowPrice(it)}>
+                      {it.show_price ? <ToggleRight className="h-6 w-6 text-emerald-500" /> : <ToggleLeft className="h-6 w-6 text-text-muted" />}
+                    </button>
+                  </td>
+                  <td className="py-3">
+                    <button data-testid={`toggle-available-${it.id}`} onClick={() => toggleAvailable(it)}>
+                      {it.is_available ? <ToggleRight className="h-6 w-6 text-emerald-500" /> : <ToggleLeft className="h-6 w-6 text-text-muted" />}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ScheduleTab = ({ siteId }) => {
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API}/sites/${siteId}/schedule`, { withCredentials: true });
+        const sched = data.schedules || [];
+        const filled = MEAL_PERIODS.map((p) => {
+          const existing = sched.find((s) => s.meal_period === p);
+          return existing || { meal_period: p, start_time: '12:00', end_time: '14:00', enabled: false };
+        });
+        setSchedules(filled);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, [siteId]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/sites/${siteId}/schedule`, { schedules: schedules.filter((s) => s.enabled || s.start_time !== '12:00') }, { withCredentials: true });
+      alert('Schedule saved');
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const updateRow = (idx, key, val) => {
+    const next = [...schedules];
+    next[idx] = { ...next[idx], [key]: val };
+    setSchedules(next);
+  };
+
+  if (loading) return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />;
+
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 max-w-2xl">
+      <h3 className="font-heading text-xl font-medium mb-2">Meal Schedule</h3>
+      <p className="text-text-muted text-sm mb-6">Set when each meal type is orderable at this site.</p>
+      <div className="space-y-3">
+        {schedules.map((s, i) => (
+          <div key={s.meal_period} data-testid={`schedule-row-${s.meal_period}`} className="grid grid-cols-4 gap-3 items-center">
+            <label className="flex items-center gap-2 capitalize">
+              <input type="checkbox" data-testid={`schedule-enable-${s.meal_period}`} checked={s.enabled} onChange={(e) => updateRow(i, 'enabled', e.target.checked)} />
+              {s.meal_period}
+            </label>
+            <input type="time" value={s.start_time} onChange={(e) => updateRow(i, 'start_time', e.target.value)} className="px-2 py-1.5 border border-border-light rounded-lg text-sm" disabled={!s.enabled} />
+            <span className="text-text-muted text-center text-sm">to</span>
+            <input type="time" value={s.end_time} onChange={(e) => updateRow(i, 'end_time', e.target.value)} className="px-2 py-1.5 border border-border-light rounded-lg text-sm" disabled={!s.enabled} />
+          </div>
+        ))}
+      </div>
+      <button data-testid="save-schedule-btn" onClick={save} disabled={saving} className="mt-6 px-5 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">
+        {saving ? 'Saving...' : 'Save Schedule'}
+      </button>
+    </div>
+  );
+};
+
+const SettingsTab = ({ site, reload }) => {
+  const [form, setForm] = useState({
+    allow_pre_order: site.allow_pre_order,
+    allow_cash_carry: site.allow_cash_carry,
+    allow_company_paid: site.allow_company_paid,
+    allow_employee_paid: site.allow_employee_paid,
+    status: site.status || 'active',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.patch(`${API}/sites/${site.id}`, form, { withCredentials: true });
+      await reload();
+      alert('Settings updated');
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 max-w-xl">
+      <h3 className="font-heading text-xl font-medium mb-6">Site Settings</h3>
+      <div className="space-y-3 mb-6">
+        {[
+          { key: 'allow_pre_order', label: 'Allow Pre-order', desc: 'Employees can pre-book meals' },
+          { key: 'allow_cash_carry', label: 'Allow Cash & Carry', desc: 'Walk-in payment at counter' },
+          { key: 'allow_company_paid', label: 'Allow Company-paid', desc: 'Order billed to corporate account' },
+          { key: 'allow_employee_paid', label: 'Allow Employee-paid', desc: 'Self-payment via Razorpay/UPI' },
+        ].map((opt) => (
+          <label key={opt.key} className="flex items-start justify-between gap-3 p-3 border border-border-light rounded-lg cursor-pointer hover:border-primary/40">
+            <div>
+              <p className="font-medium text-text-primary text-sm">{opt.label}</p>
+              <p className="text-text-muted text-xs">{opt.desc}</p>
+            </div>
+            <input data-testid={`toggle-${opt.key}`} type="checkbox" checked={form[opt.key]} onChange={(e) => setForm({ ...form, [opt.key]: e.target.checked })} className="mt-1" />
+          </label>
+        ))}
+      </div>
+      <button data-testid="save-settings-btn" onClick={save} disabled={saving} className="px-5 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">
+        {saving ? 'Saving...' : 'Save Settings'}
+      </button>
+    </div>
+  );
+};
+
+export default SiteDetail;

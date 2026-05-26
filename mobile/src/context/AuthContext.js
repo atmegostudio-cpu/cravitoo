@@ -9,6 +9,11 @@ const APP_VARIANT = Constants.expoConfig?.extra?.appVariant || 'customer';
 
 export const isPartnerApp = () => APP_VARIANT === 'vendor';
 
+export const isMasterAdmin = (user) => user?.role === 'master_admin';
+export const isSiteAdmin = (user) => user?.role === 'site_admin';
+export const isVendorRole = (user) => user?.role === 'vendor';
+export const isPartnerRole = (user) => ['vendor', 'master_admin', 'site_admin'].includes(user?.role);
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

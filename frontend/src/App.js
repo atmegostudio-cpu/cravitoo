@@ -26,6 +26,13 @@ import CorporateAdminEmployees from './pages/admin/Employees';
 
 import SuperAdminDashboard from './pages/superadmin/Dashboard';
 
+import MasterDashboard from './pages/master/Dashboard';
+import MasterSites from './pages/master/Sites';
+import MasterAdmins from './pages/master/Admins';
+import SiteDetail from './pages/master/SiteDetail';
+
+import SiteAdminDashboard from './pages/siteadmin/Dashboard';
+
 import EventCatering from './pages/shared/EventCatering';
 
 function AppRoutes() {
@@ -42,6 +49,10 @@ function AppRoutes() {
         return '/admin/dashboard';
       case 'super_admin':
         return '/super-admin/dashboard';
+      case 'master_admin':
+        return '/master/dashboard';
+      case 'site_admin':
+        return '/site-admin/dashboard';
       default:
         return '/';
     }
@@ -143,6 +154,40 @@ function AppRoutes() {
       <Route path="/super-admin/dashboard" element={
         <ProtectedRoute allowedRoles={['super_admin']}>
           <SuperAdminDashboard />
+        </ProtectedRoute>
+      } />
+
+      {/* Master Admin Routes */}
+      <Route path="/master/dashboard" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/sites" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterSites />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/sites/:siteId" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'super_admin']}>
+          <SiteDetail />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/admins" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterAdmins />
+        </ProtectedRoute>
+      } />
+
+      {/* Site Admin Routes */}
+      <Route path="/site-admin/dashboard" element={
+        <ProtectedRoute allowedRoles={['site_admin']}>
+          <SiteAdminDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/site-admin/site/:siteId" element={
+        <ProtectedRoute allowedRoles={['site_admin', 'master_admin', 'super_admin']}>
+          <SiteDetail />
         </ProtectedRoute>
       } />
     </Routes>

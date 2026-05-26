@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 4 — Master Admin / Site Admin / multi-site backend endpoints. 42/42 NEW tests pass in /app/backend/tests/test_master_admin_sites.py and FULL regression suite is 85/85 across backend_test.py (15), test_new_features.py (13), test_iter3_features.py (15), test_master_admin_sites.py (42). Coverage: login (all 4 roles), sites CRUD, role-scoped /sites listing (master sees all; site_admin sees own; vendor sees mapped only), single-site GET access boundaries, PATCH site (toggles allow_pre_order/cash_carry verified), vendor-site mapping (create/duplicate-400/list/unmap), meal schedule GET defaults + PUT update + GET verification, Site Menu GET (master/site/employee/vendor), Excel upload (.xlsx generated via openpyxl, 6 rows inserted, missing-columns rejected w/ 400), PATCH /menu/{id}/site-control (is_available/price/show_price persisted; cross-site site_admin gets 403), Admin Management (create site_admin/super_admin/master_admin, master email constraint enforced w/ 400, non-master 403, seed admin delete blocked w/ 400, site_admin delete-attempt 403, list + cleanup), Reports (master-dashboard contains all 9 required keys, site report contains all 5 keys, role 403s verified), /employee/my-site (returns site+vendors+meal_schedule+current_meal_period+ordering_modes, non-employees 403), AuthZ boundaries, legacy regression (vendor /menu/vendor/all + /orders).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/site-admins", "issue": "Does not validate that site_id exists (find_one result is ignored). Submitting a bogus site_id silently creates a dangling site_admin user."},
+      {"endpoint": "POST /api/admin/super-admins", "issue": "No validation that assigned_sites IDs actually exist."},
+      {"endpoint": "PATCH /api/sites/{id}", "issue": "Allows site_admin/super_admin to also patch (because can_access_site returns true for owners). Intended behavior per spec is master/site_admin only — verify and lock down `status` field to master only (a site_admin could mark its own site inactive)."},
+      {"endpoint": "DELETE /api/sites/{id}/vendors/{vendor_id}", "issue": "Returns 200 even when no mapping existed (no 404); idempotent but masks bad requests."},
+      {"endpoint": "GET /api/sites", "issue": "Employee role returns the employee's site object — review_request expected 403 or filtered; current impl returns filtered list (acceptable, but doc the contract)."},
+      {"endpoint": "POST /api/sites/{id}/menu/upload-excel", "issue": "vendor_id query param is not validated to actually belong to a mapped vendor; any vendor_id string is accepted."},
+      {"endpoint": "GET /api/sites/{id}", "issue": "can_access_site() returns False for an employee at that site unless an `or` branch in the route handler covers it; relies on the route-level OR. Fine, but the helper itself is misleading."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_master_admin_sites.py",
+    "/app/backend/tests/test_iter3_features.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iter4.xml",
+    "/app/test_reports/pytest/pytest_all_iter4.xml"
+  ],
+  "action_items": [
+    "Validate site_id in POST /admin/site-admins (currently fetched but result ignored).",
+    "Validate assigned_sites IDs in POST /admin/super-admins.",
+    "Lock `status` field in PATCH /sites/{id} to master_admin only (site_admin should not be able to deactivate their own site).",
+    "Validate that vendor_id in upload-excel query is actually mapped to the site (defense in depth).",
+    "Optional: split server.py (now ~2450 lines) into routers for /sites, /admin, /reports, /menu — code maintainability suffering."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2448 lines — long-overdue split into routers (auth, sites, admin, menu, reports, orders).",
+    "POST /admin/site-admins line 2160: `await db.sites.find_one(...)` result is discarded, comment claims 'validates' but it doesn't raise if site is None.",
+    "current_meal_period() uses now.astimezone() without timezone arg; on server with UTC tz this stays UTC even though business intent is IST — possible bug for meal-period-aware features.",
+    "Excel upload accepts any vendor_id string; no check vs db.vendors or vendor-site mapping.",
+    "GET /sites/{id} 403 logic mixes can_access_site with an inline employee check (line 1941). Move employee-of-site into can_access_site for consistency.",
+    "DELETE /sites/{id}/vendors/{vendor_id} should return 404 if the mapping doesn't exist (current impl always 200)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_master_admin_sites.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {"backend": "100% (85/85 — 42 new + 15 iter1 + 13 iter2 + 15 iter3)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "Used /app/memory/test_credentials.md (master/site/vendor/employee). Note: NOTE — the seed master_admin (admin@cravitoo.com) is referred to as super_admin in /app/backend/tests/backend_test.py history; actual role is master_admin. Test creds file is correct.",
+  "seed_data_creation": "Created during run (most cleaned up): 1 TEST_Site_xxxxxx site (still present, kept for future runs as no DELETE /sites endpoint exists), 6 TEST_Dish_* menu items at that site (deleted in cleanup phase via DELETE /menu/{id}), 1 test site_admin user (created+deleted), 1 test super_admin user (created+deleted), 1 test master_admin user @cravitoo.com (created+deleted). Vendor-site mapping created, then unmapped during authZ test, then re-mapped, then unmapped again at the end. NOTE: TEST_Site cannot be deleted via API — no DELETE /sites/{id} endpoint exists.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` for the full 85-test regression. The new master/site admin tests are in test_master_admin_sites.py; they create a fresh TEST_Site_<uuid> each run (since no DELETE /sites endpoint exists, expect TEST_Site_* sites to accumulate in DB over runs — could add cleanup if a DELETE /sites endpoint is added). Login response shape is flat (access_token + user fields at top level) not nested; the helper in test_master_admin_sites.py reshapes it.",
+  "rca_of_the_issue": "N/A — all functional tests pass. Two action items flagged: site_admins endpoint doesn't enforce site_id existence; PATCH /sites allows status changes by site_admin. Both are AuthZ / input-validation gaps, not functional bugs."
+}

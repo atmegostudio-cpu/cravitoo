@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown } from 'lucide-react';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/lpcd18p4_29aaeaa4-ac4d-4437-8a14-0af8214d6039.png';
 
@@ -44,6 +44,16 @@ const Navbar = () => {
       case 'super_admin':
         return [
           { path: '/super-admin/dashboard', label: 'Dashboard', icon: Home },
+        ];
+      case 'master_admin':
+        return [
+          { path: '/master/dashboard', label: 'Dashboard', icon: Crown },
+          { path: '/master/sites', label: 'Sites', icon: Building2 },
+          { path: '/master/admins', label: 'Admins', icon: ShieldCheck },
+        ];
+      case 'site_admin':
+        return [
+          { path: '/site-admin/dashboard', label: 'Dashboard', icon: BarChart3 },
         ];
       default:
         return [];

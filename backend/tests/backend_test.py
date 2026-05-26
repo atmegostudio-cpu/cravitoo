@@ -6,7 +6,7 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
 
 CREDS = {
-    "super_admin": ("admin@cravitoo.com", "admin123"),
+    "master_admin": ("admin@cravitoo.com", "admin123"),
     "corporate_admin": ("demo@techcorp.com", "demo123"),
     "vendor": ("vendor@spicekitchen.com", "vendor123"),
     "employee": ("employee@techcorp.com", "employee123"),
@@ -24,7 +24,7 @@ class TestAuth:
     def test_login_all_roles(self):
         for role in CREDS:
             s, data = login(role)
-            assert data["role"] == role or (role == "super_admin" and data["role"] == "super_admin")
+            assert data["role"] == role
 
     def test_login_invalid(self):
         r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": "x@x.com", "password": "wrong"}, timeout=10)

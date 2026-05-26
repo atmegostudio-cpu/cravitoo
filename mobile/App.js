@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider, useAuth, isPartnerApp } from './src/context/AuthContext';
+import { AuthProvider, useAuth, isPartnerApp, isMasterAdmin, isSiteAdmin, isPartnerRole } from './src/context/AuthContext';
 import { colors } from './src/theme';
 
 // Auth Screens
@@ -30,6 +30,12 @@ import VendorOrders from './src/screens/vendor/VendorOrders';
 import VendorMenu from './src/screens/vendor/VendorMenu';
 import VendorScanQR from './src/screens/vendor/VendorScanQR';
 import VendorAIInsights from './src/screens/vendor/VendorAIInsights';
+
+// Admin Screens
+import AdminDashboard from './src/screens/admin/AdminDashboard';
+import AdminSites from './src/screens/admin/AdminSites';
+import AdminAdmins from './src/screens/admin/AdminAdmins';
+import SiteManagement from './src/screens/admin/SiteManagement';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -104,6 +110,40 @@ function VendorTabs() {
   );
 }
 
+function MasterAdminTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.borderLight, paddingTop: 8, paddingBottom: 8, height: 64 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+        tabBarIcon: ({ color, size }) => {
+          let iconName = 'home';
+          if (route.name === 'Dashboard') iconName = 'star';
+          if (route.name === 'AdminSites') iconName = 'business';
+          if (route.name === 'AdminAdmins') iconName = 'shield-checkmark';
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen name="Dashboard" component={AdminDashboard} />
+      <Tab.Screen name="AdminSites" component={AdminSites} options={{ tabBarLabel: 'Sites' }} />
+      <Tab.Screen name="AdminAdmins" component={AdminAdmins} options={{ tabBarLabel: 'Admins' }} />
+    </Tab.Navigator>
+  );
+}
+
+function SiteAdminTabs() {
+  // Site admin only has 1 main entry that opens their site directly via Dashboard CTA.
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Dashboard" component={AdminDashboard} />
+    </Stack.Navigator>
+  );
+}
+
 function UnsupportedRoleScreen() {
   const { logout, user } = useAuth();
   const PARTNER = isPartnerApp();
@@ -115,8 +155,8 @@ function UnsupportedRoleScreen() {
       </Text>
       <Text style={styles.unsupportedText}>
         {PARTNER
-          ? 'This app (Cravitoo Partner) is for restaurant/vendor partners only.\n\nIf you are a customer, please download the "Cravitoo" app instead.'
-          : 'The Cravitoo customer app is for employees only.\n\nIf you are a restaurant/vendor partner, please download the "Cravitoo Partner" app instead.'}
+          ? 'The Cravitoo Partner app is for vendors and admins (Master / Site).\n\nIf you are a customer/employee, please download the "Cravitoo" app instead.'
+          : 'The Cravitoo customer app is for employees only.\n\nIf you are a restaurant/vendor partner or admin, please download the "Cravitoo Partner" app instead.'}
         {'\n\n'}
         Your role: <Text style={{ fontWeight: '600' }}>{user?.role?.replace('_', ' ')}</Text>
       </Text>
@@ -148,9 +188,29 @@ function RootNavigator() {
     );
   }
 
-  // Partner app — vendor only
+  // Partner app — vendor / master_admin / site_admin
   if (PARTNER) {
-    if (user.role !== 'vendor') return <UnsupportedRoleScreen />;
+    if (!isPartnerRole(user)) return <UnsupportedRoleScreen />;
+    if (isMasterAdmin(user)) {
+      return (
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MasterMain" component={MasterAdminTabs} />
+          <Stack.Screen name="SiteManagement" component={SiteManagement} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
+          <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, title: 'Profile' }} />
+        </Stack.Navigator>
+      );
+    }
+    if (isSiteAdmin(user)) {
+      return (
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="SiteAdminMain" component={AdminDashboard} />
+          <Stack.Screen name="SiteManagement" component={SiteManagement} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
+          <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, title: 'Profile' }} />
+        </Stack.Navigator>
+      );
+    }
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="VendorMain" component={VendorTabs} />
