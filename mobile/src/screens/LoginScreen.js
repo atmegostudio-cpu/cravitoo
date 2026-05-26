@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, isPartnerApp } from '../context/AuthContext';
 import { colors, spacing, borderRadius } from '../theme';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/lpcd18p4_29aaeaa4-ac4d-4437-8a14-0af8214d6039.png';
@@ -23,6 +23,7 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const PARTNER = isPartnerApp();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -55,8 +56,12 @@ export default function LoginScreen({ navigation }) {
           <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
         </View>
 
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to order your favorite meals</Text>
+        <Text style={styles.title}>{PARTNER ? 'Partner Login' : 'Welcome Back'}</Text>
+        <Text style={styles.subtitle}>
+          {PARTNER
+            ? 'Manage your restaurant on Cravitoo Partner'
+            : 'Sign in to order your favorite meals'}
+        </Text>
 
         <View style={styles.form}>
           <View style={styles.inputGroup}>
@@ -104,18 +109,21 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={styles.demo}>
-            <Text style={styles.demoText}>Demo Accounts:</Text>
+            <Text style={styles.demoText}>Demo Account:</Text>
             <Text style={styles.demoCreds}>
-              <Text style={{ fontWeight: '600' }}>Employee:</Text> employee@techcorp.com / employee123{'\n'}
-              <Text style={{ fontWeight: '600' }}>Vendor:</Text> vendor@spicekitchen.com / vendor123
+              {PARTNER
+                ? 'vendor@spicekitchen.com / vendor123'
+                : 'employee@techcorp.com / employee123'}
             </Text>
           </View>
 
-          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.linkText}>
-              New here? <Text style={styles.linkAccent}>Create an account</Text>
-            </Text>
-          </TouchableOpacity>
+          {!PARTNER && (
+            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <Text style={styles.linkText}>
+                New here? <Text style={styles.linkAccent}>Create an account</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

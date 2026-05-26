@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import client from '../api/client';
 
 const AuthContext = createContext(null);
+
+const APP_VARIANT = Constants.expoConfig?.extra?.appVariant || 'customer';
+
+export const isPartnerApp = () => APP_VARIANT === 'vendor';
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);

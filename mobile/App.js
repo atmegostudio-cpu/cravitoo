@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { AuthProvider, useAuth, isPartnerApp } from './src/context/AuthContext';
 import { colors } from './src/theme';
 
 // Auth Screens
@@ -106,16 +106,19 @@ function VendorTabs() {
 
 function UnsupportedRoleScreen() {
   const { logout, user } = useAuth();
+  const PARTNER = isPartnerApp();
   return (
     <View style={styles.unsupported}>
       <Ionicons name="alert-circle-outline" size={80} color={colors.warning} />
-      <Text style={styles.unsupportedTitle}>Mobile app coming soon for your role</Text>
+      <Text style={styles.unsupportedTitle}>
+        {PARTNER ? 'Partner accounts only' : 'Mobile app coming soon for your role'}
+      </Text>
       <Text style={styles.unsupportedText}>
-        The Cravitoo mobile app currently supports Employee and Vendor accounts.
+        {PARTNER
+          ? 'This app (Cravitoo Partner) is for restaurant/vendor partners only.\n\nIf you are a customer, please download the "Cravitoo" app instead.'
+          : 'The Cravitoo customer app is for employees only.\n\nIf you are a restaurant/vendor partner, please download the "Cravitoo Partner" app instead.'}
         {'\n\n'}
         Your role: <Text style={{ fontWeight: '600' }}>{user?.role?.replace('_', ' ')}</Text>
-        {'\n\n'}
-        Please use the web app at cravitoo.com to access your dashboard.
       </Text>
       <Text style={styles.unsupportedLink} onPress={logout}>
         Sign out
@@ -126,6 +129,7 @@ function UnsupportedRoleScreen() {
 
 function RootNavigator() {
   const { user, loading } = useAuth();
+  const PARTNER = isPartnerApp();
 
   if (loading) {
     return (
@@ -144,19 +148,9 @@ function RootNavigator() {
     );
   }
 
-  // Role-based routing
-  if (user.role === 'employee') {
-    return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Main" component={EmployeeTabs} />
-        <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: true, title: 'Your Cart' }} />
-        <Stack.Screen name="OrderDetail" component={OrderDetailScreen} options={{ headerShown: true, title: 'Order Details' }} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
-      </Stack.Navigator>
-    );
-  }
-
-  if (user.role === 'vendor') {
+  // Partner app — vendor only
+  if (PARTNER) {
+    if (user.role !== 'vendor') return <UnsupportedRoleScreen />;
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="VendorMain" component={VendorTabs} />
@@ -166,7 +160,16 @@ function RootNavigator() {
     );
   }
 
-  return <UnsupportedRoleScreen />;
+  // Customer app — employee only
+  if (user.role !== 'employee') return <UnsupportedRoleScreen />;
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Main" component={EmployeeTabs} />
+      <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: true, title: 'Your Cart' }} />
+      <Stack.Screen name="OrderDetail" component={OrderDetailScreen} options={{ headerShown: true, title: 'Order Details' }} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
+    </Stack.Navigator>
+  );
 }
 
 export default function App() {
