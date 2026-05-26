@@ -65,7 +65,7 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Camera permission flow for QR scanner
 
 ### Iteration 6: Master Admin & Site Admin (CURRENT — Feb 2026) ✅
-- **Backend** (85/85 tests passing, hardened authz):
+- **Backend** (103/103 tests passing, hardened authz):
   - `/api/sites/*` CRUD (master_admin / site_admin scoped)
   - `/api/sites/{id}/vendors` mapping management
   - `/api/sites/{id}/schedule` meal periods (breakfast/lunch/snacks/dinner) with time windows
@@ -73,21 +73,24 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - `/api/sites/{id}/menu/upload-excel` openpyxl-powered bulk upload (5 MB max, validates required columns)
   - `/api/admin/site-admins`, `/api/admin/super-admins`, `/api/admin/master-admins` (master-only; master-email constraint `@cravitoo.com`)
   - `/api/admin/admins` list/delete
-  - `/api/reports/master-dashboard` platform-wide KPIs + top_sites + top_vendors
+  - `/api/reports/master-dashboard` platform-wide KPIs + top_sites + top_vendors (with ObjectId guard)
   - `/api/reports/site/{id}` site-scoped KPIs + per-vendor revenue
   - `/api/employee/my-site` returns site + vendors + meal_schedule + current_meal_period + ordering_modes
-  - Validation hardening: site_id validated in admin creation, status field master-only
+  - **NEW: `/api/orders/{id}/cancel`** — customer cancels within 5 min, auto-refund if paid (mock or real Razorpay)
+  - **NEW: `/api/orders/{id}/refund`** — vendor/master refunds a paid order (food unavailable, no-show)
+  - Validation hardening: site_id validated in admin creation, status field master-only, loyalty redeem validation order fixed
 - **Web Frontend**:
-  - `/master/dashboard` — platform KPIs, top sites & vendors
-  - `/master/sites` — list/create sites (with ordering modes)
-  - `/master/sites/:id` — vendors / menu / schedule / settings tabs (also reusable for `/site-admin/site/:id`)
-  - `/master/admins` — list/create/delete site/super/master admins
-  - `/site-admin/dashboard` — single-site overview + KPIs + per-vendor revenue
-  - Excel upload UI for menu items
+  - `/master/dashboard`, `/master/sites` (list/create), `/master/sites/:id` (Vendors / Menu / Schedule / Settings tabs with Excel upload + toggles)
+  - `/master/admins` — create/delete site/super/master admins
+  - `/site-admin/dashboard` + reusable `/site-admin/site/:id`
+  - Order cancel button on `/employee/orders` (within 5 min)
 - **Mobile (Partner App)**:
-  - New role routing: vendor → vendor tabs; master_admin → MasterAdminTabs; site_admin → AdminDashboard + SiteManagement
-  - 4 new screens: `AdminDashboard`, `AdminSites`, `AdminAdmins`, `SiteManagement` (with Vendors/Menu/Schedule/Settings tabs)
-  - Menu controls: in-row toggle for availability / show_price + inline price editor
+  - Role routing: vendor / master_admin / site_admin auto-detected
+  - 4 new screens: AdminDashboard, AdminSites, AdminAdmins, SiteManagement (4 tabs)
+- **Mobile (Customer App)**:
+  - **NEW: Loyalty redemption** at cart checkout — apply points (min 100) as direct discount
+  - **NEW: Order cancellation** on Order Detail screen with live countdown timer
+  - **NEW: Menu search + filters** — search dishes, veg/non-veg, price sort (low/high)
 
 ## API Endpoints (Comprehensive)
 

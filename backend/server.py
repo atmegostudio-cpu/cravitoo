@@ -1679,28 +1679,27 @@ async def get_loyalty(user: dict = Depends(get_current_user)):
 async def redeem_loyalty(data: LoyaltyRedeemRequest, user: dict = Depends(get_current_user)):
     if user["role"] != "employee":
         raise HTTPException(status_code=403, detail="Only employees can redeem points")
-    
-    # Get available points
-    loyalty = await get_loyalty(user)
-    if data.points > loyalty["available_points"]:
-        raise HTTPException(status_code=400, detail="Insufficient points")
-    if data.points < 100:
-        raise HTTPException(status_code=400, detail="Minimum 100 points to redeem")
-    
+
+    # Validate order first (better error message ordering)
     order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
     if order.get("payment_status") == "paid":
         raise HTTPException(status_code=400, detail="Cannot redeem on already paid order")
-    
     existing_redemption = await db.loyalty_redemptions.find_one({"order_id": data.order_id})
     if existing_redemption:
         raise HTTPException(status_code=400, detail="Points already redeemed for this order")
-    
+
+    # Now validate points
+    loyalty = await get_loyalty(user)
+    if data.points < 100:
+        raise HTTPException(status_code=400, detail="Minimum 100 points to redeem")
+    if data.points > loyalty["available_points"]:
+        raise HTTPException(status_code=400, detail="Insufficient points")
+
     discount = min(data.points, order["total_amount"])
     new_total = max(0, order["total_amount"] - discount)
-    
+
     await db.loyalty_redemptions.insert_one({
         "user_id": user["id"],
         "order_id": data.order_id,
@@ -1708,12 +1707,12 @@ async def redeem_loyalty(data: LoyaltyRedeemRequest, user: dict = Depends(get_cu
         "discount_inr": discount,
         "created_at": datetime.now(timezone.utc)
     })
-    
+
     await db.orders.update_one(
         {"_id": safe_objectid(data.order_id, "Order")},
         {"$set": {"total_amount": new_total, "loyalty_discount": discount}}
     )
-    
+
     return {"message": f"{discount} points redeemed", "discount_inr": discount, "new_total": new_total}
 
 # ============== RAZORPAY ==============
@@ -1857,6 +1856,141 @@ async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current
     })
 
     return {"verified": True, "payment_status": "paid", "order_status": "confirmed"}
+
+# ============== ORDER CANCELLATION & REFUND ==============
+
+CANCEL_WINDOW_SECONDS = int(os.environ.get('CANCEL_WINDOW_SECONDS', '300'))  # 5 min default
+
+@api_router.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, user: dict = Depends(get_current_user)):
+    """Customer cancels their own order — only within CANCEL_WINDOW_SECONDS and before vendor confirms."""
+    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order")})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] != "employee" or order.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only cancel your own orders")
+    if order.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Order is already cancelled")
+    if order.get("status") not in ("pending",):
+        raise HTTPException(status_code=400, detail=f"Cannot cancel order with status '{order.get('status')}' — vendor has already started preparing it")
+
+    created_at = order.get("created_at")
+    if isinstance(created_at, datetime):
+        # MongoDB returns naive datetimes — assume UTC
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - created_at).total_seconds()
+        if elapsed > CANCEL_WINDOW_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cancellation window of {CANCEL_WINDOW_SECONDS // 60} minutes has passed",
+            )
+
+    # If paid → mark for refund (mock-mode auto-refund; real-mode would call Razorpay refund API)
+    refund_status = None
+    if order.get("payment_status") == "paid":
+        if RAZORPAY_MOCK_MODE:
+            refund_status = "refunded_mock"
+        else:
+            try:
+                tx = await db.payment_transactions.find_one({"cravitoo_order_id": order_id})
+                pay_id = tx and tx.get("razorpay_payment_id")
+                if pay_id:
+                    client_rp = get_razorpay_client()
+                    client_rp.payment.refund(pay_id, {"amount": int(order["total_amount"] * 100)})
+                    refund_status = "refunded"
+                else:
+                    refund_status = "refund_pending"
+            except Exception as e:
+                logger.error(f"Razorpay refund failed for order {order_id}: {e}")
+                refund_status = "refund_failed"
+
+    await db.orders.update_one(
+        {"_id": safe_objectid(order_id, "Order")},
+        {"$set": {
+            "status": "cancelled",
+            "cancelled_at": datetime.now(timezone.utc),
+            "cancelled_by": "customer",
+            **({"refund_status": refund_status} if refund_status else {}),
+        }}
+    )
+
+    # Notify vendor
+    vendor_users = await db.users.find({"vendor_id": order["vendor_id"], "role": "vendor"}).to_list(10)
+    for vu in vendor_users:
+        await create_notification(
+            str(vu["_id"]),
+            "Order Cancelled",
+            f"Customer cancelled order #{order_id[-8:]}",
+            "order"
+        )
+    await manager.send_to_vendor(order["vendor_id"], {
+        "type": "order_update",
+        "order_id": order_id,
+        "status": "cancelled",
+    })
+    await manager.send_to_user(user["id"], {
+        "type": "order_update",
+        "order_id": order_id,
+        "status": "cancelled",
+    })
+
+    return {"message": "Order cancelled", "refund_status": refund_status}
+
+@api_router.post("/orders/{order_id}/refund")
+async def refund_order(order_id: str, user: dict = Depends(get_current_user)):
+    """Vendor or master_admin issues a refund (e.g. customer no-show, food unavailable)."""
+    if user["role"] not in ("vendor", "master_admin"):
+        raise HTTPException(status_code=403, detail="Only vendors or master admin can issue refunds")
+    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order")})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] == "vendor" and order.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="Not your order")
+    if order.get("payment_status") != "paid":
+        raise HTTPException(status_code=400, detail="Order is not paid — nothing to refund")
+    if order.get("refund_status") in ("refunded", "refunded_mock"):
+        raise HTTPException(status_code=400, detail="Order already refunded")
+
+    refund_status = "refunded_mock"
+    if not RAZORPAY_MOCK_MODE:
+        try:
+            tx = await db.payment_transactions.find_one({"cravitoo_order_id": order_id})
+            pay_id = tx and tx.get("razorpay_payment_id")
+            if pay_id:
+                client_rp = get_razorpay_client()
+                client_rp.payment.refund(pay_id, {"amount": int(order["total_amount"] * 100)})
+                refund_status = "refunded"
+            else:
+                refund_status = "refund_pending"
+        except Exception as e:
+            logger.error(f"Razorpay refund failed for order {order_id}: {e}")
+            raise HTTPException(status_code=500, detail="Refund failed at gateway")
+
+    await db.orders.update_one(
+        {"_id": safe_objectid(order_id, "Order")},
+        {"$set": {
+            "status": "cancelled",
+            "refund_status": refund_status,
+            "refunded_at": datetime.now(timezone.utc),
+            "cancelled_by": user["role"],
+        }}
+    )
+
+    await create_notification(
+        order["user_id"],
+        "Order Refunded",
+        f"Your order #{order_id[-8:]} has been refunded (₹{order['total_amount']:.2f})",
+        "order"
+    )
+    await manager.send_to_user(order["user_id"], {
+        "type": "order_update",
+        "order_id": order_id,
+        "status": "cancelled",
+        "refund_status": refund_status,
+    })
+
+    return {"message": "Refund issued", "refund_status": refund_status, "amount": order["total_amount"]}
 
 # ============== SITES & MULTI-LEVEL ADMIN ==============
 
@@ -2270,7 +2404,9 @@ async def master_dashboard(user: dict = Depends(get_current_user)):
     top_sites_raw = await db.orders.aggregate(site_pipe).to_list(5)
     top_sites = []
     for ts in top_sites_raw:
-        site = await db.sites.find_one({"_id": safe_objectid(ts["_id"], "Site")})
+        if not ts.get("_id") or not ObjectId.is_valid(ts["_id"]):
+            continue
+        site = await db.sites.find_one({"_id": ObjectId(ts["_id"])})
         if site:
             top_sites.append({
                 "site_id": ts["_id"],
@@ -2289,7 +2425,9 @@ async def master_dashboard(user: dict = Depends(get_current_user)):
     top_vendors_raw = await db.orders.aggregate(vendor_pipe).to_list(5)
     top_vendors = []
     for tv in top_vendors_raw:
-        vendor = await db.vendors.find_one({"_id": safe_objectid(tv["_id"], "Vendor")})
+        if not tv.get("_id") or not ObjectId.is_valid(tv["_id"]):
+            continue
+        vendor = await db.vendors.find_one({"_id": ObjectId(tv["_id"])})
         if vendor:
             top_vendors.append({
                 "vendor_id": tv["_id"],

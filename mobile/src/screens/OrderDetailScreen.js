@@ -1,12 +1,67 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Image,
+  View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import client from '../api/client';
 import { colors, spacing, borderRadius } from '../theme';
 
-export default function OrderDetailScreen({ route }) {
-  const { order } = route.params;
+const CANCEL_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+export default function OrderDetailScreen({ route, navigation }) {
+  const [order, setOrder] = useState(route.params.order);
+  const [cancelling, setCancelling] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  useEffect(() => {
+    if (order.status !== 'pending') {
+      setTimeLeft(0);
+      return;
+    }
+    const tick = () => {
+      const elapsed = Date.now() - new Date(order.created_at).getTime();
+      setTimeLeft(Math.max(0, CANCEL_WINDOW_MS - elapsed));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [order.created_at, order.status]);
+
+  const canCancel = order.status === 'pending' && timeLeft > 0;
+  const minutes = Math.floor(timeLeft / 60000);
+  const seconds = Math.floor((timeLeft % 60000) / 1000);
+
+  const cancelOrder = () => {
+    Alert.alert(
+      'Cancel order?',
+      order.payment_status === 'paid'
+        ? `You'll receive a refund of ₹${order.total_amount.toFixed(2)} within 5–7 business days.`
+        : 'This will release your order. You can place a new one anytime.',
+      [
+        { text: 'Keep order', style: 'cancel' },
+        {
+          text: 'Cancel order',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const { data } = await client.post(`/orders/${order.id}/cancel`);
+              setOrder({ ...order, status: 'cancelled', refund_status: data.refund_status });
+              Alert.alert(
+                'Order cancelled',
+                data.refund_status ? `Refund: ${data.refund_status}` : 'Your order was cancelled successfully.'
+              );
+            } catch (e) {
+              Alert.alert('Could not cancel', e?.response?.data?.detail || 'Try again');
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const qrUrl = order.pickup_qr
     ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.pickup_qr)}`
     : null;
@@ -19,8 +74,8 @@ export default function OrderDetailScreen({ route }) {
             <Text style={styles.label}>Order ID</Text>
             <Text style={styles.value}>#{order.id.slice(-8)}</Text>
           </View>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>{order.status}</Text>
+          <View style={[styles.statusBadge, order.status === 'cancelled' && { backgroundColor: '#FEE2E2' }]}>
+            <Text style={[styles.statusText, order.status === 'cancelled' && { color: colors.error }]}>{order.status}</Text>
           </View>
         </View>
 
@@ -38,13 +93,31 @@ export default function OrderDetailScreen({ route }) {
           </Text>
         </View>
 
+        {order.refund_status && (
+          <View style={styles.row}>
+            <Text style={styles.label}>Refund</Text>
+            <Text style={[styles.value, { color: colors.success }]} testID="refund-status">{order.refund_status}</Text>
+          </View>
+        )}
+
         <View style={styles.row}>
           <Text style={styles.label}>Date</Text>
-          <Text style={styles.value}>
-            {new Date(order.created_at).toLocaleString('en-IN')}
-          </Text>
+          <Text style={styles.value}>{new Date(order.created_at).toLocaleString('en-IN')}</Text>
         </View>
       </View>
+
+      {canCancel && (
+        <TouchableOpacity onPress={cancelOrder} disabled={cancelling} style={styles.cancelBtn} testID="cancel-order-btn">
+          {cancelling ? (
+            <ActivityIndicator color={colors.error} />
+          ) : (
+            <>
+              <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+              <Text style={styles.cancelText}>Cancel order · {minutes}:{seconds.toString().padStart(2, '0')} left</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
 
       {(order.status === 'ready' || order.status === 'confirmed') && qrUrl && (
         <View style={styles.qrCard}>
@@ -86,6 +159,8 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.borderLight, marginVertical: spacing.md },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   totalAmount: { fontSize: 20, fontWeight: '700', color: colors.primary },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.md, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: colors.error, borderRadius: borderRadius.md, marginBottom: spacing.md },
+  cancelText: { color: colors.error, fontWeight: '700', fontSize: 14 },
   qrCard: { backgroundColor: colors.card, borderRadius: borderRadius.md, padding: spacing.lg, marginBottom: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.primary },
   qrTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.sm },
   qrSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },

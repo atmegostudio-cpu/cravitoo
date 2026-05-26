@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 5 — Order cancellation (/api/orders/{id}/cancel), vendor/master refund (/api/orders/{id}/refund), and loyalty redemption (/api/loyalty/redeem). 18 NEW tests added in /app/backend/tests/test_cancel_refund_loyalty.py and FULL regression now at 103/103 (18 new + 15 backend_test + 15 iter3 + 42 master_admin_sites + 13 new_features). Coverage: cancel happy path (status->cancelled, cancelled_at, cancelled_by=customer, refund_status null), cancellation window expired via DB-backdated created_at -> 400 'Cancellation window', cancel after vendor PATCH to 'confirmed' -> 400 'Cannot cancel order with status', cancel by another registered employee -> 403, cancel as vendor role -> 403, cancel already-cancelled -> 400 'already cancelled', cancel paid+pending order -> 200 with refund_status='refunded_mock' + DB persisted. Refunds: vendor refund paid order -> 200, refund_status='refunded_mock', order status='cancelled', refunded_at set, employee notification fired; refund unpaid -> 400 'not paid'; refund another vendor's order (direct DB insert with different vendor_id) -> 403 'Not your order'; refund as employee -> 403; master_admin refund -> 200 with cancelled_by='master_admin'; double-refund -> 400 'already refunded'. Loyalty: seeded 10 paid orders ×₹5,000 (500 points) for the employee via direct MongoDB insert; verified /api/loyalty available_points>=100; redemption on pending unpaid order reduces total_amount and sets loyalty_discount field in DB; redemption on paid order -> 400 'already paid order'; redemption above available_points -> 400 'Insufficient points'; redemption <100 points -> 400 'Minimum 100 points'. All seed data (orders, loyalty_redemptions, new employee user, vendor notifications referencing test orders) cleaned up via session-scoped pytest fixture + per-class teardown.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/reports/master-dashboard",
+        "issue": "Crashes with 404 if any paid order has a non-ObjectId-shaped vendor_id (e.g., legacy data or test data with a string like 'TEST_X'). Root cause: line 2408 calls safe_objectid(ts['_id'], 'Site') and line 2427 calls safe_objectid(tv['_id'], 'Vendor') without try/except — a single bad doc takes the whole dashboard down. Mitigation: wrap each lookup in try/except or use ObjectId.is_valid() guard before safe_objectid()."
+      },
+      {
+        "endpoint": "POST /api/loyalty/redeem",
+        "issue": "Check ordering: 'Insufficient points' and 'Minimum 100 points' validations run BEFORE the order's payment_status check. Result: redeeming on an already-paid order returns 'Insufficient points' (if user is broke) or 'Minimum 100 points' (if requesting <100) instead of the more accurate 'Cannot redeem on already paid order'. Suggested fix: fetch the order first, validate it is unpaid + not already redeemed, then validate points balance/minimum."
+      },
+      {
+        "endpoint": "GET /api/notifications",
+        "issue": "Hard cap of 50 (line 1516) with no pagination. Regression test that counts before/after relies on this — once 50 limit hit, the cap masks new notifications. Suggest: add ?limit/offset query params or expose total_count separately."
+      },
+      {
+        "endpoint": "POST /api/orders/{id}/cancel",
+        "issue": "Refund leg in real (non-mock) Razorpay mode silently swallows refund errors and just sets refund_status='refund_failed'. The customer gets a 200 'Order cancelled' response with no error indication — consider returning 207 / explicit warning, or failing the cancel + asking customer to retry."
+      },
+      {
+        "endpoint": "POST /api/orders/{id}/refund",
+        "issue": "Notification to customer doesn't include the reason (e.g. food-unavailable / no-show). Consider accepting an optional reason in the request body and surfacing it in the notification + DB."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_cancel_refund_loyalty.py",
+    "/app/backend/tests/test_master_admin_sites.py",
+    "/app/backend/tests/test_iter3_features.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iter5_cancel_refund.xml",
+    "/app/test_reports/pytest/pytest_all_iter5.xml"
+  ],
+  "action_items": [
+    "Fix /api/reports/master-dashboard to skip orders whose vendor_id/site_id are not valid ObjectIds (defensive guard).",
+    "Reorder validation in /api/loyalty/redeem so 'Cannot redeem on already paid order' is raised before points-balance check (better UX + matches spec wording in review_request).",
+    "Add pagination to /api/notifications so the regression test isn't blocked by the silent 50-cap (also a UX gap)."
+  ],
+  "critical_code_review_comments": [
+    "server.py still 2595 lines — overdue split into routers (auth, orders, payments, refunds, sites, admin, reports).",
+    "/api/orders/{id}/cancel and /api/orders/{id}/refund share refund-via-Razorpay logic — extract into a helper to avoid drift between the two endpoints.",
+    "create_notification + WebSocket broadcast pattern repeats 6+ times in server.py — wrap in a notify_party(user_id, vendor_id, title, msg, payload) helper.",
+    "Cancel endpoint trusts order.created_at tzinfo — already handles naive correctly, but consider storing all datetimes as tz-aware in DB to avoid future drift.",
+    "Refund endpoint uses 500 'Refund failed at gateway' but in mock mode never raises; ok for tests but real Razorpay path needs idempotency token to prevent double-charge-back.",
+    "No audit log for refunds — cancelled_by stores role only, not user id; for compliance we should persist {actor_user_id, actor_email, actor_role, timestamp, reason} for refunds."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cancel_refund_loyalty.py",
+    "/app/test_reports/iteration_5.json"
+  ],
+  "success_rate": {"backend": "100% (103/103 — 18 new + 85 regression)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. Created an ephemeral TEST_emp_<uuid>@techcorp.com employee during test_cancel_by_other_employee_403 and cleaned it up in fixture teardown.",
+  "seed_data_creation": "Per-run, all cleaned via pytest session-scoped fixture + per-class teardown: (a) ~10-20 orders against Spice Kitchen menu (all deleted by ObjectId), (b) 10 ₹5,000 paid loyalty-seed orders inserted directly into db.orders for the employee (deleted), (c) 1 loyalty_redemptions row (deleted), (d) 1 TEST_emp_<uuid> user (deleted), (e) 1 cross-vendor order with random ObjectId vendor_id for the 403 test (deleted), (f) all notifications referencing the test order IDs purged + Spice Kitchen vendor notifications purged at class teardown to keep the 50-cap notifications regression test green.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` for full 103-test regression. If you see TestAuth::test_login_invalid return 429 instead of 401, clear the brute-force collection: db.login_attempts.delete_many({}). The notifications endpoint has a hard 50-doc cap (line 1516 server.py) — iter3's notifications test is sensitive to this; my new test file purges vendor notifications in teardown to keep it green. Loyalty seed orders use a valid (random) ObjectId hex for vendor_id so /api/reports/master-dashboard doesn't crash mid-aggregate.",
+  "rca_of_the_issue": "N/A — all functional tests pass for cancel/refund/loyalty flows. Two semantic bugs flagged (loyalty redeem check order, master-dashboard ObjectId guard) and one UX gap (notifications pagination). Razorpay is in MOCK_MODE — refund_status='refunded_mock' is the expected sentinel returned by both /cancel and /refund when payment_status='paid'."
+}

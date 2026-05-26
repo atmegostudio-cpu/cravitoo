@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
-  ActivityIndicator, FlatList, Alert,
+  ActivityIndicator, FlatList, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +15,10 @@ export default function MenuScreen({ route, navigation }) {
   const [selectedVendorId, setSelectedVendorId] = useState(route?.params?.vendorId || null);
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState({}); // { vendorId: { vendorName, items: [{id, name, price, quantity, image_url, is_vegetarian}] } }
+  const [cart, setCart] = useState({});
+  const [search, setSearch] = useState('');
+  const [vegFilter, setVegFilter] = useState('all'); // all | veg | non-veg
+  const [sortBy, setSortBy] = useState('default'); // default | low | high
 
   useEffect(() => {
     loadVendors();
@@ -49,6 +52,21 @@ export default function MenuScreen({ route, navigation }) {
   };
 
   const currentVendor = vendors.find((v) => v.id === selectedVendorId);
+
+  const filteredMenu = useMemo(() => {
+    let list = menu;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((m) =>
+        m.name.toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q)
+      );
+    }
+    if (vegFilter === 'veg') list = list.filter((m) => m.is_vegetarian);
+    if (vegFilter === 'non-veg') list = list.filter((m) => !m.is_vegetarian);
+    if (sortBy === 'low') list = [...list].sort((a, b) => a.price - b.price);
+    if (sortBy === 'high') list = [...list].sort((a, b) => b.price - a.price);
+    return list;
+  }, [menu, search, vegFilter, sortBy]);
 
   const addToCart = (item) => {
     setCart((prev) => {
@@ -111,10 +129,66 @@ export default function MenuScreen({ route, navigation }) {
         ))}
       </ScrollView>
 
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={16} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search dishes..."
+          placeholderTextColor={colors.textMuted}
+          testID="menu-search"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {[
+          { k: 'all', label: 'All', icon: 'apps' },
+          { k: 'veg', label: 'Veg', icon: 'leaf' },
+          { k: 'non-veg', label: 'Non-veg', icon: 'flame' },
+        ].map((f) => (
+          <TouchableOpacity
+            key={f.k}
+            onPress={() => setVegFilter(f.k)}
+            style={[styles.chip, vegFilter === f.k && styles.chipActive]}
+            testID={`filter-${f.k}`}
+          >
+            <Ionicons name={f.icon} size={12} color={vegFilter === f.k ? '#fff' : colors.textSecondary} />
+            <Text style={[styles.chipText, vegFilter === f.k && styles.chipTextActive]}>{f.label}</Text>
+          </TouchableOpacity>
+        ))}
+        <View style={styles.chipDivider} />
+        {[
+          { k: 'default', label: 'Featured' },
+          { k: 'low', label: '₹ Low→High' },
+          { k: 'high', label: '₹ High→Low' },
+        ].map((s) => (
+          <TouchableOpacity
+            key={s.k}
+            onPress={() => setSortBy(s.k)}
+            style={[styles.chip, sortBy === s.k && styles.chipActive]}
+            testID={`sort-${s.k}`}
+          >
+            <Text style={[styles.chipText, sortBy === s.k && styles.chipTextActive]}>{s.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <FlatList
-        data={menu}
+        data={filteredMenu}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.menuList}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyMenu}>
+            <Ionicons name="search-outline" size={36} color={colors.textMuted} />
+            <Text style={styles.emptyMenuText}>No dishes match your filters</Text>
+          </View>
+        )}
         renderItem={({ item }) => {
           const inCart = cart[selectedVendorId]?.items.find((i) => i.id === item.id);
           return (
@@ -191,6 +265,16 @@ const styles = StyleSheet.create({
   vendorTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   vendorTabText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary },
   vendorTabTextActive: { color: '#fff' },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.card, marginHorizontal: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.borderLight },
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary, padding: 0 },
+  filterRow: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.borderLight, marginRight: 6 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  chipTextActive: { color: '#fff' },
+  chipDivider: { width: 1, height: 20, backgroundColor: colors.borderLight, marginHorizontal: 4 },
+  emptyMenu: { padding: spacing.xl, alignItems: 'center' },
+  emptyMenuText: { fontSize: 13, color: colors.textMuted, marginTop: spacing.sm },
   menuList: { padding: spacing.md, paddingBottom: 120 },
   menuCard: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: borderRadius.md, marginBottom: spacing.sm, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderLight },
   menuImage: { width: 100, height: 100 },

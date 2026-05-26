@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import client from '../api/client';
@@ -20,6 +20,18 @@ export default function CartScreen({ route, navigation }) {
   const initialCart = route.params?.cart || {};
   const [cart, setCart] = useState(initialCart);
   const [submitting, setSubmitting] = useState(false);
+  const [loyalty, setLoyalty] = useState(null);
+  const [pointsToUse, setPointsToUse] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await client.get('/loyalty');
+        setLoyalty(data);
+      } catch (e) { /* ignore */ }
+    })();
+  }, []);
 
   const updateQuantity = (vendorId, itemId, delta) => {
     setCart((prev) => {
@@ -42,6 +54,11 @@ export default function CartScreen({ route, navigation }) {
   const totalItems = Object.values(cart).reduce(
     (sum, vc) => sum + vc.items.reduce((s, i) => s + i.quantity, 0), 0
   );
+  const payableAmount = Math.max(0, totalAmount - appliedDiscount);
+
+  const maxRedeemable = loyalty
+    ? Math.min(loyalty.available_points || 0, Math.floor(totalAmount))
+    : 0;
 
   const placeOrderWithPayment = async () => {
     if (totalItems === 0) return;
@@ -60,8 +77,18 @@ export default function CartScreen({ route, navigation }) {
         orderIds.push(data.id);
       }
 
+      // Step 1.5: Apply loyalty redemption on the first order (mobile keeps it simple)
+      const firstOrderId = orderIds[0];
+      if (appliedDiscount > 0) {
+        try {
+          await client.post('/loyalty/redeem', { order_id: firstOrderId, points: appliedDiscount });
+        } catch (e) {
+          // Redemption failed but order created — surface but continue with full price
+          Alert.alert('Loyalty redemption failed', e?.response?.data?.detail || 'Order will be charged full price.');
+        }
+      }
+
       // Step 2: For each order, create Razorpay payment session
-      const firstOrderId = orderIds[0]; // pay for first order (could iterate for multi-vendor)
       const { data: rpOrder } = await client.post('/payments/razorpay/create-order', {
         order_id: firstOrderId,
       });
@@ -194,6 +221,58 @@ export default function CartScreen({ route, navigation }) {
           </View>
         )}
 
+        {loyalty && loyalty.available_points >= 100 && maxRedeemable >= 100 && (
+          <View style={styles.loyaltyCard}>
+            <View style={styles.loyaltyHeader}>
+              <Ionicons name="trophy" size={18} color={colors.accent} />
+              <Text style={styles.loyaltyTitle}>You have {loyalty.available_points} points</Text>
+            </View>
+            <Text style={styles.loyaltySub}>
+              Redeem up to {maxRedeemable} points (₹{maxRedeemable} off). Min 100 points.
+            </Text>
+            <View style={styles.loyaltyRow}>
+              <TextInput
+                style={styles.pointsInput}
+                value={pointsToUse}
+                onChangeText={(v) => setPointsToUse(v.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                placeholder="Points"
+                placeholderTextColor={colors.textMuted}
+                editable={!appliedDiscount}
+                testID="points-input"
+              />
+              {appliedDiscount > 0 ? (
+                <TouchableOpacity
+                  onPress={() => { setAppliedDiscount(0); setPointsToUse(''); }}
+                  style={[styles.loyaltyBtn, { backgroundColor: colors.errorLight }]}
+                  testID="loyalty-remove-btn"
+                >
+                  <Text style={[styles.loyaltyBtnText, { color: colors.error }]}>Remove</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => {
+                    const n = parseInt(pointsToUse, 10);
+                    if (isNaN(n) || n < 100) return Alert.alert('Min 100 points');
+                    if (n > maxRedeemable) return Alert.alert(`Max ${maxRedeemable} points usable for this order`);
+                    setAppliedDiscount(n);
+                  }}
+                  style={[styles.loyaltyBtn, { backgroundColor: colors.accent }]}
+                  testID="apply-loyalty-btn"
+                >
+                  <Text style={styles.loyaltyBtnText}>Apply</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {appliedDiscount > 0 && (
+              <View style={styles.loyaltyApplied}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={styles.loyaltyAppliedText}>-₹{appliedDiscount} applied</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.paymentInfo}>
           <Ionicons name="card" size={18} color={colors.primary} />
           <Text style={styles.paymentText}>Pay via Razorpay — UPI, Cards, Wallets, Net Banking</Text>
@@ -202,8 +281,17 @@ export default function CartScreen({ route, navigation }) {
 
       <View style={styles.checkoutBar}>
         <View>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalAmount}>₹{totalAmount.toFixed(2)}</Text>
+          {appliedDiscount > 0 ? (
+            <>
+              <Text style={styles.subtotalLine}>Subtotal ₹{totalAmount.toFixed(2)}  ·  -₹{appliedDiscount} pts</Text>
+              <Text style={styles.totalAmount}>₹{payableAmount.toFixed(2)}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalAmount}>₹{totalAmount.toFixed(2)}</Text>
+            </>
+          )}
         </View>
         <TouchableOpacity style={styles.placeBtn} onPress={placeOrderWithPayment} disabled={submitting}>
           {submitting ? (
@@ -242,6 +330,17 @@ const styles = StyleSheet.create({
   infoText: { fontSize: 12, color: colors.textSecondary, flex: 1 },
   paymentInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: spacing.md, backgroundColor: colors.primaryLight, borderRadius: borderRadius.sm },
   paymentText: { fontSize: 13, color: colors.primary, fontWeight: '500', flex: 1 },
+  loyaltyCard: { backgroundColor: colors.accentLight, padding: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.accent },
+  loyaltyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  loyaltyTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  loyaltySub: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.sm },
+  loyaltyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pointsInput: { flex: 1, borderWidth: 1, borderColor: colors.borderLight, borderRadius: borderRadius.sm, padding: 8, fontSize: 14, color: colors.textPrimary, backgroundColor: colors.card },
+  loyaltyBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: borderRadius.sm },
+  loyaltyBtnText: { fontWeight: '700', fontSize: 13, color: colors.textPrimary },
+  loyaltyApplied: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
+  loyaltyAppliedText: { fontSize: 12, color: colors.success, fontWeight: '600' },
+  subtotalLine: { fontSize: 11, color: colors.textSecondary },
   checkoutBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.borderLight, padding: spacing.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: 12, color: colors.textSecondary },
   totalAmount: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },

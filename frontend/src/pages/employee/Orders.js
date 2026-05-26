@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Package, Clock, CheckCircle, QrCode, Star } from 'lucide-react';
+import { Package, Clock, CheckCircle, QrCode, Star, XCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -85,6 +85,27 @@ const EmployeeOrders = () => {
     } catch (error) {
       setReviewMessage(error.response?.data?.detail || 'Failed to submit review');
     }
+  };
+
+  const cancelOrder = async (order) => {
+    const msg = order.payment_status === 'paid'
+      ? `Cancel order #${order.id.slice(-8)}? You'll receive a refund of ₹${order.total_amount.toFixed(2)} within 5–7 business days.`
+      : `Cancel order #${order.id.slice(-8)}?`;
+    if (!window.confirm(msg)) return;
+    try {
+      const { data } = await axios.post(`${API}/orders/${order.id}/cancel`, {}, { withCredentials: true });
+      setReviewMessage(data.refund_status ? `Cancelled. Refund: ${data.refund_status}` : 'Order cancelled.');
+      setTimeout(() => setReviewMessage(''), 4000);
+      fetchOrders();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Could not cancel order');
+    }
+  };
+
+  const isCancellable = (order) => {
+    if (order.status !== 'pending') return false;
+    const elapsed = Date.now() - new Date(order.created_at).getTime();
+    return elapsed < 5 * 60 * 1000;
   };
 
   const getStatusIcon = (status) => {
@@ -223,6 +244,16 @@ const EmployeeOrders = () => {
                           >
                             <Star className="h-4 w-4" />
                             <span>Review</span>
+                          </button>
+                        )}
+                        {isCancellable(order) && (
+                          <button
+                            onClick={() => cancelOrder(order)}
+                            data-testid={`cancel-btn-${order.id}`}
+                            className="flex items-center space-x-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                          >
+                            <XCircle className="h-4 w-4" />
+                            <span>Cancel</span>
                           </button>
                         )}
                       </div>
