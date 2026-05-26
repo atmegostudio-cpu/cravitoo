@@ -32,8 +32,11 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       const user = await login(email, password);
-      if (user.role !== 'employee') {
-        Alert.alert('Mobile app for employees', 'This mobile app is currently available only for employees. Please use the web app for other roles.');
+      if (user.role !== 'employee' && user.role !== 'vendor') {
+        Alert.alert(
+          'Mobile app supports Employees & Vendors',
+          'Please use the web app at cravitoo.com for Corporate Admin or Super Admin accounts.'
+        );
       }
     } catch (error) {
       Alert.alert('Login failed', error.response?.data?.detail || 'Please try again');
@@ -101,8 +104,11 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={styles.demo}>
-            <Text style={styles.demoText}>Demo Employee Account:</Text>
-            <Text style={styles.demoCreds}>employee@techcorp.com / employee123</Text>
+            <Text style={styles.demoText}>Demo Accounts:</Text>
+            <Text style={styles.demoCreds}>
+              <Text style={{ fontWeight: '600' }}>Employee:</Text> employee@techcorp.com / employee123{'\n'}
+              <Text style={{ fontWeight: '600' }}>Vendor:</Text> vendor@spicekitchen.com / vendor123
+            </Text>
           </View>
 
           <TouchableOpacity onPress={() => navigation.navigate('Register')}>

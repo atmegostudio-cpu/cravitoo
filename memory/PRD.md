@@ -1,175 +1,155 @@
 # Cravitoo - Product Requirements Document
 
 ## Original Problem Statement
-Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India. Smart corporate food ordering and cafeteria management ecosystem for corporate offices, IT parks, educational institutions, hospitals, event organizers. Combines GoKhana, Swiggy Minis, Zomato for Business with Apple-style clean UI and Stripe-inspired premium dashboards.
+Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
-## Architecture
+## Architecture (Iteration 5)
 
 ### Tech Stack
-- **Backend**: FastAPI + MongoDB + JWT Auth + emergentintegrations library
-- **Frontend**: React + Tailwind CSS + Shadcn UI + lucide-react icons
-- **AI**: OpenAI GPT-5.2 (via Emergent LLM key) - meal recommendations, demand forecast, wastage analysis
-- **Payments**: Stripe Checkout (INR, test mode)
-- **Auth**: JWT (httpOnly cookies) + bcrypt + brute-force lockout
+- **Backend**: FastAPI + MongoDB + JWT + WebSockets + Razorpay + emergentintegrations
+- **Web Frontend**: React + Tailwind + Shadcn UI
+- **Mobile**: Expo SDK 52 + React Navigation 7 + react-native-razorpay + expo-camera
+- **AI**: OpenAI GPT-5.2 (Emergent LLM key)
+- **Real-time**: Native FastAPI WebSockets (no external service)
+- **Payments**: Razorpay (with mock mode for dev) + Stripe (web fallback)
 
-### Design System
+### Design
 - Primary Orange: #FF5A1F, Accent Yellow: #FACC15
-- Background: #F9FAFB, Dark sections: #111827
 - Fonts: Outfit (headings), Work Sans (body)
-- Glassmorphism navbar, Bento Grid dashboards
+- Mobile: native iOS/Android navigation patterns
 
-## User Personas
-1. **Employee**: Browse menus, order meals, manage subscriptions/preferences, redeem loyalty points
-2. **Vendor**: Manage menu (CRUD), accept orders, view AI insights, verify pickup
-3. **Corporate Admin**: Manage employees, approve events, view analytics
-4. **Super Admin**: Manage all companies and vendors
+## Implementation Progress
 
-## Implemented Features
+### Iteration 1: Core Web MVP ✅
+- Multi-role auth (Employee/Vendor/Corp Admin/Super Admin)
+- Employee menu browsing, cart, ordering
+- Stripe checkout (web)
+- AI food recommendations
 
-### Iteration 1: Core MVP (May 2026)
-- Multi-role JWT auth, registration, role-based routing
-- Employee menu browsing, ordering, Stripe checkout
-- Vendor dashboard with analytics
-- Corporate admin dashboard
-- Super admin dashboard
-- AI food recommendations (GPT-5.2)
+### Iteration 2: Security + Engagement ✅
+- Brute-force lockout, secure cookies
+- Order status enum, server-side price validation
+- QR pickup verification, Reviews & Ratings
+- Meal Subscriptions, Preferences
 
-### Iteration 2: Security + Engagement Features
-- Brute-force lockout (5 attempts → 15 min lockout, IP+email tracking)
-- Secure cookies (HTTPS-aware), Order status enum
-- Server-side price validation, Payment status owner-scoping
-- Safe ObjectId validation (404 vs 500)
-- QR Pickup verification (display + verify)
-- Meal Subscriptions (Basic ₹3000, Standard ₹5500, Premium ₹7500)
-- Reviews & Ratings (5-star + comment, auto-update vendor rating)
-- Employee Preferences (dietary, allergies, favorite cuisines)
+### Iteration 3: Operations + Advanced ✅
+- Vendor Menu CRUD (web)
+- Employee Management (Corp Admin)
+- Bulk Team Ordering (sponsored), Event Catering
+- In-app notifications
+- AI Demand Forecasting + Wastage Analysis
+- Multi-vendor cart, Loyalty System
 
-### Iteration 3: P1 + P2 Features
-**P1 - Operations:**
-- Vendor Menu CRUD (Add/Edit/Delete with image upload, availability toggle)
-- Employee Management (Corp Admin can add/remove/group by department)
-- Bulk Team Ordering (multi-user orders, sponsored=auto-paid+confirmed)
-- Event Catering (custom menus with headcount, approval workflow)
-- In-app Notifications (Bell with badge, auto-create on order events)
+### Iteration 4: Mobile App MVP (Employee) ✅
+- Expo SDK 52 mobile app at /app/mobile/
+- 10 employee screens (Login, Home, Menu, Cart, Orders, OrderDetail w/ QR, Loyalty, Notifications, Profile)
+- JWT Bearer auth via expo-secure-store
+- APK builds via EAS
 
-**P2 - Advanced:**
-- AI Demand Forecasting (GPT-5.2 + order aggregations)
-- AI Food Wastage Analysis (cancellation metrics + suggestions)
-- Multi-vendor Cart (cart persists in localStorage, grouped by vendor)
-- Loyalty System (Starter/Bronze/Silver/Gold tiers, 1 point per ₹100, redeemable as discount)
+### Iteration 5: Real-time + Mobile Vendor + Razorpay ✅ (CURRENT)
+- **WebSockets**:
+  - Backend `ConnectionManager` with user_id and vendor_id rooms
+  - `/ws/orders` for employees, `/ws/vendor` for vendors
+  - JWT auth via query token
+  - Order creation broadcasts to vendor, status update broadcasts to user
+  - Mobile hook `useOrdersSocket` with auto-reconnect + ping/pong heartbeat
+- **Razorpay**:
+  - Backend endpoints: `/payments/razorpay/create-order` and `/verify`
+  - HMAC SHA256 signature verification (production), mock mode (dev)
+  - Configurable via `RAZORPAY_MOCK_MODE=true|false`
+  - Mobile uses `react-native-razorpay` SDK (real APK) or mock dialog (Expo Go)
+- **Vendor Mobile App**:
+  - Role-based routing in App.js: detects role → routes to Employee or Vendor tabs
+  - 5 vendor screens: Dashboard, Orders (with filter chips + status transition), Menu (CRUD with modal), QR Scanner (expo-camera), AI Insights
+  - Real-time order notifications via WebSocket
+  - Camera permission flow for QR scanner
 
-## API Endpoints
+## API Endpoints (Comprehensive)
 
-### Auth
+### Auth (returns tokens for mobile, cookies for web)
 - POST /api/auth/register, /api/auth/login, /api/auth/logout, GET /api/auth/me
 
-### Menu
-- GET /api/menu/{vendor_id} (public), GET /api/menu/vendor/all (vendor)
-- POST /api/menu, PATCH /api/menu/{id}, DELETE /api/menu/{id}
+### Menu, Orders, Reviews, Preferences, Subscriptions - (unchanged from Iter 3)
 
-### Orders
-- POST /api/orders, GET /api/orders, PATCH /api/orders/{id} (enum)
-- POST /api/orders/bulk (sponsored option, skipped report)
-- POST /api/orders/{id}/verify-pickup
+### NEW: WebSockets
+- WS /ws/orders?token=... (employee)
+- WS /ws/vendor?token=... (vendor)
 
-### Payments
-- POST /api/payments/checkout, GET /api/payments/status/{id}, POST /api/webhook/stripe
+### NEW: Razorpay
+- POST /api/payments/razorpay/create-order  → returns razorpay_order_id, amount, key_id, mock_mode flag
+- POST /api/payments/razorpay/verify  → verifies signature, marks paid, broadcasts WS, notifies vendor
 
 ### AI
 - POST /api/ai/recommendations (preferences-aware)
 - POST /api/ai/demand-forecast (vendor)
 - POST /api/ai/wastage-analysis (vendor)
 
-### Reviews / Preferences / Subscriptions
-- POST /api/reviews, GET /api/reviews/vendor/{id}
-- GET /api/preferences, POST /api/preferences
-- POST /api/subscriptions, GET /api/subscriptions
-
-### Employee Management
-- POST /api/companies/employees, GET /api/companies/employees, DELETE /api/companies/employees/{id}
-
-### Events
-- POST /api/events, GET /api/events, PATCH /api/events/{id}/approve (with ownership scoping)
-
-### Notifications
-- GET /api/notifications, PATCH /api/notifications/{id}/read, POST /api/notifications/mark-all-read
-
-### Loyalty
-- GET /api/loyalty, POST /api/loyalty/redeem (applies discount to unpaid order)
-
-### Analytics
-- GET /api/analytics/vendor, GET /api/analytics/corporate
+### Notifications, Loyalty, Bulk Orders, Events, Employees - (unchanged from Iter 3)
 
 ## Demo Credentials
 
-| Role | Email | Password |
-|------|-------|----------|
-| Super Admin | admin@cravitoo.com | admin123 |
-| Corporate Admin | demo@techcorp.com | demo123 |
-| Vendor | vendor@spicekitchen.com | vendor123 |
-| Employee | employee@techcorp.com | employee123 |
+| Role | Email | Password | Mobile App | Web |
+|------|-------|----------|------------|-----|
+| Super Admin | admin@cravitoo.com | admin123 | ❌ | ✅ |
+| Corporate Admin | demo@techcorp.com | demo123 | ❌ | ✅ |
+| Vendor | vendor@spicekitchen.com | vendor123 | ✅ | ✅ |
+| Employee | employee@techcorp.com | employee123 | ✅ | ✅ |
 
-## Test Results
-- Iteration 1: 15/15 backend tests passed
-- Iteration 2: 28/28 backend tests passed
-- Iteration 3: 43/43 backend tests passed (15 new + 28 regression)
-- All frontend pages verified end-to-end via Playwright
+## How to Test Each Component
 
-## Mobile App (Iteration 4 - React Native + Expo)
+### Web (already deployed)
+- Preview: https://corporate-feast.preview.emergentagent.com
+- Production: https://corporate-feast.emergent.host
 
-Built a native iOS/Android mobile app at `/app/mobile/` using Expo SDK 52:
+### Mobile Android APK
+- Latest build URL: https://expo.dev/accounts/atmego/projects/cravitoo/builds/a653c235-4907-4d7d-af6f-a6c5c67010b9
+- Install on phone, login with any role above
+- Employee sees food ordering tabs, Vendor sees order management tabs
 
-**Screens** (Employee role only):
-- Login & Register (with secure token storage via expo-secure-store)
-- Home (AI recommendations, vendor list, notifications bell)
-- Menu (vendor tabs, multi-vendor cart)
-- Cart (quantity controls, place order)
-- Orders (list with status badges)
-- Order Detail (with QR code for pickup)
-- Loyalty (tier card, points, stats)
-- Notifications (in-app, polled)
-- Profile (sign out)
+### Real-time test
+1. Open mobile app as Employee → place order
+2. Open mobile app on another device (or web) as Vendor
+3. Vendor sees order appear instantly without refresh (WebSocket)
+4. Vendor taps "Confirm" → Employee sees status change instantly
 
-**Tech**: React Native 0.76, React Navigation 7 (Stack + Tabs), Axios, expo-secure-store, expo-linear-gradient, @expo/vector-icons
+### Razorpay test (Mock mode)
+1. Employee places order → Cart shows "Pay & Order"
+2. Tap pay → Dialog says "Mock Payment Mode"
+3. Tap "Simulate Success" → Order marked paid + confirmed
+4. Real Razorpay: set `RAZORPAY_MOCK_MODE=false` and add real keys
 
-**Backend update**: `/api/auth/login` and `/api/auth/register` now return `access_token` + `refresh_token` in response body (mobile uses Bearer auth). Web continues to use httpOnly cookies.
+## Production Deployment Notes
 
-**How to test**:
-1. Install Expo Go on phone (iOS App Store / Google Play)
-2. Run `cd /app/mobile && yarn start`
-3. Scan QR with Camera (iOS) or Expo Go (Android)
-4. Login: `employee@techcorp.com` / `employee123`
-
-**Build for stores**: `eas build --platform android|ios` (requires Expo account + Apple Developer / Google Play account)
+- Web: Live at corporate-feast.emergent.host
+- Mobile: APK distributable; Play Store needs `eas build --profile production` + Google Play account
+- iOS: Needs Apple Developer account ($99/yr) + `eas build --platform ios`
+- Razorpay: Sign up at razorpay.com, replace RAZORPAY_KEY_ID/SECRET in backend/.env
+- WebSocket scaling: Currently in-memory ConnectionManager; for multi-instance deployment, use Redis pub/sub
 
 ## Prioritized Backlog (Remaining)
 
-### P0 (Critical for production)
-- [ ] React Native mobile app (Expo)
-- [ ] Razorpay/UPI integration (replaces Stripe for India)
-- [ ] OTP login (mobile/email)
-- [ ] Real-time order tracking with WebSockets
-- [ ] Refactor server.py (1450+ lines) into routers/services
+### P0
+- [ ] Firebase Cloud Messaging (replace polling notifications)
+- [ ] OTP login (email or SMS)
+- [ ] iOS APK build & TestFlight setup
+- [ ] Real Razorpay keys (when user provides)
 
-### P1 (High value enhancements)
-- [ ] Loyalty point usage at checkout UI (backend works, needs UI)
-- [ ] Image upload for menu items (S3/object storage)
-- [ ] Vendor inventory tracking
-- [ ] Push notifications via Firebase FCM
-- [ ] WhatsApp/SMS alerts via Twilio
-- [ ] Email notifications via SendGrid/Resend
-
-### P2 (Nice-to-have)
-- [ ] Vendor performance scoring AI
-- [ ] Heatmaps for peak cafeteria timing
-- [ ] AI-powered dynamic pricing
-- [ ] Multi-language support
+### P1
+- [ ] Loyalty redemption UI at checkout
 - [ ] Refund/cancellation flow
-- [ ] Bulk order CSV export
+- [ ] WhatsApp/SMS alerts (Twilio integration)
+- [ ] Image upload for menu items (S3/object storage)
 
-## Known Minor Issues
-- Stripe checkout tested only to URL generation (test mode)
-- Loyalty UI doesn't yet apply redemption at checkout time
-- server.py is monolithic (~1450 lines) - should be split into routers
+### P2
+- [ ] Offline mode (cached menu, orders)
+- [ ] Multi-language (i18n)
+- [ ] Dark mode
+- [ ] Redis pub/sub for WebSocket horizontal scaling
+- [ ] Server.py refactor into routers/services
+
+## Known Limitations
+- WebSocket in-memory store: doesn't survive backend restart (clients auto-reconnect in 5s)
+- Razorpay in MOCK mode by default — user needs to add real keys for production
+- Mobile real Razorpay SDK only works in built APK, not Expo Go (uses mock dialog there)
 - AI endpoints have no rate limiting
-- Notifications collection has no TTL (grows unbounded)
+- Notifications collection grows unbounded

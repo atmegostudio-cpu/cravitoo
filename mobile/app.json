@@ -40,6 +40,12 @@
             "kotlinVersion": "1.9.25"
           }
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Cravitoo to access your camera to scan pickup QR codes."
+        }
       ]
     ],
     "extra": {

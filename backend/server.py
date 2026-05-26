@@ -4,12 +4,12 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 import os
@@ -17,6 +17,11 @@ import logging
 import bcrypt
 import jwt
 import secrets
+import json
+import asyncio
+import hmac
+import hashlib
+import razorpay
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 
@@ -32,6 +37,76 @@ JWT_ALGORITHM = "HS256"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# WebSocket Connection Manager
+class ConnectionManager:
+    def __init__(self):
+        # user_id -> set of websockets (multiple devices per user)
+        self.user_connections: Dict[str, Set[WebSocket]] = {}
+        # vendor_id -> set of websockets
+        self.vendor_connections: Dict[str, Set[WebSocket]] = {}
+
+    async def connect_user(self, user_id: str, websocket: WebSocket):
+        await websocket.accept()
+        if user_id not in self.user_connections:
+            self.user_connections[user_id] = set()
+        self.user_connections[user_id].add(websocket)
+
+    async def connect_vendor(self, vendor_id: str, websocket: WebSocket):
+        await websocket.accept()
+        if vendor_id not in self.vendor_connections:
+            self.vendor_connections[vendor_id] = set()
+        self.vendor_connections[vendor_id].add(websocket)
+
+    def disconnect_user(self, user_id: str, websocket: WebSocket):
+        if user_id in self.user_connections:
+            self.user_connections[user_id].discard(websocket)
+            if not self.user_connections[user_id]:
+                del self.user_connections[user_id]
+
+    def disconnect_vendor(self, vendor_id: str, websocket: WebSocket):
+        if vendor_id in self.vendor_connections:
+            self.vendor_connections[vendor_id].discard(websocket)
+            if not self.vendor_connections[vendor_id]:
+                del self.vendor_connections[vendor_id]
+
+    async def send_to_user(self, user_id: str, message: dict):
+        if user_id not in self.user_connections:
+            return
+        dead = set()
+        for ws in list(self.user_connections[user_id]):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            self.user_connections[user_id].discard(ws)
+
+    async def send_to_vendor(self, vendor_id: str, message: dict):
+        if vendor_id not in self.vendor_connections:
+            return
+        dead = set()
+        for ws in list(self.vendor_connections[vendor_id]):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            self.vendor_connections[vendor_id].discard(ws)
+
+manager = ConnectionManager()
+
+def verify_ws_token(token: str) -> Optional[dict]:
+    """Validate JWT token from WebSocket query string. Returns payload dict or None."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            return None
+        return payload
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
 
 # Helper Functions
 def hash_password(password: str) -> str:
@@ -677,7 +752,16 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
             f"You have a new order for ₹{total_amount:.2f}",
             "order"
         )
-    
+
+    # Broadcast WebSocket event to vendor
+    await manager.send_to_vendor(data.vendor_id, {
+        "type": "new_order",
+        "order_id": order_id,
+        "status": "pending",
+        "amount": total_amount,
+        "items_count": len(validated_items)
+    })
+
     return {"id": order_id, "total_amount": total_amount, "status": "pending", "pickup_qr": qr_code}
 
 @api_router.get("/orders")
@@ -698,12 +782,38 @@ async def update_order_status(order_id: str, status: OrderStatus, user: dict = D
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can update order status")
     
-    result = await db.orders.update_one(
-        {"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")},
+    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found or not yours")
+    
+    await db.orders.update_one(
+        {"_id": safe_objectid(order_id, "Order")},
         {"$set": {"status": status.value}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found or not yours")
+
+    # Notify employee with push + ws
+    status_messages = {
+        "confirmed": "Your order has been confirmed!",
+        "preparing": "Your food is being prepared",
+        "ready": "Your order is ready for pickup!",
+        "completed": "Order completed. Enjoy your meal!",
+        "cancelled": "Your order was cancelled"
+    }
+    msg = status_messages.get(status.value, f"Order status: {status.value}")
+    await create_notification(
+        order["user_id"],
+        f"Order #{order_id[-8:]}",
+        msg,
+        "order"
+    )
+
+    # Broadcast WebSocket event
+    await manager.send_to_user(order["user_id"], {
+        "type": "order_update",
+        "order_id": order_id,
+        "status": status.value
+    })
+
     return {"message": "Order status updated", "status": status.value}
 
 @api_router.post("/orders/{order_id}/verify-pickup")
@@ -1462,6 +1572,200 @@ async def redeem_loyalty(data: LoyaltyRedeemRequest, user: dict = Depends(get_cu
     )
     
     return {"message": f"{discount} points redeemed", "discount_inr": discount, "new_total": new_total}
+
+# ============== RAZORPAY ==============
+
+RAZORPAY_MOCK_MODE = os.environ.get('RAZORPAY_MOCK_MODE', 'true').lower() == 'true'
+
+def get_razorpay_client():
+    """Get razorpay client if not in mock mode, else None"""
+    if RAZORPAY_MOCK_MODE:
+        return None
+    return razorpay.Client(auth=(os.environ['RAZORPAY_KEY_ID'], os.environ['RAZORPAY_KEY_SECRET']))
+
+class RazorpayOrderCreate(BaseModel):
+    order_id: str  # internal Cravitoo order ID
+
+class RazorpayVerify(BaseModel):
+    order_id: str  # Cravitoo order ID
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+
+@api_router.post("/payments/razorpay/create-order")
+async def razorpay_create_order(data: RazorpayOrderCreate, user: dict = Depends(get_current_user)):
+    """Create a Razorpay order linked to a Cravitoo order. Works in mock mode."""
+    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.get("payment_status") == "paid":
+        raise HTTPException(status_code=400, detail="Order already paid")
+
+    amount_paise = int(order["total_amount"] * 100)
+
+    if RAZORPAY_MOCK_MODE:
+        # Mock: generate a fake razorpay_order_id
+        razorpay_order_id = f"order_mock_{secrets.token_hex(8)}"
+        await db.payment_transactions.insert_one({
+            "order_id": data.order_id,
+            "user_id": user["id"],
+            "provider": "razorpay",
+            "razorpay_order_id": razorpay_order_id,
+            "amount": amount_paise,
+            "currency": "INR",
+            "payment_status": "created",
+            "mock_mode": True,
+            "created_at": datetime.now(timezone.utc)
+        })
+        return {
+            "razorpay_order_id": razorpay_order_id,
+            "amount": amount_paise,
+            "currency": "INR",
+            "key_id": os.environ['RAZORPAY_KEY_ID'],
+            "mock_mode": True,
+            "cravitoo_order_id": data.order_id
+        }
+    else:
+        client_rzp = get_razorpay_client()
+        razor_order = client_rzp.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "payment_capture": 1,
+            "receipt": data.order_id[:40]
+        })
+        await db.payment_transactions.insert_one({
+            "order_id": data.order_id,
+            "user_id": user["id"],
+            "provider": "razorpay",
+            "razorpay_order_id": razor_order["id"],
+            "amount": amount_paise,
+            "currency": "INR",
+            "payment_status": "created",
+            "mock_mode": False,
+            "created_at": datetime.now(timezone.utc)
+        })
+        return {
+            "razorpay_order_id": razor_order["id"],
+            "amount": amount_paise,
+            "currency": "INR",
+            "key_id": os.environ['RAZORPAY_KEY_ID'],
+            "mock_mode": False,
+            "cravitoo_order_id": data.order_id
+        }
+
+@api_router.post("/payments/razorpay/verify")
+async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current_user)):
+    """Verify Razorpay payment signature and mark order as paid."""
+    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if RAZORPAY_MOCK_MODE:
+        # Mock: skip signature verification, accept any payment_id
+        pass
+    else:
+        # Verify HMAC signature
+        body = f"{data.razorpay_order_id}|{data.razorpay_payment_id}"
+        expected_signature = hmac.new(
+            os.environ['RAZORPAY_KEY_SECRET'].encode(),
+            body.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected_signature, data.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    # Mark order as paid
+    await db.payment_transactions.update_one(
+        {"razorpay_order_id": data.razorpay_order_id},
+        {"$set": {
+            "payment_status": "paid",
+            "razorpay_payment_id": data.razorpay_payment_id,
+            "razorpay_signature": data.razorpay_signature,
+            "paid_at": datetime.now(timezone.utc)
+        }}
+    )
+    await db.orders.update_one(
+        {"_id": safe_objectid(data.order_id, "Order")},
+        {"$set": {"payment_status": "paid", "status": "confirmed"}}
+    )
+
+    # Notify vendor (push + websocket)
+    vendor_users = await db.users.find({"vendor_id": order["vendor_id"], "role": "vendor"}).to_list(10)
+    for vu in vendor_users:
+        await create_notification(
+            str(vu["_id"]),
+            "Order Paid & Confirmed",
+            f"Order #{data.order_id[-8:]} has been paid. Total ₹{order['total_amount']:.2f}",
+            "order"
+        )
+
+    # Broadcast via WebSocket
+    await manager.send_to_user(user["id"], {
+        "type": "order_update",
+        "order_id": data.order_id,
+        "status": "confirmed",
+        "payment_status": "paid"
+    })
+    await manager.send_to_vendor(order["vendor_id"], {
+        "type": "new_order",
+        "order_id": data.order_id,
+        "status": "confirmed",
+        "amount": order["total_amount"]
+    })
+
+    return {"verified": True, "payment_status": "paid", "order_status": "confirmed"}
+
+# ============== WEBSOCKETS ==============
+
+@app.websocket("/ws/orders")
+async def websocket_orders(websocket: WebSocket, token: str = Query(...)):
+    """Employee WebSocket: subscribes to their own order updates."""
+    payload = verify_ws_token(token)
+    if not payload:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+    user_id = payload["sub"]
+    await manager.connect_user(user_id, websocket)
+    try:
+        # Send initial ping
+        await websocket.send_json({"type": "connected", "user_id": user_id})
+        while True:
+            # Keep alive - clients can send ping, we echo pong
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect_user(user_id, websocket)
+    except Exception as e:
+        logger.error(f"WS error for user {user_id}: {e}")
+        manager.disconnect_user(user_id, websocket)
+
+@app.websocket("/ws/vendor")
+async def websocket_vendor(websocket: WebSocket, token: str = Query(...)):
+    """Vendor WebSocket: subscribes to their vendor's order events."""
+    payload = verify_ws_token(token)
+    if not payload:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+    user_id = payload["sub"]
+    # Lookup vendor_id
+    user = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+    if not user or user.get("role") != "vendor" or not user.get("vendor_id"):
+        await websocket.close(code=1008, reason="Not a vendor")
+        return
+    vendor_id = user["vendor_id"]
+    await manager.connect_vendor(vendor_id, websocket)
+    try:
+        await websocket.send_json({"type": "connected", "vendor_id": vendor_id})
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect_vendor(vendor_id, websocket)
+    except Exception as e:
+        logger.error(f"WS error for vendor {vendor_id}: {e}")
+        manager.disconnect_vendor(vendor_id, websocket)
 
 app.include_router(api_router)
 

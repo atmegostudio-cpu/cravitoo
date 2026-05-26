@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import client from '../api/client';
+import useOrdersSocket from '../hooks/useOrdersSocket';
 import { colors, spacing, borderRadius } from '../theme';
 
 const STATUS_COLORS = {
@@ -38,6 +39,13 @@ export default function OrdersScreen({ navigation }) {
     const unsub = navigation.addListener('focus', load);
     return unsub;
   }, [navigation]);
+
+  // Real-time order status updates
+  useOrdersSocket('employee', (msg) => {
+    if (msg.type === 'order_update') {
+      load();
+    }
+  });
 
   if (loading) {
     return (
