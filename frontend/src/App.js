@@ -29,6 +29,8 @@ import SuperAdminDashboard from './pages/superadmin/Dashboard';
 import MasterDashboard from './pages/master/Dashboard';
 import MasterSites from './pages/master/Sites';
 import MasterAdmins from './pages/master/Admins';
+import MasterVendors from './pages/master/Vendors';
+import BulkOnboard from './pages/master/BulkOnboard';
 import SiteDetail from './pages/master/SiteDetail';
 
 import SiteAdminDashboard from './pages/siteadmin/Dashboard';
@@ -176,6 +178,16 @@ function AppRoutes() {
       <Route path="/master/admins" element={
         <ProtectedRoute allowedRoles={['master_admin']}>
           <MasterAdmins />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/vendors" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterVendors />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/bulk-onboard" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'corporate_admin']}>
+          <BulkOnboard />
         </ProtectedRoute>
       } />
 

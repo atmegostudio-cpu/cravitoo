@@ -1,0 +1,76 @@
+{
+  "summary": "Iteration 6 — Backend-only testing of NEW vendor/upload/commission/charts/CSV endpoints + regression. Added 40 NEW tests in /app/backend/tests/test_iter6_vendor_upload_commission.py covering: (a) 4-role demo login regression, (b) GET /api/vendor/today-earnings (vendor 200, employee 403, master 403, structure { orders, revenue, completed, pending }), (c) GET /api/vendor/settlement default days=7 + edge cases days=1, days=999→cap90, non-vendor 403; daily list + totals + commission_pct verified, (d) GET/PATCH /api/vendor/settings — round-trip on auto_confirm & low_stock_threshold, invalid field rejected (400), non-vendor 403, (e) auto_confirm E2E — enable, place order as employee, assert response.status='confirmed'; disable, assert 'pending', (f) PATCH /api/menu/{id}/availability — vendor toggles own & toggles back, employee 403, non-existent ObjectId 404, (g) POST /api/upload/menu-image — vendor uploads 100x100 PIL PNG, response has url+filename; employee 403; non-image .txt 400; >5MB PNG 400, (h) GET /api/uploads/{filename} — serves PNG with image/* content-type; path-traversal '../etc/passwd' rejected (404 by route); 'notavalid' (no ext) rejected with 400 via regex guard, (i) PATCH /api/admin/vendors/{id}/commission — master sets 12.5%, vendor sees update; pct=51 → 400; employee → 403; original commission restored in teardown, (j) GET /api/reports/charts?days=14 — master 200 with daily_revenue+top_dishes lists; employee 403, (k) POST /api/admin/employees/bulk-csv — 3 valid + 1 invalid row CSV → inserted=3, errors=1; employee 403; .txt file 400; users cleaned up via MongoDB teardown, (l) regression: /api/sites, /api/admin/admins, /api/reports/master-dashboard, /api/loyalty/redeem still validate. FULL REGRESSION: 143/143 pass (40 new + 103 prior). One transient network ConnectTimeout in test_master_admin_refund_200 during the all-suite run — re-ran in isolation: PASSED. Loaded /app/backend/.env via python-dotenv in test file so MONGO_URL/DB_NAME resolve for direct DB cleanup.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PATCH /api/vendor/settings",
+        "issue": "Update returns the *patched* fields only ({message, auto_confirm} OR {message, low_stock_threshold}) — does not echo commission_pct. Minor UX issue: clients still need a follow-up GET to see full settings state. Not a bug."
+      },
+      {
+        "endpoint": "GET /api/vendor/settlement",
+        "issue": "days param is silently clamped (max=90, min=1). Clients passing days=999 will receive days=90 in response — acceptable but consider returning a warning header or 400 for clearly invalid values like negative/0."
+      },
+      {
+        "endpoint": "GET /api/reports/charts",
+        "issue": "days param is silently clamped to min=7 (line 2196 `max(7, min(days, 90))`). If client passes days=1, server returns days=7. Spec said 'GET /api/reports/charts?days=14' — works — but the min=7 clamp is undocumented. Consider documenting in OpenAPI."
+      },
+      {
+        "endpoint": "POST /api/upload/menu-image",
+        "issue": "Validates content-type starts with 'image/' but DOES NOT verify magic bytes / actually parse the image. A malicious file with .png extension and Content-Type 'image/png' but arbitrary bytes will be saved and served. Recommend PIL.Image.open(io.BytesIO(content)).verify() before persist."
+      },
+      {
+        "endpoint": "GET /api/uploads/{filename}",
+        "issue": "Regex `^[a-f0-9]+\\.[a-z]+$` requires lowercase hex+lowercase ext. Upload generates `uuid.uuid4().hex` (lowercase hex) so OK, but if anyone manually adds a file like `Image.PNG` it cannot be served. Minor."
+      },
+      {
+        "endpoint": "POST /api/admin/employees/bulk-csv",
+        "issue": "site_id from CSV is accepted as-is without validating it belongs to the target company. A corporate admin could potentially inject an unrelated site_id. Also: no per-row email format validation (relies on `db.users.find_one` only — invalid emails like 'foo' will silently be created). Recommend EmailStr / regex validation per row."
+      },
+      {
+        "endpoint": "POST /api/admin/employees/bulk-csv",
+        "issue": "No row-count cap. A 1 MB CSV could contain ~15k rows. Loop is serial async (no batching). Consider asyncio.gather batches of 100 + hard cap (e.g., 5000 rows)."
+      },
+      {
+        "endpoint": "PATCH /api/vendor/settings — auto_confirm",
+        "issue": "After auto_confirm=true, order is marked 'confirmed' but no WebSocket 'order_confirmed' notification is sent to the employee. They see only the initial response. Vendor still gets the 'new_order' broadcast. Consider firing manager.send_to_user(order.user_id, {...status:'confirmed'}) when auto_confirmed."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_vendor_upload_commission.py",
+    "/app/test_reports/pytest/pytest_iter6.xml",
+    "/app/test_reports/pytest/pytest_all_iter6.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: After upload/menu-image, validate file is a real image (PIL.Image.verify) — currently trusts client Content-Type.",
+    "OPTIONAL: bulk-csv — add per-row email-format validation + row-count cap to prevent abuse.",
+    "OPTIONAL: When auto_confirm fires, push 'order confirmed' notification to the employee (WebSocket + DB notification) for consistency with the manual confirm path.",
+    "OPTIONAL: PATCH /api/vendor/settings echoes only patched keys; consider returning full settings doc."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 2895 lines (was 2595) — strongly recommend splitting into routers/ (auth, orders, payments, refunds, vendor, uploads, admin, reports).",
+    "/api/vendor/settings PATCH accepts a free-form Dict[str, Any] then filters allowed keys — works, but a Pydantic VendorSettingsUpdate model would give automatic 422 + OpenAPI docs.",
+    "Order auto-confirm flow does an extra round-trip (insert_one then update_one) to flip status — could be set in the original insert_one to save a write.",
+    "Master charts top_dishes loops menu_items.find_one for each of 5 results — fine at 5 but use $lookup in the aggregate pipeline for cleaner code.",
+    "bulk-csv loops await db.users.find_one + insert_one serially — for large CSVs this is slow. Use $or to batch-check existing emails, then insert_many with ordered=False.",
+    "UPLOAD_DIR is /app/backend/uploads by default — not ephemeral container-safe; on container restart files survive but on redeploy they're gone. Recommend S3/CloudStorage for production.",
+    "/api/uploads/{filename} regex allows any lowercase extension — should whitelist (png|jpg|jpeg|webp|gif) explicitly to match the upload allowlist.",
+    "No audit trail on /api/admin/vendors/{id}/commission — master changes commission with no history record. For compliance, persist {actor_user_id, old_pct, new_pct, timestamp}."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_vendor_upload_commission.py",
+    "/app/test_reports/iteration_6.json"
+  ],
+  "success_rate": {
+    "backend": "100% (143/143 — 40 new + 103 regression). One transient network timeout in regression test re-ran clean.",
+    "frontend": "not tested (backend-only request per E1)"
+  },
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. Created 3 ephemeral TEST_bulk_<nonce>_{0,1,2}@techcorp.com employees via bulk-csv; deleted by email in teardown_class. Created 2 ephemeral orders for auto_confirm E2E; deleted by ObjectId.",
+  "seed_data_creation": "All cleaned in per-class teardown: (a) 3 bulk-CSV users by email match, (b) 2 auto_confirm test orders by ObjectId, (c) uploaded PNG remains on disk under /app/backend/uploads/<uuid>.png (intentional — to verify serve endpoint and for future regression). Vendor commission_pct restored to original value (15.0) in TestCommissionEdit.teardown_class. auto_confirm reset to False after E2E test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` for the full 143-test regression. The iter6 file requires python-dotenv to load /app/backend/.env for MONGO_URL/DB_NAME (already in requirements). If TestBruteForce fails with 429 instead of 401, clear: db.login_attempts.delete_many({}). The /api/uploads/<uuid>.png file from test_vendor_uploads_png is intentionally left on disk — do NOT clean — it's used by test_serve_uploaded if re-run. Razorpay still MOCKED in /api/payments/*. /api/reports/charts has an undocumented min=7 days clamp.",
+  "rca_of_the_issue": "N/A — all functional flows pass. The single transient failure during the all-suite run (test_master_admin_refund_200, ConnectTimeout to corporate-feast.preview.emergentagent.com) was network-side, not a product bug — confirmed by re-running the test in isolation (passed in 24.58s). Recommend wrapping requests.* calls in /app/backend/tests with a small retry decorator (3 attempts, exponential backoff) to harden against preview-env network blips."
+}

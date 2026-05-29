@@ -13,6 +13,8 @@ export default function VendorScanQR({ navigation }) {
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkLog, setBulkLog] = useState([]);
 
   useEffect(() => {
     setScanned(false);
@@ -25,7 +27,6 @@ export default function VendorScanQR({ navigation }) {
     setProcessing(true);
 
     try {
-      // QR format: CRAVITOO-PICKUP-{order_id}-{hash}
       const parts = data.split('-');
       if (parts.length < 4 || parts[0] !== 'CRAVITOO' || parts[1] !== 'PICKUP') {
         setResult({ success: false, message: 'Not a valid Cravitoo pickup QR' });
@@ -38,12 +39,20 @@ export default function VendorScanQR({ navigation }) {
         `/orders/${orderId}/verify-pickup?qr_code=${encodeURIComponent(data)}`
       );
 
-      setResult({ success: true, message: response.data.message, orderId });
+      const r = { success: true, message: response.data.message, orderId };
+      setResult(r);
+      if (bulkMode) {
+        setBulkLog((log) => [{ ...r, at: new Date().toLocaleTimeString() }, ...log].slice(0, 8));
+        // Auto-reset after 1.5s for next scan
+        setTimeout(() => { setScanned(false); setResult(null); }, 1500);
+      }
     } catch (error) {
-      setResult({
-        success: false,
-        message: error?.response?.data?.detail || 'Verification failed',
-      });
+      const r = { success: false, message: error?.response?.data?.detail || 'Verification failed' };
+      setResult(r);
+      if (bulkMode) {
+        setBulkLog((log) => [{ ...r, at: new Date().toLocaleTimeString() }, ...log].slice(0, 8));
+        setTimeout(() => { setScanned(false); setResult(null); }, 2000);
+      }
     } finally {
       setProcessing(false);
     }
@@ -82,9 +91,34 @@ export default function VendorScanQR({ navigation }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Scan Pickup QR</Text>
-        <Text style={styles.headerSubtitle}>Point camera at customer's QR code</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Scan Pickup QR</Text>
+          <Text style={styles.headerSubtitle}>{bulkMode ? 'Bulk mode — auto-rearm after each scan' : 'Point camera at customer\'s QR code'}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => { setBulkMode(!bulkMode); setBulkLog([]); setResult(null); setScanned(false); }}
+          style={[styles.bulkToggle, bulkMode && styles.bulkToggleOn]}
+          testID="bulk-mode-toggle"
+        >
+          <Ionicons name="layers" size={16} color={bulkMode ? '#fff' : colors.primary} />
+          <Text style={[styles.bulkToggleText, bulkMode && { color: '#fff' }]}>Bulk</Text>
+        </TouchableOpacity>
       </View>
+
+      {bulkMode && bulkLog.length > 0 && (
+        <View style={styles.bulkLog}>
+          <Text style={styles.bulkLogTitle}>Recent ({bulkLog.length}):</Text>
+          {bulkLog.slice(0, 4).map((b, idx) => (
+            <View key={idx} style={styles.bulkLogRow}>
+              <Ionicons name={b.success ? 'checkmark-circle' : 'close-circle'} size={14} color={b.success ? colors.success : colors.error} />
+              <Text style={styles.bulkLogText} numberOfLines={1}>
+                {b.success ? `#${b.orderId?.slice(-8)} verified` : b.message}
+              </Text>
+              <Text style={styles.bulkLogTime}>{b.at}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       <View style={styles.cameraContainer}>
         <CameraView
@@ -138,9 +172,17 @@ export default function VendorScanQR({ navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
-  header: { padding: spacing.md, backgroundColor: colors.card },
+  header: { padding: spacing.md, backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerTitle: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
-  headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  headerSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  bulkToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  bulkToggleOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  bulkToggleText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  bulkLog: { padding: spacing.sm, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  bulkLogTitle: { fontSize: 11, fontWeight: '700', color: colors.textMuted, marginBottom: 4 },
+  bulkLogRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
+  bulkLogText: { flex: 1, fontSize: 12, color: colors.textPrimary },
+  bulkLogTime: { fontSize: 10, color: colors.textMuted },
   cameraContainer: { flex: 1, overflow: 'hidden' },
   overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
   scanFrame: { width: 240, height: 240, position: 'relative' },

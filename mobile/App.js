@@ -30,6 +30,7 @@ import VendorOrders from './src/screens/vendor/VendorOrders';
 import VendorMenu from './src/screens/vendor/VendorMenu';
 import VendorScanQR from './src/screens/vendor/VendorScanQR';
 import VendorAIInsights from './src/screens/vendor/VendorAIInsights';
+import VendorSettlement from './src/screens/vendor/VendorSettlement';
 
 // Admin Screens
 import AdminDashboard from './src/screens/admin/AdminDashboard';
@@ -214,6 +215,7 @@ function RootNavigator() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="VendorMain" component={VendorTabs} />
+        <Stack.Screen name="VendorSettlement" component={VendorSettlement} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, title: 'Profile' }} />
       </Stack.Navigator>

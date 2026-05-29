@@ -68,6 +68,32 @@ export default function VendorOrders({ navigation }) {
     }
   };
 
+  const refundOrder = (order) => {
+    Alert.alert(
+      'Refund this order?',
+      `Customer will receive ₹${order.total_amount.toFixed(2)} back. This will also mark the order as cancelled.`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, refund',
+          style: 'destructive',
+          onPress: async () => {
+            setUpdatingId(order.id);
+            try {
+              const { data } = await client.post(`/orders/${order.id}/refund`);
+              Alert.alert('Refunded', `Status: ${data.refund_status}`);
+              load();
+            } catch (e) {
+              Alert.alert('Refund failed', e?.response?.data?.detail || 'Try again');
+            } finally {
+              setUpdatingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
 
   if (loading) {
@@ -157,22 +183,34 @@ export default function VendorOrders({ navigation }) {
                 <View style={[styles.statusChip, { backgroundColor: flow.color + '20' }]}>
                   <Text style={[styles.statusChipText, { color: flow.color }]}>{order.status}</Text>
                 </View>
-                {flow.next && (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: flow.color }]}
-                    onPress={() => updateStatus(order.id, flow.next)}
-                    disabled={updatingId === order.id}
-                  >
-                    {updatingId === order.id ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Text style={styles.actionBtnText}>{flow.label}</Text>
-                        <Ionicons name="arrow-forward" size={16} color="#fff" />
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                  {order.payment_status === 'paid' && order.status !== 'cancelled' && order.refund_status !== 'refunded' && order.refund_status !== 'refunded_mock' && (
+                    <TouchableOpacity
+                      style={styles.refundBtn}
+                      onPress={() => refundOrder(order)}
+                      disabled={updatingId === order.id}
+                    >
+                      <Ionicons name="cash-outline" size={14} color={colors.error} />
+                      <Text style={styles.refundBtnText}>Refund</Text>
+                    </TouchableOpacity>
+                  )}
+                  {flow.next && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: flow.color }]}
+                      onPress={() => updateStatus(order.id, flow.next)}
+                      disabled={updatingId === order.id}
+                    >
+                      {updatingId === order.id ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <>
+                          <Text style={styles.actionBtnText}>{flow.label}</Text>
+                          <Ionicons name="arrow-forward" size={16} color="#fff" />
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
           );
@@ -215,4 +253,6 @@ const styles = StyleSheet.create({
   statusChipText: { fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: borderRadius.sm },
   actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  refundBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: borderRadius.sm, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: colors.error },
+  refundBtnText: { color: colors.error, fontWeight: '700', fontSize: 12 },
 });

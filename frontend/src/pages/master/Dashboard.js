@@ -7,13 +7,18 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const MasterDashboard = () => {
   const [data, setData] = useState(null);
+  const [charts, setCharts] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await axios.get(`${API}/reports/master-dashboard`, { withCredentials: true });
-        setData(data);
+        const [d, c] = await Promise.all([
+          axios.get(`${API}/reports/master-dashboard`, { withCredentials: true }),
+          axios.get(`${API}/reports/charts?days=14`, { withCredentials: true }),
+        ]);
+        setData(d.data);
+        setCharts(c.data);
       } catch (e) {
         console.error(e);
       } finally {
@@ -78,6 +83,13 @@ const MasterDashboard = () => {
             })}
           </div>
 
+          {charts && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <RevenueChart data={charts.daily_revenue} />
+              <TopDishesChart data={charts.top_dishes} />
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-card border border-border-light rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
@@ -124,6 +136,84 @@ const MasterDashboard = () => {
         </div>
       </div>
     </>
+  );
+};
+
+// ============== CHART COMPONENTS ==============
+
+const RevenueChart = ({ data }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-lg font-medium text-text-primary mb-2">Daily Revenue (14d)</h3>
+        <p className="text-text-muted text-sm">No revenue data yet.</p>
+      </div>
+    );
+  }
+  const max = Math.max(...data.map((d) => d.revenue), 1);
+  const W = 100, H = 60, padX = 4;
+  const stepX = (W - padX * 2) / Math.max(data.length - 1, 1);
+  const points = data.map((d, i) => {
+    const x = padX + i * stepX;
+    const y = H - 6 - (d.revenue / max) * (H - 12);
+    return `${x},${y}`;
+  }).join(' ');
+  const areaPoints = `${padX},${H - 4} ${points} ${padX + (data.length - 1) * stepX},${H - 4}`;
+  const total = data.reduce((s, d) => s + d.revenue, 0);
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="revenue-chart">
+      <div className="flex items-baseline justify-between mb-1">
+        <h3 className="font-heading text-lg font-medium text-text-primary">Daily Revenue</h3>
+        <span className="text-xs text-text-muted">last {data.length} days</span>
+      </div>
+      <p className="text-3xl font-heading font-bold text-primary mb-3">₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-32" style={{ display: 'block' }}>
+        <polygon points={areaPoints} fill="rgba(255, 107, 53, 0.15)" />
+        <polyline points={points} fill="none" stroke="#FF6B35" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
+        {data.map((d, i) => {
+          const x = padX + i * stepX;
+          const y = H - 6 - (d.revenue / max) * (H - 12);
+          return <circle key={i} cx={x} cy={y} r="0.8" fill="#FF6B35" />;
+        })}
+      </svg>
+      <div className="flex justify-between mt-2 text-xs text-text-muted">
+        <span>{data[0]?.date.slice(5) || ''}</span>
+        <span>{data[data.length - 1]?.date.slice(5) || ''}</span>
+      </div>
+    </div>
+  );
+};
+
+const TopDishesChart = ({ data }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-lg font-medium text-text-primary mb-2">Top Dishes</h3>
+        <p className="text-text-muted text-sm">No paid orders yet.</p>
+      </div>
+    );
+  }
+  const max = Math.max(...data.map((d) => d.qty), 1);
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="top-dishes-chart">
+      <h3 className="font-heading text-lg font-medium text-text-primary mb-4">Top Dishes (by qty)</h3>
+      <div className="space-y-3">
+        {data.map((d, i) => (
+          <div key={d.menu_item_id || i} className="flex items-center gap-3">
+            <span className="text-xs font-mono text-text-muted w-5">#{i + 1}</span>
+            <div className="flex-1">
+              <div className="flex items-baseline justify-between mb-1">
+                <p className="text-sm font-medium text-text-primary truncate">{d.name}</p>
+                <p className="text-xs text-text-muted ml-2">{d.qty} sold · ₹{d.revenue.toFixed(0)}</p>
+              </div>
+              <div className="h-2 bg-background rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full" style={{ width: `${(d.qty / max) * 100}%` }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
 

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import client from '../../api/client';
 import { colors, spacing, borderRadius } from '../../theme';
 
@@ -88,6 +89,52 @@ export default function VendorMenu({ navigation }) {
     ]);
   };
 
+  const quickToggleAvailable = async (item) => {
+    // Optimistic update
+    setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, is_available: !x.is_available } : x));
+    try {
+      await client.patch(`/menu/${item.id}/availability`);
+    } catch (e) {
+      // Revert on failure
+      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, is_available: item.is_available } : x));
+      Alert.alert('Toggle failed', e?.response?.data?.detail || 'Try again');
+    }
+  };
+
+  const [uploading, setUploading] = useState(false);
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to upload menu images.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    setUploading(true);
+    try {
+      const asset = result.assets[0];
+      const formData = new FormData();
+      formData.append('file', {
+        uri: asset.uri,
+        name: 'menu.jpg',
+        type: 'image/jpeg',
+      });
+      const { data } = await client.post('/upload/menu-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setForm((prev) => ({ ...prev, image_url: data.url }));
+    } catch (e) {
+      Alert.alert('Upload failed', e?.response?.data?.detail || 'Try again');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -140,11 +187,16 @@ export default function VendorMenu({ navigation }) {
               <Text style={styles.itemDesc} numberOfLines={2}>{item.description}</Text>
               <View style={styles.itemMeta}>
                 <Text style={styles.itemPrice}>₹{item.price.toFixed(2)}</Text>
-                <View style={[styles.availBadge, item.is_available ? styles.availYes : styles.availNo]}>
+                <TouchableOpacity
+                  style={[styles.availBadge, item.is_available ? styles.availYes : styles.availNo]}
+                  onPress={() => quickToggleAvailable(item)}
+                  testID={`toggle-avail-${item.id}`}
+                >
+                  <Ionicons name={item.is_available ? "checkmark-circle" : "close-circle"} size={12} color={item.is_available ? colors.success : colors.error} />
                   <Text style={[styles.availText, { color: item.is_available ? colors.success : colors.error }]}>
-                    {item.is_available ? 'Available' : 'Unavailable'}
+                    {item.is_available ? 'In stock' : '86\'d'}
                   </Text>
-                </View>
+                </TouchableOpacity>
               </View>
               <View style={styles.itemActions}>
                 <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
@@ -221,14 +273,26 @@ export default function VendorMenu({ navigation }) {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Image URL (optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={form.image_url}
-                onChangeText={(t) => setForm({ ...form, image_url: t })}
-                placeholder="https://..."
-                autoCapitalize="none"
-              />
+              <Text style={styles.fieldLabel}>Image (optional)</Text>
+              {form.image_url ? (
+                <View style={styles.imagePreviewBox}>
+                  <Image source={{ uri: form.image_url }} style={styles.imagePreview} />
+                  <TouchableOpacity style={styles.imageRemove} onPress={() => setForm({ ...form, image_url: '' })}>
+                    <Ionicons name="close-circle" size={22} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.imagePickBtn} onPress={pickImage} disabled={uploading} testID="pick-image-btn">
+                  {uploading ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="image" size={24} color={colors.primary} />
+                      <Text style={styles.imagePickText}>Tap to upload a photo</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.switchRow}>
@@ -278,7 +342,7 @@ const styles = StyleSheet.create({
   itemDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 4, marginBottom: 6 },
   itemMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   itemPrice: { fontSize: 16, fontWeight: '700', color: colors.primary },
-  availBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.full },
+  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.full },
   availYes: { backgroundColor: colors.successLight },
   availNo: { backgroundColor: colors.errorLight },
   availText: { fontSize: 11, fontWeight: '600' },
@@ -302,4 +366,9 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: 12, color: colors.textSecondary },
   categoryTextActive: { color: '#fff' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.card, padding: spacing.md, borderRadius: borderRadius.sm, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.borderLight },
+  imagePickBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: spacing.md, borderRadius: borderRadius.sm, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  imagePickText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  imagePreviewBox: { position: 'relative', borderRadius: borderRadius.sm, overflow: 'hidden' },
+  imagePreview: { width: '100%', height: 180, backgroundColor: colors.background },
+  imageRemove: { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999 },
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Switch, TextInput, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import client from '../../api/client';
 import { colors, spacing, borderRadius } from '../../theme';
 
@@ -140,18 +141,57 @@ const VendorsTab = ({ siteId }) => {
 
 const MenuTab = ({ siteId }) => {
   const [items, setItems] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [selectedVendor, setSelectedVendor] = useState('');
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await client.get(`/sites/${siteId}/menu`);
-      setItems(data);
+      const [m, v] = await Promise.all([
+        client.get(`/sites/${siteId}/menu`),
+        client.get(`/sites/${siteId}/vendors`),
+      ]);
+      setItems(m.data);
+      setVendors(v.data);
+      if (v.data.length > 0 && !selectedVendor) setSelectedVendor(v.data[0].id);
     } catch (e) { console.log(e?.response?.data || e.message); }
     finally { setLoading(false); }
-  }, [siteId]);
+  }, [siteId, selectedVendor]);
 
   useEffect(() => { load(); }, [load]);
+
+  const uploadExcel = async () => {
+    if (!selectedVendor) {
+      Alert.alert('Select vendor', 'Please choose which vendor this menu is for.');
+      return;
+    }
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled) return;
+    setUploading(true);
+    try {
+      const asset = result.assets[0];
+      const fd = new FormData();
+      fd.append('file', {
+        uri: asset.uri,
+        name: asset.name,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const { data } = await client.post(`/sites/${siteId}/menu/upload-excel?vendor_id=${selectedVendor}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      Alert.alert('Success', `Inserted ${data.inserted} items${data.errors?.length ? ` (${data.errors.length} errors)` : ''}`);
+      await load();
+    } catch (e) {
+      Alert.alert('Upload failed', e?.response?.data?.detail || 'Try again');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const toggleAvail = async (item) => {
     try {
@@ -183,7 +223,29 @@ const MenuTab = ({ siteId }) => {
       keyExtractor={(it) => it.id}
       contentContainerStyle={{ padding: spacing.md, paddingBottom: 80 }}
       ListHeaderComponent={() => (
-        <Text style={s.note}>Tip: Use the web Site-Admin dashboard for Excel bulk-upload. Here you can toggle availability, edit prices, and hide pricing.</Text>
+        <View style={{ marginBottom: spacing.md }}>
+          {vendors.length > 0 && (
+            <View style={s.vendorPickerCard}>
+              <Text style={s.uploadTitle}>📄 Upload menu via Excel</Text>
+              <Text style={s.uploadSub}>Choose vendor, then pick .xlsx file. Columns: name, description, category, price.</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                {vendors.map((v) => (
+                  <TouchableOpacity
+                    key={v.id}
+                    onPress={() => setSelectedVendor(v.id)}
+                    style={[s.vendorChip, selectedVendor === v.id && s.vendorChipActive]}
+                  >
+                    <Text style={[s.vendorChipText, selectedVendor === v.id && { color: '#fff' }]} numberOfLines={1}>{v.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity onPress={uploadExcel} disabled={uploading} style={[s.uploadBtn, uploading && { opacity: 0.6 }]}>
+                <Ionicons name="cloud-upload" size={16} color="#fff" />
+                <Text style={s.uploadBtnText}>{uploading ? 'Uploading...' : 'Pick Excel & Upload'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       )}
       ListEmptyComponent={() => <Text style={s.emptyText}>No menu items yet.</Text>}
       renderItem={({ item }) => (
@@ -344,6 +406,14 @@ const s = StyleSheet.create({
   addPill: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   addPillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   note: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.md, fontStyle: 'italic' },
+  vendorPickerCard: { backgroundColor: colors.card, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.borderLight },
+  uploadTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  uploadSub: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
+  vendorChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.borderLight, marginRight: 6 },
+  vendorChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  vendorChipText: { fontSize: 12, fontWeight: '600', color: colors.textPrimary, maxWidth: 120 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, padding: 10, borderRadius: borderRadius.sm, marginTop: 10 },
+  uploadBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   menuCard: { backgroundColor: colors.card, padding: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.borderLight },
   priceInput: { borderWidth: 1, borderColor: colors.borderLight, borderRadius: borderRadius.sm, padding: 8, fontSize: 14, color: colors.textPrimary, marginTop: 4, backgroundColor: colors.background },
   saveBtn: { backgroundColor: colors.primary, padding: spacing.md, borderRadius: borderRadius.md, alignItems: 'center', marginTop: spacing.md },

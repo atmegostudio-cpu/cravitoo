@@ -5,7 +5,9 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, WebSocket, WebSocketDisconnect, Query, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+import re
+import uuid
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
@@ -884,7 +886,17 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     
     # Generate QR code for pickup
     qr_code = generate_pickup_qr(order_id)
-    await db.orders.update_one({"_id": result.inserted_id}, {"$set": {"pickup_qr": qr_code}})
+    update_doc = {"pickup_qr": qr_code}
+    
+    # Auto-confirm if vendor has enabled it
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(data.vendor_id, "Vendor")})
+    auto_confirmed = False
+    if vendor_doc and vendor_doc.get("auto_confirm"):
+        update_doc["status"] = "confirmed"
+        auto_confirmed = True
+    
+    await db.orders.update_one({"_id": result.inserted_id}, {"$set": update_doc})
+    final_status = "confirmed" if auto_confirmed else "pending"
     
     # Notify vendor of new order
     vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
@@ -900,12 +912,12 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     await manager.send_to_vendor(data.vendor_id, {
         "type": "new_order",
         "order_id": order_id,
-        "status": "pending",
+        "status": final_status,
         "amount": total_amount,
         "items_count": len(validated_items)
     })
 
-    return {"id": order_id, "total_amount": total_amount, "status": "pending", "pickup_qr": qr_code}
+    return {"id": order_id, "total_amount": total_amount, "status": final_status, "pickup_qr": qr_code}
 
 @api_router.get("/orders")
 async def get_orders(user: dict = Depends(get_current_user)):
@@ -1991,6 +2003,291 @@ async def refund_order(order_id: str, user: dict = Depends(get_current_user)):
     })
 
     return {"message": "Refund issued", "refund_status": refund_status, "amount": order["total_amount"]}
+
+# ============== VENDOR EARNINGS, SETTLEMENT, SETTINGS ==============
+
+@api_router.get("/vendor/today-earnings")
+async def vendor_today_earnings(user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors")
+    vendor_id = user.get("vendor_id")
+    if not vendor_id:
+        return {"orders": 0, "revenue": 0.0, "completed": 0, "pending": 0}
+
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    pipe = [
+        {"$match": {"vendor_id": vendor_id, "created_at": {"$gte": today_start}}},
+        {"$group": {
+            "_id": "$status",
+            "count": {"$sum": 1},
+            "revenue": {"$sum": {"$cond": [{"$eq": ["$payment_status", "paid"]}, "$total_amount", 0]}},
+        }}
+    ]
+    rows = await db.orders.aggregate(pipe).to_list(20)
+    total_orders, total_rev, completed, pending = 0, 0.0, 0, 0
+    for r in rows:
+        total_orders += r["count"]
+        total_rev += r["revenue"]
+        if r["_id"] in ("completed", "ready"):
+            completed += r["count"]
+        elif r["_id"] in ("pending", "confirmed", "preparing"):
+            pending += r["count"]
+    return {"orders": total_orders, "revenue": round(total_rev, 2), "completed": completed, "pending": pending}
+
+
+@api_router.get("/vendor/settlement")
+async def vendor_settlement(days: int = 7, user: dict = Depends(get_current_user)):
+    """Vendor's daily settlement: revenue, commission, net payout for last N days."""
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors")
+    vendor_id = user.get("vendor_id")
+    days = max(1, min(days, 90))
+    since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+
+    # Vendor's commission % (default 15)
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")}) if vendor_id else None
+    commission_pct = float(vendor_doc.get("commission_pct", 15.0)) if vendor_doc else 15.0
+
+    pipe = [
+        {"$match": {"vendor_id": vendor_id, "payment_status": "paid", "created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+            "orders": {"$sum": 1},
+            "gross": {"$sum": "$total_amount"},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    rows = await db.orders.aggregate(pipe).to_list(100)
+    daily = []
+    total_gross = 0.0
+    total_orders = 0
+    for r in rows:
+        gross = r["gross"]
+        commission = round(gross * commission_pct / 100, 2)
+        payout = round(gross - commission, 2)
+        daily.append({
+            "date": r["_id"],
+            "orders": r["orders"],
+            "gross": round(gross, 2),
+            "commission": commission,
+            "payout": payout,
+        })
+        total_gross += gross
+        total_orders += r["orders"]
+    total_commission = round(total_gross * commission_pct / 100, 2)
+    total_payout = round(total_gross - total_commission, 2)
+    return {
+        "commission_pct": commission_pct,
+        "days": days,
+        "daily": daily,
+        "total_orders": total_orders,
+        "total_gross": round(total_gross, 2),
+        "total_commission": total_commission,
+        "total_payout": total_payout,
+    }
+
+
+@api_router.get("/vendor/settings")
+async def get_vendor_settings(user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors")
+    vendor_id = user.get("vendor_id")
+    if not vendor_id:
+        raise HTTPException(status_code=404, detail="No vendor linked to this account")
+    vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+    return {
+        "auto_confirm": bool(vendor.get("auto_confirm", False)),
+        "low_stock_threshold": int(vendor.get("low_stock_threshold", 5)),
+        "commission_pct": float(vendor.get("commission_pct", 15.0)),
+    }
+
+
+@api_router.patch("/vendor/settings")
+async def update_vendor_settings(updates: Dict[str, Any], user: dict = Depends(get_current_user)):
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors")
+    vendor_id = user.get("vendor_id")
+    allowed = {"auto_confirm", "low_stock_threshold"}
+    cleaned = {k: v for k, v in updates.items() if k in allowed}
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No valid fields")
+    if "auto_confirm" in cleaned:
+        cleaned["auto_confirm"] = bool(cleaned["auto_confirm"])
+    if "low_stock_threshold" in cleaned:
+        cleaned["low_stock_threshold"] = max(0, int(cleaned["low_stock_threshold"]))
+    await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": cleaned})
+    return {"message": "Settings updated", **cleaned}
+
+
+@api_router.patch("/menu/{item_id}/availability")
+async def quick_toggle_menu_availability(item_id: str, user: dict = Depends(get_current_user)):
+    """Vendor-only quick toggle for own menu items (different from site-control)."""
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors")
+    vendor_id = user.get("vendor_id")
+    item = await db.menu_items.find_one({"_id": safe_objectid(item_id, "Menu item"), "vendor_id": vendor_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    new_avail = not bool(item.get("is_available", True))
+    await db.menu_items.update_one({"_id": item["_id"]}, {"$set": {"is_available": new_avail}})
+    return {"id": item_id, "is_available": new_avail}
+
+
+# ============== FILE UPLOAD (LOCAL STORAGE) ==============
+
+UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', '/app/backend/uploads'))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+@api_router.post("/upload/menu-image")
+async def upload_menu_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] not in ("vendor", "master_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower()[:5]
+    if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
+        ext = "png"
+    fname = f"{uuid.uuid4().hex}.{ext}"
+    fpath = UPLOAD_DIR / fname
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    with open(fpath, "wb") as f:
+        f.write(content)
+    base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
+    url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+    return {"url": url, "filename": fname, "size": len(content)}
+
+
+@api_router.get("/uploads/{filename}")
+async def serve_upload(filename: str):
+    # Sanitize filename — only allow alphanumeric + .
+    if not re.match(r'^[a-f0-9]+\.[a-z]+$', filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    fpath = UPLOAD_DIR / filename
+    if not fpath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(fpath))
+
+
+# ============== MASTER ADMIN: VENDOR COMMISSION ==============
+
+@api_router.patch("/admin/vendors/{vendor_id}/commission")
+async def set_vendor_commission(vendor_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    pct = payload.get("commission_pct")
+    if pct is None or not isinstance(pct, (int, float)) or pct < 0 or pct > 50:
+        raise HTTPException(status_code=400, detail="commission_pct must be between 0 and 50")
+    await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": {"commission_pct": float(pct)}})
+    return {"vendor_id": vendor_id, "commission_pct": float(pct)}
+
+
+# ============== MASTER ADMIN: ANALYTICS CHARTS ==============
+
+@api_router.get("/reports/charts")
+async def master_charts(days: int = 14, user: dict = Depends(get_current_user)):
+    """Time-series for charts on master dashboard."""
+    if not is_master_admin(user) and user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    days = max(7, min(days, 90))
+    since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+
+    # Daily revenue
+    rev_pipe = [
+        {"$match": {"payment_status": "paid", "created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+            "revenue": {"$sum": "$total_amount"},
+            "orders": {"$sum": 1},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    daily = await db.orders.aggregate(rev_pipe).to_list(100)
+    daily_revenue = [{"date": d["_id"], "revenue": round(d["revenue"], 2), "orders": d["orders"]} for d in daily]
+
+    # Top dishes by quantity (last N days)
+    items_pipe = [
+        {"$match": {"payment_status": "paid", "created_at": {"$gte": since}}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.menu_item_id",
+            "qty": {"$sum": "$items.quantity"},
+            "revenue": {"$sum": {"$multiply": ["$items.quantity", "$items.price"]}},
+        }},
+        {"$sort": {"qty": -1}},
+        {"$limit": 5},
+    ]
+    top_items_raw = await db.orders.aggregate(items_pipe).to_list(5)
+    top_dishes = []
+    for it in top_items_raw:
+        mid = it.get("_id")
+        name = "Unknown"
+        if mid and ObjectId.is_valid(mid):
+            mi = await db.menu_items.find_one({"_id": ObjectId(mid)})
+            if mi:
+                name = mi.get("name", "Unknown")
+        top_dishes.append({"menu_item_id": mid, "name": name, "qty": it["qty"], "revenue": round(it["revenue"], 2)})
+
+    return {"days": days, "daily_revenue": daily_revenue, "top_dishes": top_dishes}
+
+
+# ============== BULK EMPLOYEE CSV UPLOAD ==============
+
+@api_router.post("/admin/employees/bulk-csv")
+async def bulk_employee_csv(
+    file: UploadFile = File(...),
+    company_id: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """Corporate admin or master uploads CSV with columns: email,name,password,phone (optional)."""
+    if user["role"] not in ("corporate_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Only corporate or master admin")
+    if not (file.filename or "").lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a .csv")
+    content = (await file.read()).decode("utf-8", errors="ignore")
+    if len(content) > 1 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="CSV must be under 1 MB")
+
+    cid = company_id or user.get("company_id")
+    if not cid:
+        raise HTTPException(status_code=400, detail="company_id required")
+
+    import csv, io
+    reader = csv.DictReader(io.StringIO(content))
+    inserted, errors = 0, []
+    for idx, row in enumerate(reader, start=2):
+        email = (row.get("email") or "").strip().lower()
+        name = (row.get("name") or "").strip()
+        pwd = (row.get("password") or "").strip()
+        if not email or not name or len(pwd) < 6:
+            errors.append({"row": idx, "error": "missing email/name or password<6"})
+            continue
+        if await db.users.find_one({"email": email}):
+            errors.append({"row": idx, "error": f"email {email} exists"})
+            continue
+        try:
+            await db.users.insert_one({
+                "email": email,
+                "name": name,
+                "password_hash": hash_password(pwd),
+                "role": "employee",
+                "company_id": cid,
+                "site_id": (row.get("site_id") or "").strip() or None,
+                "phone": (row.get("phone") or "").strip() or None,
+                "preferences": {"vegetarian": False, "vegan": False, "gluten_free": False, "dairy_free": False, "nut_free": False, "spicy_preference": "medium", "allergies": [], "preferred_cuisines": []},
+                "created_at": datetime.now(timezone.utc),
+                "failed_attempts": 0,
+            })
+            inserted += 1
+        except Exception as e:
+            errors.append({"row": idx, "error": str(e)})
+
+    return {"inserted": inserted, "errors": errors, "total_attempted": inserted + len(errors)}
+
 
 # ============== SITES & MULTI-LEVEL ADMIN ==============
 

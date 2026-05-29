@@ -15,6 +15,7 @@ const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/
 export default function VendorDashboard({ navigation }) {
   const { user } = useAuth();
   const [analytics, setAnalytics] = useState(null);
+  const [today, setToday] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,12 +23,14 @@ export default function VendorDashboard({ navigation }) {
 
   const load = async () => {
     try {
-      const [a, o] = await Promise.all([
+      const [a, o, t] = await Promise.all([
         client.get('/analytics/vendor'),
         client.get('/orders'),
+        client.get('/vendor/today-earnings').catch(() => ({ data: null })),
       ]);
       setAnalytics(a.data);
       setRecentOrders(o.data.slice(0, 5));
+      setToday(t.data);
     } catch (e) {
       console.log('Vendor dash error', e?.response?.data || e.message);
     } finally {
@@ -62,7 +65,9 @@ export default function VendorDashboard({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.headerSubtitle}>Vendor Portal</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('VendorSettlement')} testID="settings-icon">
+          <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -71,6 +76,23 @@ export default function VendorDashboard({ navigation }) {
       >
         <Text style={styles.greeting}>Welcome, {user?.name?.split(' ')[0]}!</Text>
         <Text style={styles.tagline}>Here's your business at a glance</Text>
+
+        {today && (
+          <LinearGradient colors={['#FF6B35', '#E04815']} style={styles.todayCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.todayLabel}>Today's earnings</Text>
+              <Text style={styles.todayValue} testID="today-revenue">₹{(today.revenue || 0).toFixed(2)}</Text>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
+                <Text style={styles.todaySub}>{today.orders} orders</Text>
+                <Text style={styles.todaySub}>·</Text>
+                <Text style={styles.todaySub}>{today.pending} pending</Text>
+                <Text style={styles.todaySub}>·</Text>
+                <Text style={styles.todaySub}>{today.completed} done</Text>
+              </View>
+            </View>
+            <Ionicons name="trending-up" size={36} color="#fff" />
+          </LinearGradient>
+        )}
 
         {newOrderCount > 0 && (
           <TouchableOpacity
@@ -168,6 +190,10 @@ const styles = StyleSheet.create({
   tagline: { fontSize: 14, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg },
   newOrdersBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, padding: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.md, gap: spacing.sm },
   newOrdersText: { color: '#fff', fontWeight: '600', flex: 1, fontSize: 14 },
+  todayCard: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: borderRadius.lg, marginBottom: spacing.md, gap: spacing.md },
+  todayLabel: { color: '#fff', opacity: 0.9, fontSize: 12, fontWeight: '500' },
+  todayValue: { color: '#fff', fontSize: 32, fontWeight: '800', marginTop: 2 },
+  todaySub: { color: '#fff', opacity: 0.9, fontSize: 11, fontWeight: '500' },
   statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   statCard: { flex: 1, padding: spacing.md, borderRadius: borderRadius.lg, alignItems: 'flex-start' },
   statValueLight: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: spacing.sm },
