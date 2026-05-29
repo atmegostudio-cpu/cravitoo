@@ -64,7 +64,28 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
-### Iteration 7: Vendor Onboarding & Approval Workflow (CURRENT — Feb 2026) ✅
+### Iteration 8: P1 Batch — Refunds/Favorites/Subscription/Onboarding-tooling (CURRENT — Feb 2026) ✅
+- **Backend** (22 new + 201/201 regression tests passing):
+  - `PATCH /api/admin/vendors/{id}` — master edits vendor profile (name, contact, address, status, commission)
+  - `GET /api/refunds` — employee sees cancelled + refunded orders with timeline
+  - `GET/POST/DELETE /api/favorites[/{vendor_id}]` — favorites CRUD per employee
+  - `GET /api/orders/last` — most recent order for reorder-my-usual flow
+  - `POST /api/onboarding/vendors/bulk-import` — master/site/city admin uploads Excel to create N onboardings
+  - `POST /api/onboarding/vendors/{id}/menu/upload-excel` — pre-load menu items as `draft_menu` (auto-ticks checklist)
+  - `GET /api/meal-period/current` — public, returns current period (breakfast/lunch/snacks/dinner) by IST
+  - `GET /api/reports/city-leaderboard?days=N` — master sees cities ranked by revenue, with sites/vendors/pending counts + avg checklist %
+  - **Low-stock alert** trigger in `POST /api/orders` — fires on threshold-crossing (not exact equality)
+  - **Fixes from test report**: `draft_menu` now included in `onboarding_to_dict`; low-stock crossing condition robust to repeated orders
+- **Web Frontend**:
+  - `/master/dashboard` now includes **City Performance Leaderboard** (revenue bars, medal ranks 🥇🥈🥉, pending onboardings, avg checklist %)
+  - `/master/vendors` — full profile edit modal (name, description, cuisine, phone, email, address, status, commission)
+  - `/onboarding` list — **Bulk Import Excel** button next to "New Onboarding"
+  - `/onboarding/:id` Documents tab — **Pre-load menu via Excel** card (auto-ticks "Menu uploaded")
+- **Mobile (Customer App)**:
+  - New screens: **Favorites & Reorder** (heart toggle, one-tap reorder), **Refunds** (timeline view with refund status), **Meal Plans** (weekly/monthly subscription UI), **Event Catering** (bulk-order request flow)
+  - Menu screen: **Meal-period banner** ("Now serving: lunch"), **favorite heart toggle** on vendor tabs
+  - Order Detail: **auto-prompts review modal** when status becomes completed (5-star + optional comment)
+  - Profile screen: 4 quick-access shortcut buttons to the new screens
 - **Backend** (36/36 new + 143/143 regression, critical collection-name bug fixed):
   - **Cities**: `/api/cities` CRUD (master only); `GET /api/cities` role-scoped (master sees all, city_admin sees own, others see active)
   - **City Admin role**: `/api/admin/city-admins` create; appears in `/api/admin/admins` list

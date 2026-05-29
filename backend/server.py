@@ -1011,14 +1011,18 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
                         {"$group": {"_id": None, "qty": {"$sum": "$items.quantity"}}},
                     ]
                     async for r in db.orders.aggregate(pipe):
-                        if r["qty"] == threshold or r["qty"] == threshold * 2:
-                            # Notify vendor (once at threshold, once at 2x)
+                        cur_qty = r["qty"]
+                        prev_qty = cur_qty - it.get("quantity", 0)
+                        crossed_low = prev_qty < threshold <= cur_qty
+                        crossed_critical = prev_qty < (threshold * 2) <= cur_qty
+                        if crossed_low or crossed_critical:
+                            level = "Critical low stock" if crossed_critical else "Low stock alert"
                             vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
                             for vu in vendor_users:
                                 await create_notification(
                                     str(vu["_id"]),
-                                    "Low stock alert",
-                                    f"{it.get('name', 'An item')} has sold {r['qty']} units today",
+                                    level,
+                                    f"{it.get('name', 'An item')} has sold {cur_qty} units today",
                                     "stock"
                                 )
     except Exception as e:
@@ -2730,6 +2734,7 @@ def onboarding_to_dict(o):
         "checklist": o.get("checklist", {}),
         "checklist_pct": calc_checklist_pct(o.get("checklist", {})),
         "documents": o.get("documents", {}),
+        "draft_menu": o.get("draft_menu", []),
         "vendor_id": o.get("vendor_id"),  # set when approved
         "remarks": o.get("remarks", []),
         "created_by": o.get("created_by"),
