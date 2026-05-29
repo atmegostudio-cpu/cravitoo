@@ -508,24 +508,47 @@ async def clear_login_attempts(identifier: str):
 # Startup Events
 @app.on_event("startup")
 async def startup_event():
-    await db.users.create_index("email", unique=True)
-    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
-    await db.login_attempts.create_index("identifier")
-    await db.companies.create_index("name")
-    await db.vendors.create_index("name")
-    await db.menu_items.create_index("vendor_id")
-    await db.menu_items.create_index("site_id")
-    await db.orders.create_index("user_id")
-    await db.orders.create_index("vendor_id")
-    await db.orders.create_index("site_id")
-    await db.notifications.create_index("user_id")
-    await db.notifications.create_index("created_at")
-    await db.sites.create_index("name")
-    await db.vendor_site_mappings.create_index([("vendor_id", 1), ("site_id", 1)], unique=True)
-    await db.meal_schedules.create_index("site_id", unique=True)
-    
-    await seed_admin()
-    await seed_demo_data()
+    """Resilient startup — never block FastAPI from serving requests."""
+    index_ops = [
+        ("users", "email", {"unique": True}),
+        ("password_reset_tokens", "expires_at", {"expireAfterSeconds": 0}),
+        ("login_attempts", "identifier", {}),
+        ("companies", "name", {}),
+        ("vendors", "name", {}),
+        ("menu_items", "vendor_id", {}),
+        ("menu_items", "site_id", {}),
+        ("orders", "user_id", {}),
+        ("orders", "vendor_id", {}),
+        ("orders", "site_id", {}),
+        ("notifications", "user_id", {}),
+        ("notifications", "created_at", {}),
+        ("sites", "name", {}),
+    ]
+    for coll, field, opts in index_ops:
+        try:
+            await db[coll].create_index(field, **opts)
+        except Exception as e:
+            logger.warning(f"Index create skipped on {coll}.{field}: {e}")
+
+    # Compound + unique indexes — tolerate existing duplicate data
+    try:
+        await db.vendor_site_mappings.create_index([("vendor_id", 1), ("site_id", 1)], unique=True)
+    except Exception as e:
+        logger.warning(f"vendor_site_mappings index skipped: {e}")
+    try:
+        await db.meal_schedules.create_index("site_id", unique=True)
+    except Exception as e:
+        logger.warning(f"meal_schedules index skipped: {e}")
+
+    # Seed admin & demo data — never block startup on failure
+    try:
+        await seed_admin()
+    except Exception as e:
+        logger.error(f"seed_admin failed: {e}")
+    try:
+        await seed_demo_data()
+    except Exception as e:
+        logger.error(f"seed_demo_data failed: {e}")
 
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
@@ -738,8 +761,12 @@ async def seed_demo_data():
 - GET /api/auth/me
 - POST /api/auth/logout
 """
-    Path("/app/memory").mkdir(exist_ok=True)
-    Path("/app/memory/test_credentials.md").write_text(test_creds_content)
+    try:
+        Path("/app/memory").mkdir(exist_ok=True)
+        Path("/app/memory/test_credentials.md").write_text(test_creds_content)
+    except (PermissionError, OSError) as e:
+        # Read-only filesystem in production — skip silently
+        logger.debug(f"Skipped writing test_credentials.md: {e}")
 
 # Auth Routes
 @api_router.post("/auth/register")
@@ -2246,8 +2273,16 @@ async def quick_toggle_menu_availability(item_id: str, user: dict = Depends(get_
 
 # ============== FILE UPLOAD (LOCAL STORAGE) ==============
 
-UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', '/app/backend/uploads'))
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', '/tmp/cravitoo_uploads'))
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as e:
+    # Fallback to /tmp if primary dir not writable (read-only k8s rootfs)
+    UPLOAD_DIR = Path('/tmp/cravitoo_uploads')
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e2:
+        logger.error(f"Could not create UPLOAD_DIR: {e2}. File uploads will fail until fixed.")
 
 @api_router.post("/upload/menu-image")
 async def upload_menu_image(
