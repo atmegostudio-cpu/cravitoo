@@ -2768,6 +2768,60 @@ async def onboarding_dashboard(user: dict = Depends(get_current_user)):
     }
 
 
+# ============== CITY PERFORMANCE LEADERBOARD ==============
+
+@api_router.get("/reports/city-leaderboard")
+async def city_leaderboard(days: int = 30, user: dict = Depends(get_current_user)):
+    """Ranked list of cities by revenue, orders, vendor count, avg checklist."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    days = max(1, min(days, 365))
+    since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+
+    cities_cursor = db.cities.find({})
+    rows = []
+    async for c in cities_cursor:
+        cid = str(c["_id"])
+        site_ids = [str(s["_id"]) async for s in db.sites.find({"city_id": cid}, {"_id": 1})]
+        vendor_count = await db.vendor_onboarding.count_documents({"city_id": cid, "status": "active"})
+        pending = await db.vendor_onboarding.count_documents({
+            "city_id": cid,
+            "status": {"$in": ["documents_pending", "under_site_review", "under_master_review", "changes_requested"]}
+        })
+        in_progress_cursor = db.vendor_onboarding.find({"city_id": cid, "status": {"$nin": ["approved", "active", "rejected"]}})
+        pcts = []
+        async for o in in_progress_cursor:
+            pcts.append(calc_checklist_pct(o.get("checklist", {})))
+        avg_pct = round(sum(pcts) / len(pcts), 1) if pcts else 0.0
+
+        revenue, orders = 0.0, 0
+        if site_ids:
+            user_ids = [str(u["_id"]) async for u in db.users.find({"site_id": {"$in": site_ids}, "role": "employee"}, {"_id": 1})]
+            if user_ids:
+                pipe = [
+                    {"$match": {"user_id": {"$in": user_ids}, "payment_status": "paid", "created_at": {"$gte": since}}},
+                    {"$group": {"_id": None, "revenue": {"$sum": "$total_amount"}, "orders": {"$sum": 1}}}
+                ]
+                async for r in db.orders.aggregate(pipe):
+                    revenue = round(r.get("revenue", 0), 2)
+                    orders = r.get("orders", 0)
+
+        rows.append({
+            "city_id": cid,
+            "name": c.get("name", "Unknown"),
+            "state": c.get("state", ""),
+            "site_count": len(site_ids),
+            "vendor_count": vendor_count,
+            "pending_onboardings": pending,
+            "avg_checklist_pct": avg_pct,
+            "orders": orders,
+            "revenue": revenue,
+        })
+
+    rows.sort(key=lambda r: r["revenue"], reverse=True)
+    return {"days": days, "cities": rows, "total_revenue": round(sum(r["revenue"] for r in rows), 2)}
+
+
 # ============== MASTER ADMIN: ANALYTICS CHARTS ==============
 
 @api_router.get("/reports/charts")

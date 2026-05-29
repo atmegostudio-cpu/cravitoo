@@ -8,17 +8,20 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MasterDashboard = () => {
   const [data, setData] = useState(null);
   const [charts, setCharts] = useState(null);
+  const [leaderboard, setLeaderboard] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [d, c] = await Promise.all([
+        const [d, c, lb] = await Promise.all([
           axios.get(`${API}/reports/master-dashboard`, { withCredentials: true }),
           axios.get(`${API}/reports/charts?days=14`, { withCredentials: true }),
+          axios.get(`${API}/reports/city-leaderboard?days=30`, { withCredentials: true }),
         ]);
         setData(d.data);
         setCharts(c.data);
+        setLeaderboard(lb.data);
       } catch (e) {
         console.error(e);
       } finally {
@@ -88,6 +91,10 @@ const MasterDashboard = () => {
               <RevenueChart data={charts.daily_revenue} />
               <TopDishesChart data={charts.top_dishes} />
             </div>
+          )}
+
+          {leaderboard && leaderboard.cities.length > 0 && (
+            <CityLeaderboard data={leaderboard} />
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -184,8 +191,7 @@ const RevenueChart = ({ data }) => {
   );
 };
 
-const TopDishesChart = ({ data }) => {
-  if (!data || data.length === 0) {
+const TopDishesChart = ({ data }) => {  if (!data || data.length === 0) {
     return (
       <div className="bg-card border border-border-light rounded-2xl p-6">
         <h3 className="font-heading text-lg font-medium text-text-primary mb-2">Top Dishes</h3>
@@ -212,6 +218,79 @@ const TopDishesChart = ({ data }) => {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+const CityLeaderboard = ({ data }) => {
+  const maxRev = Math.max(...data.cities.map((c) => c.revenue), 1);
+  const totalCities = data.cities.length;
+  const medals = ['🥇', '🥈', '🥉'];
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 mb-6" data-testid="city-leaderboard">
+      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+        <h2 className="font-heading text-xl font-medium text-text-primary">City Performance · last {data.days} days</h2>
+        <p className="text-sm text-text-secondary">
+          {totalCities} {totalCities === 1 ? 'city' : 'cities'} · Total ₹{data.total_revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="text-left text-xs text-text-muted uppercase border-b border-border-light">
+              <th className="pb-2 pl-2 w-12">Rank</th>
+              <th className="pb-2">City</th>
+              <th className="pb-2 text-right">Revenue</th>
+              <th className="pb-2 text-right w-20">Orders</th>
+              <th className="pb-2 text-right w-20">Sites</th>
+              <th className="pb-2 text-right w-20">Vendors</th>
+              <th className="pb-2 text-right w-24">Pending</th>
+              <th className="pb-2 text-right w-32">Avg Checklist</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.cities.map((c, idx) => (
+              <tr key={c.city_id} data-testid={`leaderboard-row-${c.city_id}`} className="border-b border-border-light/50">
+                <td className="py-3 pl-2">
+                  <span className="text-lg" title={`#${idx + 1}`}>{medals[idx] || `#${idx + 1}`}</span>
+                </td>
+                <td className="py-3">
+                  <p className="font-medium text-text-primary text-sm">{c.name}</p>
+                  <p className="text-text-muted text-xs">{c.state}</p>
+                </td>
+                <td className="py-3 text-right">
+                  <p className="font-heading font-semibold text-primary">₹{c.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                  <div className="h-1.5 bg-background rounded-full overflow-hidden mt-1 ml-auto" style={{ maxWidth: '120px' }}>
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${(c.revenue / maxRev) * 100}%` }} />
+                  </div>
+                </td>
+                <td className="py-3 text-right text-sm text-text-secondary">{c.orders}</td>
+                <td className="py-3 text-right text-sm text-text-secondary">{c.site_count}</td>
+                <td className="py-3 text-right text-sm text-text-secondary">{c.vendor_count}</td>
+                <td className="py-3 text-right">
+                  {c.pending_onboardings > 0 ? (
+                    <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full font-medium">{c.pending_onboardings}</span>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
+                  )}
+                </td>
+                <td className="py-3 text-right">
+                  {c.avg_checklist_pct > 0 ? (
+                    <div className="flex items-center gap-2 justify-end">
+                      <div className="h-1.5 bg-background rounded-full overflow-hidden flex-1" style={{ maxWidth: '60px' }}>
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${c.avg_checklist_pct}%` }} />
+                      </div>
+                      <span className="text-xs text-text-secondary font-medium w-10">{c.avg_checklist_pct}%</span>
+                    </div>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
