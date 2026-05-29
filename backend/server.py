@@ -2697,11 +2697,11 @@ async def master_decision(onb_id: str, data: OnboardingDecision, user: dict = De
         }
         vres = await db.vendors.insert_one(vendor_doc)
         vendor_id = str(vres.inserted_id)
-        # Site-vendor mapping
-        await db.site_vendor_mappings.insert_one({
+        # Site-vendor mapping (uses canonical collection name `vendor_site_mappings`)
+        await db.vendor_site_mappings.insert_one({
             "site_id": o.get("site_id"),
             "vendor_id": vendor_id,
-            "active": True,
+            "status": "active",
             "created_at": datetime.now(timezone.utc),
         })
         set_doc["status"] = "active"

@@ -64,7 +64,32 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
-### Iteration 6: Master Admin & Site Admin (CURRENT — Feb 2026) ✅
+### Iteration 7: Vendor Onboarding & Approval Workflow (CURRENT — Feb 2026) ✅
+- **Backend** (36/36 new + 143/143 regression, critical collection-name bug fixed):
+  - **Cities**: `/api/cities` CRUD (master only); `GET /api/cities` role-scoped (master sees all, city_admin sees own, others see active)
+  - **City Admin role**: `/api/admin/city-admins` create; appears in `/api/admin/admins` list
+  - **Vendor Onboarding**:
+    - `POST /api/onboarding/vendors` create (site_admin/city_admin/master scoped to their site/city)
+    - `GET /api/onboarding/vendors[?status=X]` list with role filtering
+    - `GET /api/onboarding/vendors/{id}` detail with checklist_pct + documents map
+    - `PATCH /api/onboarding/vendors/{id}` update basic info (locked after approval)
+    - `PATCH /api/onboarding/vendors/{id}/checklist` toggle 10 checklist items
+    - `POST /api/onboarding/vendors/{id}/documents/{type}` upload PDF/image to 8 doc types (GST, PAN, FSSAI, etc.) — auto-flips status draft→documents_pending
+    - `DELETE /api/onboarding/vendors/{id}/documents/{type}`
+    - `POST /api/onboarding/vendors/{id}/site-review` — site_admin approves (→under_master_review), rejects, or requests_changes (requires ≥80% checklist)
+    - `POST /api/onboarding/vendors/{id}/master-decision` — master approves (creates real vendor + site mapping → status=active) or rejects
+    - `GET /api/onboarding/vendors/{id}/audit-trail` — full audit log
+    - `GET /api/onboarding/dashboard` — counts by status + avg checklist pct
+  - **Audit log**: persistent `audit_log` collection with user, action, entity, details, timestamp
+  - **Site city_id link**: sites can now be associated to a City entity
+- **Web Frontend**:
+  - `/master/cities` — Cities list + create + add City Admin
+  - `/onboarding` — Onboarding queue with stats (Total/Pending/Approved/Rejected/Avg Checklist), search + status filter
+  - `/onboarding/new` — Wizard step 1: basic info form (vendor name, company, contact, address, site)
+  - `/onboarding/:id` — Detail with 4 tabs (Overview/Documents/Checklist/Audit), document upload per type, checklist toggles, site-review actions, master-decision actions, status badges, decision-remarks modal
+- **8 onboarding statuses**: draft, documents_pending, under_site_review, changes_requested, under_master_review, approved, rejected, active
+- **10-item checklist**: GST verified, PAN verified, FSSAI verified, Bank verified, Menu uploaded, Pricing verified, Documents uploaded, Site visit done, Commercial terms accepted, Agreement signed
+- **8 document types**: GST cert, PAN card, FSSAI license, Shop & Establishment, Bank details, Cancelled cheque, MSME (optional), Insurance (optional)
 - **Backend** (103/103 tests passing, hardened authz):
   - `/api/sites/*` CRUD (master_admin / site_admin scoped)
   - `/api/sites/{id}/vendors` mapping management
