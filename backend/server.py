@@ -908,6 +908,20 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
             "order"
         )
 
+    # Notify employee if auto-confirmed (consistency with manual confirm path)
+    if auto_confirmed:
+        await create_notification(
+            user["id"],
+            "Order Confirmed",
+            f"Your order has been auto-confirmed by {vendor_doc.get('name', 'the vendor')}",
+            "order"
+        )
+        await manager.send_to_user(user["id"], {
+            "type": "order_update",
+            "order_id": order_id,
+            "status": "confirmed",
+        })
+
     # Broadcast WebSocket event to vendor
     await manager.send_to_vendor(data.vendor_id, {
         "type": "new_order",
@@ -2155,6 +2169,14 @@ async def upload_menu_image(
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    # Validate it's actually an image (not just a relabeled file)
+    try:
+        from PIL import Image as PILImage
+        import io as _io
+        img = PILImage.open(_io.BytesIO(content))
+        img.verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="File is not a valid image")
     with open(fpath, "wb") as f:
         f.write(content)
     base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
