@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 7 backend testing of Cities CRUD, City Admin role, and full Vendor Onboarding workflow. 35/36 new tests pass + 143/143 regression tests still pass (2 cancel-refund tests were transient network timeouts; retried in isolation and both passed). One CRITICAL bug found: master-decision endpoint writes vendor-site mapping to the WRONG collection name (`site_vendor_mappings`) while every other piece of code (including the listing endpoint `/api/sites/{site_id}/vendors`) uses `vendor_site_mappings`. As a result, an approved vendor never shows up under its site.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/onboarding/vendors/{id}/master-decision (approve path)",
+        "issue": "Inserts the new mapping into `db.site_vendor_mappings` (server.py line 2701) but every listing/mapping read uses `db.vendor_site_mappings` (lines 524 index, 669, 2937, 2984, 2987, 3001, 3014, 3391). Net effect: after master approval the vendor record IS created and gets commission_pct=15, but it is NEVER visible via `/api/sites/{site_id}/vendors`. Also the document shape mismatches (`active: True` vs the rest of code that filters `status: 'active'`).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/onboarding/vendors (site_admin)",
+        "issue": "Master-created onboardings for the site_admin's site ARE correctly visible to site_admin (matches design), but the response doesn't expose `vendor_id` until status=='active'. Not a bug, just a note for FE wiring."
+      },
+      {
+        "endpoint": "POST /api/cities",
+        "issue": "Returns 200 (not 201) on create. Inconsistent with REST conventions but matches the rest of this codebase, so low priority."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_cities_onboarding.py",
+    "/app/test_reports/pytest/pytest_iter7.xml",
+    "/app/test_reports/pytest/pytest_all_iter7.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): in server.py line ~2700-2706, change `db.site_vendor_mappings.insert_one(...)` to `db.vendor_site_mappings.insert_one(...)` and set the document to include `status: 'active'` (and a `created_at`) so the existing listing/uniqueness logic (and the unique index on (vendor_id, site_id) defined at line 524) works. Without this fix the entire master-approval -> site-mapping flow is broken end-to-end."
+  ],
+  "critical_code_review_comments": [
+    "Collection-name typo `site_vendor_mappings` vs `vendor_site_mappings` (server.py:2701) — single-character drift causes a silent integration break. Add a constants module or at least a grep-friendly named constant.",
+    "Mapping document shape inconsistency: code at 2702 writes {\"active\": True} while code at 2987 writes {\"status\": \"active\"} and reads at 3001/3391 filter on {\"status\": \"active\"}. Standardize on one shape.",
+    "server.py is 3477 lines — recommend splitting into routers (auth, cities, onboarding, vendors, orders, payments) as flagged in earlier iterations.",
+    "audit_log() is awaited but its result is never used; consider fire-and-forget via background tasks to keep request latency low, OR keep awaited but document it.",
+    "/api/cities/{id} GET does authZ check before fetching — but then 404s afterwards. Order is fine, just confirm that an unknown city_id from a city_admin returns 403 (it currently does because user.city_id != id) rather than 404 — could leak info. Low severity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_cities_onboarding.py (new)"
+  ],
+  "success_rate": {
+    "backend": "97% (35/36 new + 143/143 regression). The 1 failure is a real production bug, not a test issue.",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "Used Master admin@cravitoo.com/admin123, Site Admin siteadmin@techcorp.com/site123, Employee employee@techcorp.com/employee123 from /app/memory/test_credentials.md.",
+  "seed_data_creation": "Per-run test data is prefixed TEST_/TESTCITY_ and tagged with a per-run NONCE. A session-scoped cleanup fixture deletes TEST_ onboardings, vendors, cities, the test city_admin user, and their audit_log rows at the end of the run. NOTE: The orphaned doc in `site_vendor_mappings` (wrong-name collection) from earlier preview runs is NOT cleaned by this fixture because it's the wrong collection name and we don't want to mask the bug.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent fixes the collection-name bug at server.py line 2701, re-run only `pytest /app/backend/tests/test_iter7_cities_onboarding.py::TestOnboarding::test_32_vendor_mapped_to_site -v` to confirm. The full suite should then be 36/36 + 143/143. The 2 cancel-refund failures observed in the full-suite run were transient network timeouts (verified: they pass in isolation, no real regression).",
+  "rca of the issue": "Root cause: typo in the collection name in /app/backend/server.py master-decision handler. Line 2701 uses `db.site_vendor_mappings.insert_one(...)` while the entire rest of the file (8 other references) uses `db.vendor_site_mappings`. As a result the inserted mapping lands in an unused collection and the canonical `vendor_site_mappings` lookups (e.g. /api/sites/{site_id}/vendors, /api/vendors/me/sites) never see it. Reproduction: log in as master, run the full happy-path E2E (create onboarding -> 80%+ checklist -> site approve -> master approve), then GET /api/sites/{site_id}/vendors with master token — the just-approved vendor is missing. Mitigation/fix: rename the collection write to `db.vendor_site_mappings` and align the document shape with the existing writers (use `status: 'active'`, not `active: True`)."
+}

@@ -30,10 +30,15 @@ import MasterDashboard from './pages/master/Dashboard';
 import MasterSites from './pages/master/Sites';
 import MasterAdmins from './pages/master/Admins';
 import MasterVendors from './pages/master/Vendors';
+import MasterCities from './pages/master/Cities';
 import BulkOnboard from './pages/master/BulkOnboard';
 import SiteDetail from './pages/master/SiteDetail';
 
 import SiteAdminDashboard from './pages/siteadmin/Dashboard';
+
+import OnboardingList from './pages/OnboardingList';
+import OnboardingNew from './pages/OnboardingNew';
+import OnboardingDetail from './pages/OnboardingDetail';
 
 import EventCatering from './pages/shared/EventCatering';
 
@@ -55,6 +60,8 @@ function AppRoutes() {
         return '/master/dashboard';
       case 'site_admin':
         return '/site-admin/dashboard';
+      case 'city_admin':
+        return '/onboarding';
       default:
         return '/';
     }
@@ -188,6 +195,28 @@ function AppRoutes() {
       <Route path="/master/bulk-onboard" element={
         <ProtectedRoute allowedRoles={['master_admin', 'corporate_admin']}>
           <BulkOnboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/cities" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterCities />
+        </ProtectedRoute>
+      } />
+
+      {/* Vendor Onboarding (shared by site_admin / city_admin / master_admin) */}
+      <Route path="/onboarding" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+          <OnboardingList />
+        </ProtectedRoute>
+      } />
+      <Route path="/onboarding/new" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+          <OnboardingNew />
+        </ProtectedRoute>
+      } />
+      <Route path="/onboarding/:onbId" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+          <OnboardingDetail />
         </ProtectedRoute>
       } />
 

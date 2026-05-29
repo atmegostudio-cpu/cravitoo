@@ -264,8 +264,9 @@ class AIRecommendationRequest(BaseModel):
 class SiteCreate(BaseModel):
     name: str
     company_id: Optional[str] = None
+    city_id: Optional[str] = None  # Link to City entity (new)
     address: str
-    city: str
+    city: str  # Free-text city name (legacy)
     contact_email: EmailStr
     contact_phone: str
     # Ordering controls
@@ -286,6 +287,71 @@ class MealScheduleEntry(BaseModel):
 
 class MealScheduleUpdate(BaseModel):
     schedules: List[MealScheduleEntry]
+
+# ============== CITY & VENDOR ONBOARDING MODELS ==============
+
+class CityCreate(BaseModel):
+    name: str  # e.g. "Bangalore", "Mumbai"
+    state: str  # e.g. "Karnataka"
+    country: str = "India"
+
+class CityAdminCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    city_id: str
+
+class VendorOnboardingBasic(BaseModel):
+    vendor_name: str
+    company_name: str
+    contact_person: str
+    mobile_number: str
+    email: EmailStr
+    business_address: str
+    cuisine_type: Optional[str] = "Multi-cuisine"
+    site_id: str
+
+class VendorOnboardingUpdate(BaseModel):
+    vendor_name: Optional[str] = None
+    company_name: Optional[str] = None
+    contact_person: Optional[str] = None
+    mobile_number: Optional[str] = None
+    business_address: Optional[str] = None
+    cuisine_type: Optional[str] = None
+
+class ChecklistUpdate(BaseModel):
+    gst_verified: Optional[bool] = None
+    pan_verified: Optional[bool] = None
+    fssai_verified: Optional[bool] = None
+    bank_verified: Optional[bool] = None
+    menu_uploaded: Optional[bool] = None
+    pricing_verified: Optional[bool] = None
+    documents_uploaded: Optional[bool] = None
+    site_visit_completed: Optional[bool] = None
+    commercial_terms_accepted: Optional[bool] = None
+    agreement_signed: Optional[bool] = None
+    notes: Optional[str] = None
+
+class OnboardingDecision(BaseModel):
+    decision: str  # "approve" | "reject" | "request_changes"
+    remarks: Optional[str] = None
+
+CHECKLIST_FIELDS = [
+    "gst_verified", "pan_verified", "fssai_verified", "bank_verified",
+    "menu_uploaded", "pricing_verified", "documents_uploaded",
+    "site_visit_completed", "commercial_terms_accepted", "agreement_signed",
+]
+
+DOC_TYPES = [
+    "gst_certificate", "pan_card", "fssai_license", "shop_establishment",
+    "bank_details", "cancelled_cheque", "msme_certificate", "insurance",
+]
+
+ONBOARDING_STATUSES = [
+    "draft", "documents_pending", "under_site_review",
+    "changes_requested", "under_master_review", "approved",
+    "rejected", "active",
+]
 
 class SiteAdminCreate(BaseModel):
     email: EmailStr
@@ -2208,6 +2274,500 @@ async def set_vendor_commission(vendor_id: str, payload: Dict[str, Any], user: d
     return {"vendor_id": vendor_id, "commission_pct": float(pct)}
 
 
+# ============== CITIES & CITY ADMINS ==============
+
+def is_city_admin(user):
+    return user.get("role") == "city_admin"
+
+def is_city_or_above(user):
+    return user.get("role") in ("master_admin", "city_admin")
+
+async def can_access_city(user, city_id):
+    if is_master_admin(user):
+        return True
+    if user.get("role") == "city_admin" and user.get("city_id") == city_id:
+        return True
+    return False
+
+async def audit_log(user, entity_type, entity_id, action, details=None):
+    """Persist an audit trail entry."""
+    await db.audit_log.insert_one({
+        "user_id": user.get("id"),
+        "user_email": user.get("email"),
+        "user_role": user.get("role"),
+        "entity_type": entity_type,  # "vendor_onboarding" | "city" | "vendor" etc
+        "entity_id": entity_id,
+        "action": action,  # "created" | "updated" | "approved" | "rejected" | "uploaded_doc" etc
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc),
+    })
+
+@api_router.post("/cities")
+async def create_city(data: CityCreate, user: dict = Depends(get_current_user)):
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    if await db.cities.find_one({"name": data.name, "state": data.state}):
+        raise HTTPException(status_code=400, detail="City already exists")
+    doc = {
+        "name": data.name,
+        "state": data.state,
+        "country": data.country,
+        "status": "active",
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.cities.insert_one(doc)
+    city_id = str(res.inserted_id)
+    await audit_log(user, "city", city_id, "created", {"name": data.name, "state": data.state})
+    return {"id": city_id, **data.model_dump()}
+
+@api_router.get("/cities")
+async def list_cities(user: dict = Depends(get_current_user)):
+    """Master sees all, City Admin sees only their city, others see all active cities (for site selection)."""
+    if is_master_admin(user):
+        cursor = db.cities.find({})
+    elif is_city_admin(user):
+        cid = user.get("city_id")
+        cursor = db.cities.find({"_id": safe_objectid(cid, "City")}) if cid else db.cities.find({"_id": None})
+    else:
+        cursor = db.cities.find({"status": "active"})
+    cities = []
+    async for c in cursor:
+        cities.append({
+            "id": str(c["_id"]),
+            "name": c.get("name"),
+            "state": c.get("state"),
+            "country": c.get("country", "India"),
+            "status": c.get("status", "active"),
+        })
+    # Include site count per city
+    for c in cities:
+        c["site_count"] = await db.sites.count_documents({"city_id": c["id"]})
+        c["vendor_count"] = await db.vendor_onboarding.count_documents({"city_id": c["id"], "status": "active"})
+    return cities
+
+@api_router.get("/cities/{city_id}")
+async def get_city(city_id: str, user: dict = Depends(get_current_user)):
+    if not await can_access_city(user, city_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+    city = await db.cities.find_one({"_id": safe_objectid(city_id, "City")})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    return {
+        "id": str(city["_id"]),
+        "name": city.get("name"),
+        "state": city.get("state"),
+        "country": city.get("country", "India"),
+        "status": city.get("status", "active"),
+    }
+
+@api_router.patch("/cities/{city_id}")
+async def update_city(city_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    allowed = {"name", "state", "country", "status"}
+    cleaned = {k: v for k, v in payload.items() if k in allowed}
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No valid fields")
+    await db.cities.update_one({"_id": safe_objectid(city_id, "City")}, {"$set": cleaned})
+    await audit_log(user, "city", city_id, "updated", cleaned)
+    return {"message": "City updated"}
+
+@api_router.post("/admin/city-admins")
+async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_current_user)):
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    email_lower = data.email.lower()
+    if await db.users.find_one({"email": email_lower}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    city = await db.cities.find_one({"_id": safe_objectid(data.city_id, "City")})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    res = await db.users.insert_one({
+        "email": email_lower,
+        "password_hash": hash_password(data.password),
+        "name": data.name,
+        "role": "city_admin",
+        "city_id": data.city_id,
+        "created_at": datetime.now(timezone.utc),
+        "failed_attempts": 0,
+    })
+    user_id = str(res.inserted_id)
+    await audit_log(user, "user", user_id, "created_city_admin", {"city_id": data.city_id, "email": email_lower})
+    return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id}
+
+
+# ============== VENDOR ONBOARDING ==============
+
+def calc_checklist_pct(checklist: dict) -> int:
+    if not checklist:
+        return 0
+    done = sum(1 for f in CHECKLIST_FIELDS if checklist.get(f))
+    return int(done * 100 / len(CHECKLIST_FIELDS))
+
+def onboarding_to_dict(o):
+    return {
+        "id": str(o["_id"]),
+        "vendor_name": o.get("vendor_name"),
+        "company_name": o.get("company_name"),
+        "contact_person": o.get("contact_person"),
+        "mobile_number": o.get("mobile_number"),
+        "email": o.get("email"),
+        "business_address": o.get("business_address"),
+        "cuisine_type": o.get("cuisine_type"),
+        "site_id": o.get("site_id"),
+        "city_id": o.get("city_id"),
+        "status": o.get("status", "draft"),
+        "checklist": o.get("checklist", {}),
+        "checklist_pct": calc_checklist_pct(o.get("checklist", {})),
+        "documents": o.get("documents", {}),
+        "vendor_id": o.get("vendor_id"),  # set when approved
+        "remarks": o.get("remarks", []),
+        "created_by": o.get("created_by"),
+        "created_at": o.get("created_at").isoformat() if o.get("created_at") else None,
+        "updated_at": o.get("updated_at").isoformat() if o.get("updated_at") else None,
+    }
+
+@api_router.post("/onboarding/vendors")
+async def create_vendor_onboarding(data: VendorOnboardingBasic, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("site_admin", "master_admin", "city_admin"):
+        raise HTTPException(status_code=403, detail="Only site_admin, city_admin, or master_admin can onboard vendors")
+    # Site admin can only onboard for their own site
+    if user["role"] == "site_admin" and user.get("site_id") != data.site_id:
+        raise HTTPException(status_code=403, detail="You can only onboard vendors for your own site")
+    site = await db.sites.find_one({"_id": safe_objectid(data.site_id, "Site")})
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if user["role"] == "city_admin" and site.get("city_id") != user.get("city_id"):
+        raise HTTPException(status_code=403, detail="Site is not in your city")
+    doc = {
+        **data.model_dump(),
+        "city_id": site.get("city_id"),
+        "status": "draft",
+        "checklist": {},
+        "documents": {},
+        "remarks": [],
+        "created_by": user["id"],
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    res = await db.vendor_onboarding.insert_one(doc)
+    onb_id = str(res.inserted_id)
+    await audit_log(user, "vendor_onboarding", onb_id, "created", {"vendor_name": data.vendor_name, "site_id": data.site_id})
+    doc["_id"] = res.inserted_id
+    return onboarding_to_dict(doc)
+
+@api_router.get("/onboarding/vendors")
+async def list_vendor_onboardings(
+    status: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """List based on role:
+    - master_admin: all
+    - city_admin: only in their city
+    - site_admin: only for their site
+    - others: 403"""
+    filt = {}
+    if user["role"] == "master_admin":
+        pass
+    elif user["role"] == "city_admin":
+        filt["city_id"] = user.get("city_id")
+    elif user["role"] == "site_admin":
+        filt["site_id"] = user.get("site_id")
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if status and status in ONBOARDING_STATUSES:
+        filt["status"] = status
+    cursor = db.vendor_onboarding.find(filt).sort("created_at", -1).limit(200)
+    return [onboarding_to_dict(o) async for o in cursor]
+
+@api_router.get("/onboarding/vendors/{onb_id}")
+async def get_vendor_onboarding(onb_id: str, user: dict = Depends(get_current_user)):
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    # Role-based access
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if user["role"] == "city_admin" and o.get("city_id") != user.get("city_id"):
+        raise HTTPException(status_code=403, detail="Not your city")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return onboarding_to_dict(o)
+
+@api_router.patch("/onboarding/vendors/{onb_id}")
+async def update_vendor_onboarding(onb_id: str, data: VendorOnboardingUpdate, user: dict = Depends(get_current_user)):
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if o.get("status") in ("approved", "active", "rejected"):
+        raise HTTPException(status_code=400, detail=f"Cannot edit onboarding with status '{o.get('status')}'")
+    updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updates["updated_at"] = datetime.now(timezone.utc)
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": updates})
+    await audit_log(user, "vendor_onboarding", onb_id, "updated", updates)
+    return {"message": "Updated"}
+
+@api_router.patch("/onboarding/vendors/{onb_id}/checklist")
+async def update_checklist(onb_id: str, data: ChecklistUpdate, user: dict = Depends(get_current_user)):
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    new_checklist = {**(o.get("checklist", {})), **{k: v for k, v in updates.items() if k != "notes"}}
+    set_doc = {"checklist": new_checklist, "updated_at": datetime.now(timezone.utc)}
+    if "notes" in updates:
+        set_doc["checklist_notes"] = updates["notes"]
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
+    pct = calc_checklist_pct(new_checklist)
+    await audit_log(user, "vendor_onboarding", onb_id, "checklist_updated", {"updates": updates, "pct": pct})
+    return {"checklist": new_checklist, "checklist_pct": pct}
+
+@api_router.post("/onboarding/vendors/{onb_id}/documents/{doc_type}")
+async def upload_onboarding_doc(
+    onb_id: str,
+    doc_type: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if doc_type not in DOC_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid doc_type. Must be one of: {', '.join(DOC_TYPES)}")
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+
+    # File size limit 10 MB for compliance docs (can be larger PDFs)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File must be under 10 MB")
+    ext = (file.filename or "doc").rsplit(".", 1)[-1].lower()[:5]
+    if ext not in ("pdf", "png", "jpg", "jpeg", "webp"):
+        raise HTTPException(status_code=400, detail="Allowed types: PDF, PNG, JPG, JPEG, WEBP")
+    fname = f"onb_{uuid.uuid4().hex}.{ext}"
+    fpath = UPLOAD_DIR / fname
+    with open(fpath, "wb") as f:
+        f.write(content)
+    base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
+    url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+    docs = o.get("documents", {})
+    docs[doc_type] = {
+        "url": url,
+        "filename": fname,
+        "original_name": file.filename,
+        "uploaded_by": user["email"],
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "size": len(content),
+    }
+    set_doc = {"documents": docs, "updated_at": datetime.now(timezone.utc)}
+    # Auto-flip status from draft → documents_pending after first upload
+    if o.get("status") == "draft":
+        set_doc["status"] = "documents_pending"
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
+    await audit_log(user, "vendor_onboarding", onb_id, "uploaded_doc", {"doc_type": doc_type, "filename": fname})
+    return {"doc_type": doc_type, "url": url, "filename": fname}
+
+@api_router.delete("/onboarding/vendors/{onb_id}/documents/{doc_type}")
+async def delete_onboarding_doc(onb_id: str, doc_type: str, user: dict = Depends(get_current_user)):
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if o.get("status") in ("approved", "active"):
+        raise HTTPException(status_code=400, detail="Cannot delete docs after approval")
+    docs = o.get("documents", {})
+    if doc_type not in docs:
+        raise HTTPException(status_code=404, detail="Document not found")
+    docs.pop(doc_type, None)
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": {"documents": docs, "updated_at": datetime.now(timezone.utc)}})
+    await audit_log(user, "vendor_onboarding", onb_id, "deleted_doc", {"doc_type": doc_type})
+    return {"message": "Deleted"}
+
+@api_router.post("/onboarding/vendors/{onb_id}/submit-to-master")
+async def submit_to_master(onb_id: str, user: dict = Depends(get_current_user)):
+    """Site admin submits to master after their review."""
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("site_admin", "city_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if o.get("status") not in ("documents_pending", "under_site_review", "changes_requested"):
+        raise HTTPException(status_code=400, detail=f"Cannot submit from status '{o.get('status')}'")
+    pct = calc_checklist_pct(o.get("checklist", {}))
+    if pct < 80:
+        raise HTTPException(status_code=400, detail=f"Checklist must be at least 80% complete (currently {pct}%)")
+    await db.vendor_onboarding.update_one(
+        {"_id": o["_id"]},
+        {"$set": {"status": "under_master_review", "site_reviewed_by": user["id"], "site_reviewed_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)}}
+    )
+    await audit_log(user, "vendor_onboarding", onb_id, "submitted_to_master", {"checklist_pct": pct})
+    return {"message": "Submitted to master admin for final approval", "status": "under_master_review"}
+
+@api_router.post("/onboarding/vendors/{onb_id}/site-review")
+async def site_review(onb_id: str, data: OnboardingDecision, user: dict = Depends(get_current_user)):
+    """Site admin/city admin reviews — Approve→sub_to_master, Reject, Request changes."""
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("site_admin", "city_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if data.decision not in ("approve", "reject", "request_changes"):
+        raise HTTPException(status_code=400, detail="decision must be approve|reject|request_changes")
+    remark = {
+        "stage": "site_review",
+        "by": user["email"],
+        "decision": data.decision,
+        "remarks": data.remarks or "",
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    new_remarks = o.get("remarks", []) + [remark]
+    set_doc = {"remarks": new_remarks, "updated_at": datetime.now(timezone.utc)}
+    if data.decision == "approve":
+        pct = calc_checklist_pct(o.get("checklist", {}))
+        if pct < 80:
+            raise HTTPException(status_code=400, detail=f"Checklist must be at least 80% complete to approve (currently {pct}%)")
+        set_doc["status"] = "under_master_review"
+        set_doc["site_reviewed_by"] = user["id"]
+        set_doc["site_reviewed_at"] = datetime.now(timezone.utc)
+    elif data.decision == "reject":
+        set_doc["status"] = "rejected"
+    else:  # request_changes
+        set_doc["status"] = "changes_requested"
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
+    await audit_log(user, "vendor_onboarding", onb_id, f"site_{data.decision}", {"remarks": data.remarks})
+    return {"message": f"Site review: {data.decision}", "status": set_doc["status"]}
+
+@api_router.post("/onboarding/vendors/{onb_id}/master-decision")
+async def master_decision(onb_id: str, data: OnboardingDecision, user: dict = Depends(get_current_user)):
+    """Master admin final approval/rejection."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if o.get("status") != "under_master_review":
+        raise HTTPException(status_code=400, detail=f"Cannot finalize — current status is '{o.get('status')}', must be 'under_master_review'")
+    if data.decision not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="decision must be approve|reject")
+    remark = {
+        "stage": "master_review",
+        "by": user["email"],
+        "decision": data.decision,
+        "remarks": data.remarks or "",
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    new_remarks = o.get("remarks", []) + [remark]
+    set_doc = {"remarks": new_remarks, "updated_at": datetime.now(timezone.utc),
+               "master_reviewed_by": user["id"], "master_reviewed_at": datetime.now(timezone.utc)}
+    if data.decision == "approve":
+        # Create real Vendor business record + map to site
+        vendor_doc = {
+            "name": o.get("vendor_name"),
+            "description": o.get("company_name", ""),
+            "cuisine_type": o.get("cuisine_type", "Multi-cuisine"),
+            "phone": o.get("mobile_number"),
+            "email": o.get("email"),
+            "address": o.get("business_address"),
+            "rating": 0.0,
+            "status": "active",
+            "commission_pct": 15.0,
+            "onboarding_id": str(o["_id"]),
+            "created_at": datetime.now(timezone.utc),
+        }
+        vres = await db.vendors.insert_one(vendor_doc)
+        vendor_id = str(vres.inserted_id)
+        # Site-vendor mapping
+        await db.site_vendor_mappings.insert_one({
+            "site_id": o.get("site_id"),
+            "vendor_id": vendor_id,
+            "active": True,
+            "created_at": datetime.now(timezone.utc),
+        })
+        set_doc["status"] = "active"
+        set_doc["vendor_id"] = vendor_id
+    else:
+        set_doc["status"] = "rejected"
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
+    await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id")})
+    return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id")}
+
+@api_router.get("/onboarding/vendors/{onb_id}/audit-trail")
+async def onboarding_audit_trail(onb_id: str, user: dict = Depends(get_current_user)):
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    cursor = db.audit_log.find({"entity_type": "vendor_onboarding", "entity_id": onb_id}).sort("created_at", 1)
+    log = []
+    async for entry in cursor:
+        log.append({
+            "user_email": entry.get("user_email"),
+            "user_role": entry.get("user_role"),
+            "action": entry.get("action"),
+            "details": entry.get("details", {}),
+            "created_at": entry.get("created_at").isoformat() if entry.get("created_at") else None,
+        })
+    return {"audit_trail": log}
+
+@api_router.get("/onboarding/dashboard")
+async def onboarding_dashboard(user: dict = Depends(get_current_user)):
+    """Dashboard stats based on role."""
+    filt = {}
+    if user["role"] == "master_admin":
+        pass
+    elif user["role"] == "city_admin":
+        filt["city_id"] = user.get("city_id")
+    elif user["role"] == "site_admin":
+        filt["site_id"] = user.get("site_id")
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+    pipe = [
+        {"$match": filt} if filt else {"$match": {}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+    ]
+    by_status = {row["_id"]: row["count"] async for row in db.vendor_onboarding.aggregate(pipe)}
+    total = sum(by_status.values())
+    pending = by_status.get("documents_pending", 0) + by_status.get("under_site_review", 0) + by_status.get("under_master_review", 0)
+    # Average checklist pct of in-progress onboardings
+    cursor = db.vendor_onboarding.find({**filt, "status": {"$nin": ["approved", "active", "rejected"]}})
+    pcts = []
+    async for o in cursor:
+        pcts.append(calc_checklist_pct(o.get("checklist", {})))
+    avg_pct = round(sum(pcts) / len(pcts), 1) if pcts else 0.0
+    return {
+        "total": total,
+        "by_status": by_status,
+        "pending_approvals": pending,
+        "approved": by_status.get("approved", 0) + by_status.get("active", 0),
+        "rejected": by_status.get("rejected", 0),
+        "avg_checklist_pct": avg_pct,
+    }
+
+
 # ============== MASTER ADMIN: ANALYTICS CHARTS ==============
 
 @api_router.get("/reports/charts")
@@ -2405,7 +2965,7 @@ async def get_site(site_id: str, user: dict = Depends(get_current_user)):
 async def update_site(site_id: str, updates: Dict[str, Any], user: dict = Depends(get_current_user)):
     if not can_access_site(user, site_id):
         raise HTTPException(status_code=403, detail="Access denied")
-    allowed = {"name", "address", "city", "contact_email", "contact_phone",
+    allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone",
                "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
     # `status` field can only be changed by master_admin
     if is_master_admin(user):
@@ -2673,8 +3233,8 @@ async def list_admins(user: dict = Depends(get_current_user)):
     if not is_master_admin(user):
         raise HTTPException(status_code=403, detail="Only master admin can list admins")
     admins = await db.users.find(
-        {"role": {"$in": ["master_admin", "super_admin", "site_admin"]}},
-        {"_id": 1, "email": 1, "name": 1, "role": 1, "site_id": 1, "assigned_sites": 1, "created_at": 1}
+        {"role": {"$in": ["master_admin", "super_admin", "site_admin", "city_admin"]}},
+        {"_id": 1, "email": 1, "name": 1, "role": 1, "site_id": 1, "city_id": 1, "assigned_sites": 1, "created_at": 1}
     ).to_list(1000)
     for a in admins:
         a["id"] = str(a.pop("_id"))
@@ -2686,7 +3246,7 @@ async def list_admins(user: dict = Depends(get_current_user)):
 async def delete_admin(admin_id: str, user: dict = Depends(get_current_user)):
     if not is_master_admin(user):
         raise HTTPException(status_code=403, detail="Only master admin can delete admins")
-    admin = await db.users.find_one({"_id": safe_objectid(admin_id, "Admin"), "role": {"$in": ["super_admin", "site_admin", "master_admin"]}})
+    admin = await db.users.find_one({"_id": safe_objectid(admin_id, "Admin"), "role": {"$in": ["super_admin", "site_admin", "master_admin", "city_admin"]}})
     if not admin:
         raise HTTPException(status_code=404, detail="Admin not found")
     if admin.get("email") == os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com"):
