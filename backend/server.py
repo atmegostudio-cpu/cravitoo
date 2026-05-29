@@ -42,6 +42,15 @@ JWT_ALGORITHM = "HS256"
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# Health endpoint — must be fast, no DB touch, used by K8s liveness/readiness probes
+@api_router.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "cravitoo-api"}
+
 # WebSocket Connection Manager
 class ConnectionManager:
     def __init__(self):
@@ -508,47 +517,53 @@ async def clear_login_attempts(identifier: str):
 # Startup Events
 @app.on_event("startup")
 async def startup_event():
-    """Resilient startup — never block FastAPI from serving requests."""
-    index_ops = [
-        ("users", "email", {"unique": True}),
-        ("password_reset_tokens", "expires_at", {"expireAfterSeconds": 0}),
-        ("login_attempts", "identifier", {}),
-        ("companies", "name", {}),
-        ("vendors", "name", {}),
-        ("menu_items", "vendor_id", {}),
-        ("menu_items", "site_id", {}),
-        ("orders", "user_id", {}),
-        ("orders", "vendor_id", {}),
-        ("orders", "site_id", {}),
-        ("notifications", "user_id", {}),
-        ("notifications", "created_at", {}),
-        ("sites", "name", {}),
-    ]
-    for coll, field, opts in index_ops:
+    """Resilient, NON-BLOCKING startup — never block FastAPI from serving requests.
+    Seed/index work runs in background so the health probe responds fast."""
+    import asyncio
+
+    async def _index_and_seed():
+        index_ops = [
+            ("users", "email", {"unique": True}),
+            ("password_reset_tokens", "expires_at", {"expireAfterSeconds": 0}),
+            ("login_attempts", "identifier", {}),
+            ("companies", "name", {}),
+            ("vendors", "name", {}),
+            ("menu_items", "vendor_id", {}),
+            ("menu_items", "site_id", {}),
+            ("orders", "user_id", {}),
+            ("orders", "vendor_id", {}),
+            ("orders", "site_id", {}),
+            ("notifications", "user_id", {}),
+            ("notifications", "created_at", {}),
+            ("sites", "name", {}),
+        ]
+        for coll, field, opts in index_ops:
+            try:
+                await db[coll].create_index(field, **opts)
+            except Exception as e:
+                logger.warning(f"Index create skipped on {coll}.{field}: {e}")
+
         try:
-            await db[coll].create_index(field, **opts)
+            await db.vendor_site_mappings.create_index([("vendor_id", 1), ("site_id", 1)], unique=True)
         except Exception as e:
-            logger.warning(f"Index create skipped on {coll}.{field}: {e}")
+            logger.warning(f"vendor_site_mappings index skipped: {e}")
+        try:
+            await db.meal_schedules.create_index("site_id", unique=True)
+        except Exception as e:
+            logger.warning(f"meal_schedules index skipped: {e}")
 
-    # Compound + unique indexes — tolerate existing duplicate data
-    try:
-        await db.vendor_site_mappings.create_index([("vendor_id", 1), ("site_id", 1)], unique=True)
-    except Exception as e:
-        logger.warning(f"vendor_site_mappings index skipped: {e}")
-    try:
-        await db.meal_schedules.create_index("site_id", unique=True)
-    except Exception as e:
-        logger.warning(f"meal_schedules index skipped: {e}")
+        try:
+            await seed_admin()
+        except Exception as e:
+            logger.error(f"seed_admin failed: {e}")
+        try:
+            await seed_demo_data()
+        except Exception as e:
+            logger.error(f"seed_demo_data failed: {e}")
+        logger.info("Background startup tasks complete")
 
-    # Seed admin & demo data — never block startup on failure
-    try:
-        await seed_admin()
-    except Exception as e:
-        logger.error(f"seed_admin failed: {e}")
-    try:
-        await seed_demo_data()
-    except Exception as e:
-        logger.error(f"seed_demo_data failed: {e}")
+    # Fire-and-forget — does NOT block startup probe
+    asyncio.create_task(_index_and_seed())
 
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
