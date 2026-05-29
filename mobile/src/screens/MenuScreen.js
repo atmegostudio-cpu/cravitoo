@@ -19,10 +19,40 @@ export default function MenuScreen({ route, navigation }) {
   const [search, setSearch] = useState('');
   const [vegFilter, setVegFilter] = useState('all'); // all | veg | non-veg
   const [sortBy, setSortBy] = useState('default'); // default | low | high
+  const [mealPeriod, setMealPeriod] = useState(null);
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
 
   useEffect(() => {
     loadVendors();
+    loadFavorites();
+    loadMealPeriod();
   }, []);
+
+  const loadMealPeriod = async () => {
+    try {
+      const { data } = await client.get('/meal-period/current');
+      setMealPeriod(data.period);
+    } catch (e) { /* ignore */ }
+  };
+
+  const loadFavorites = async () => {
+    try {
+      const { data } = await client.get('/favorites');
+      setFavoriteIds(new Set(data.map((f) => f.vendor_id)));
+    } catch (e) { /* ignore */ }
+  };
+
+  const toggleFavorite = async (vendorId) => {
+    try {
+      if (favoriteIds.has(vendorId)) {
+        await client.delete(`/favorites/${vendorId}`);
+        setFavoriteIds((prev) => { const n = new Set(prev); n.delete(vendorId); return n; });
+      } else {
+        await client.post(`/favorites/${vendorId}`);
+        setFavoriteIds((prev) => new Set([...prev, vendorId]));
+      }
+    } catch (e) { /* ignore */ }
+  };
 
   useEffect(() => {
     if (selectedVendorId) loadMenu();
@@ -115,17 +145,32 @@ export default function MenuScreen({ route, navigation }) {
         <Text style={styles.headerTitle}>Browse Menu</Text>
       </View>
 
+      {mealPeriod && (
+        <View style={styles.mealBanner}>
+          <Ionicons name="time" size={14} color={colors.primary} />
+          <Text style={styles.mealBannerText}>Now serving: <Text style={{ fontWeight: '700' }}>{mealPeriod}</Text></Text>
+        </View>
+      )}
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.vendorTabsScroll} contentContainerStyle={styles.vendorTabs}>
         {vendors.map((v) => (
-          <TouchableOpacity
-            key={v.id}
-            onPress={() => setSelectedVendorId(v.id)}
-            style={[styles.vendorTab, selectedVendorId === v.id && styles.vendorTabActive]}
-          >
-            <Text style={[styles.vendorTabText, selectedVendorId === v.id && styles.vendorTabTextActive]}>
-              {v.name}
-            </Text>
-          </TouchableOpacity>
+          <View key={v.id} style={{ position: 'relative', marginRight: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSelectedVendorId(v.id)}
+              style={[styles.vendorTab, selectedVendorId === v.id && styles.vendorTabActive]}
+            >
+              <Text style={[styles.vendorTabText, selectedVendorId === v.id && styles.vendorTabTextActive]}>
+                {v.name}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => toggleFavorite(v.id)}
+              style={styles.favBtn}
+              testID={`fav-toggle-${v.id}`}
+            >
+              <Ionicons name={favoriteIds.has(v.id) ? 'heart' : 'heart-outline'} size={14} color={favoriteIds.has(v.id) ? colors.error : colors.textMuted} />
+            </TouchableOpacity>
+          </View>
         ))}
       </ScrollView>
 
@@ -263,8 +308,11 @@ const styles = StyleSheet.create({
   vendorTabs: { padding: spacing.md, gap: spacing.sm },
   vendorTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.card, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, marginRight: spacing.sm },
   vendorTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  vendorTabText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary },
+  vendorTabText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, paddingRight: 16 },
   vendorTabTextActive: { color: '#fff' },
+  favBtn: { position: 'absolute', top: 4, right: 4, padding: 2 },
+  mealBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.primaryLight, borderBottomWidth: 1, borderBottomColor: colors.primary },
+  mealBannerText: { fontSize: 12, color: colors.primary, textTransform: 'capitalize' },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.card, marginHorizontal: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.borderLight },
   searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary, padding: 0 },
   filterRow: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: 8, flexDirection: 'row', alignItems: 'center' },

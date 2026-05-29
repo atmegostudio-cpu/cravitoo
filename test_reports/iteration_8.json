@@ -1,0 +1,61 @@
+{
+  "summary": "Iter8 Cravitoo P1 backend testing complete. All 22 new tests (21 pass + 1 skipped for environment reason) cover vendor edit, refunds list, favorites CRUD, last-order endpoint, onboarding bulk Excel import, onboarding menu Excel upload, meal-period detection, city-leaderboard report, and low-stock notification trigger via orders. Full backend regression: 201/201 passed (includes iter3, iter6, iter7 + new iter8).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/onboarding/vendors/{id}",
+        "issue": "Response from onboarding_to_dict (server.py line 2717) does NOT include 'draft_menu' field. The data IS persisted to MongoDB during POST /onboarding/vendors/{id}/menu/upload-excel (inserted=3 returned correctly and checklist.menu_uploaded becomes True), but consumers cannot inspect the uploaded menu via GET. Recommend adding draft_menu (and any other relevant onboarding fields) to onboarding_to_dict."
+      },
+      {
+        "endpoint": "POST /api/orders -> low-stock trigger (server.py line ~1018)",
+        "issue": "Low-stock notification condition is `r['qty'] == threshold or r['qty'] == threshold * 2`. This only fires at EXACT threshold or double-threshold cumulative qty for the day. If today's qty is already past those values (e.g., 33 after repeated tests), no alert ever fires for the rest of the day. Recommend changing to a 'crossing' condition: trigger when current_total >= threshold and (current_total - this_order_qty) < threshold. Same for 2x threshold."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_p1.py",
+    "/app/test_reports/pytest/pytest_iter8.xml",
+    "/app/test_reports/pytest/pytest_iter8_regression.xml",
+    "/app/test_reports/pytest/pytest_iter8_full.xml"
+  ],
+  "action_items": [
+    "Add 'draft_menu' (and possibly draft_documents/draft_pricing if any) to onboarding_to_dict serializer so consumers can read uploaded menu via GET /api/onboarding/vendors/{id}.",
+    "Fix low-stock alert condition in POST /api/orders to fire on threshold-crossing rather than exact equality, otherwise the alert is missed when repeat orders push cumulative qty past the threshold without ever landing on the exact value."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 3841 lines — well past the 700-line guideline. Should be split into routers (vendor, orders, onboarding, refunds, favorites, reports, notifications) for maintainability.",
+    "Low-stock detection uses cumulative daily order qty rather than remaining inventory; consider an inventory model (stock_count per menu item) for true low-stock alerts.",
+    "The onboarding menu upload path silently swallows the bug above (draft_menu not in response) — add an integration test on the main side to catch this kind of serializer drift.",
+    "PATCH /api/admin/vendors/{id} commission_pct validation correctly returns 400 for >50; but no lower-bound (e.g., <0) test was attempted — add validation there too."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_p1.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (201/201 all suites, 21/21 iter8 executed, 1 environment-skipped)",
+    "frontend": "N/A (backend-only request)"
+  },
+  "test_credentials": "From /app/memory/test_credentials.md — admin@cravitoo.com/admin123, siteadmin@techcorp.com/site123, vendor@spicekitchen.com/vendor123, employee@techcorp.com/employee123. All worked.",
+  "seed_data_creation": "Created 3 TEST_iter8_vendor_* onboarding rows + 1 TEST_iter8_menuvendor_* onboarding draft during bulk-import and menu-upload tests. Favorited and unfavorited Spice Kitchen for employee. Updated Spice Kitchen description (TEST_iter8 desc <ts>) and re-set status=active.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter8 test file at /app/backend/tests/test_iter8_p1.py is reusable. Skipped test 'test_upload_menu_approved_400' looks for an existing onboarding with status in (approved|active|rejected); if main agent adds one or exposes an admin endpoint to set status, this can be unskipped. The Bangalore city + Tech Corp HQ site + Spice Kitchen vendor are still present. Low-stock test self-discovers a menu item with 0 daily orders so it can run repeatedly without needing reset.",
+  "rca_of_the_issue": {
+    "draft_menu_missing_in_GET": {
+      "reproduction": "POST /api/onboarding/vendors/{id}/menu/upload-excel returns inserted=3; GET /api/onboarding/vendors/{id} returns checklist.menu_uploaded=true but no draft_menu key.",
+      "root_cause": "onboarding_to_dict() at server.py line 2717 explicitly lists fields and omits 'draft_menu'.",
+      "fix": "Include 'draft_menu': doc.get('draft_menu', []) in onboarding_to_dict output."
+    },
+    "low_stock_alert_misses_after_threshold_crossed": {
+      "reproduction": "Vendor sets low_stock_threshold=1; place enough orders so today's cumulative qty for an item > 2. Next order does not generate a 'Low stock' notification because the equality condition (qty == 1 or qty == 2) is no longer satisfied.",
+      "root_cause": "Branch in POST /orders uses r['qty'] == threshold or r['qty'] == threshold * 2 — strict equality.",
+      "fix": "Replace with: prev_qty = r['qty'] - this_order_item_qty; if prev_qty < threshold <= r['qty'] -> alert; if prev_qty < 2*threshold <= r['qty'] -> critical alert."
+    }
+  }
+}

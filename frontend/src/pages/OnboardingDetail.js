@@ -221,7 +221,40 @@ const OnboardingDetail = () => {
           )}
 
           {tab === 'documents' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <>
+              {canEdit && (
+                <div className="bg-primary-light border border-primary/30 rounded-2xl p-4 mb-4">
+                  <p className="font-medium text-text-primary text-sm mb-1">📊 Bulk upload menu items</p>
+                  <p className="text-text-secondary text-xs mb-3">Upload an Excel sheet with columns: name, category, price, description (optional), is_vegetarian (optional), image_url (optional). Auto-ticks "Menu uploaded" in checklist.</p>
+                  <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 bg-card border border-primary text-primary rounded-lg text-sm font-medium hover:bg-primary-light" data-testid="upload-onb-menu-label">
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      data-testid="upload-onb-menu"
+                      onChange={async (e) => {
+                        const f = e.target.files[0];
+                        if (!f) return;
+                        const fd = new FormData();
+                        fd.append('file', f);
+                        try {
+                          const { data } = await axios.post(`${API}/onboarding/vendors/${onbId}/menu/upload-excel`, fd, { withCredentials: true, headers: { 'Content-Type': 'multipart/form-data' } });
+                          alert(`Inserted ${data.inserted} menu items (${data.errors?.length || 0} errors)`);
+                          await reload();
+                        } catch (err) {
+                          alert(err?.response?.data?.detail || 'Failed');
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    <Upload className="h-4 w-4" /> Pick Excel
+                  </label>
+                  {data.draft_menu && data.draft_menu.length > 0 && (
+                    <p className="mt-2 text-xs text-emerald-700">✓ {data.draft_menu.length} menu items pre-loaded (will be activated when master approves)</p>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {DOC_TYPES.map((d) => {
                 const uploaded = data.documents?.[d.key];
                 return (
@@ -263,7 +296,8 @@ const OnboardingDetail = () => {
                   </div>
                 );
               })}
-            </div>
+              </div>
+            </>
           )}
 
           {tab === 'checklist' && (

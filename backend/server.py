@@ -997,6 +997,33 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
         "items_count": len(validated_items)
     })
 
+    # Low-stock alert: count items sold today per menu_item_id, notify vendor if any drops below threshold
+    try:
+        if vendor_doc:
+            threshold = int(vendor_doc.get("low_stock_threshold", 0) or 0)
+            if threshold > 0:
+                today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                for it in validated_items:
+                    pipe = [
+                        {"$match": {"vendor_id": data.vendor_id, "created_at": {"$gte": today_start}, "status": {"$nin": ["cancelled"]}}},
+                        {"$unwind": "$items"},
+                        {"$match": {"items.menu_item_id": it["menu_item_id"]}},
+                        {"$group": {"_id": None, "qty": {"$sum": "$items.quantity"}}},
+                    ]
+                    async for r in db.orders.aggregate(pipe):
+                        if r["qty"] == threshold or r["qty"] == threshold * 2:
+                            # Notify vendor (once at threshold, once at 2x)
+                            vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
+                            for vu in vendor_users:
+                                await create_notification(
+                                    str(vu["_id"]),
+                                    "Low stock alert",
+                                    f"{it.get('name', 'An item')} has sold {r['qty']} units today",
+                                    "stock"
+                                )
+    except Exception as e:
+        logger.error(f"Low-stock check failed: {e}")
+
     return {"id": order_id, "total_amount": total_amount, "status": final_status, "pickup_qr": qr_code}
 
 @api_router.get("/orders")
@@ -2272,6 +2299,289 @@ async def set_vendor_commission(vendor_id: str, payload: Dict[str, Any], user: d
         raise HTTPException(status_code=400, detail="commission_pct must be between 0 and 50")
     await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": {"commission_pct": float(pct)}})
     return {"vendor_id": vendor_id, "commission_pct": float(pct)}
+
+
+@api_router.patch("/admin/vendors/{vendor_id}")
+async def update_vendor(vendor_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+    """Master admin edits vendor profile (name, cuisine, contact, address, status)."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    allowed = {"name", "description", "cuisine_type", "phone", "email", "address",
+               "status", "commission_pct", "image_url"}
+    cleaned = {k: v for k, v in payload.items() if k in allowed}
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No valid fields")
+    if "commission_pct" in cleaned:
+        v = float(cleaned["commission_pct"])
+        if v < 0 or v > 50:
+            raise HTTPException(status_code=400, detail="commission_pct must be between 0 and 50")
+        cleaned["commission_pct"] = v
+    if "status" in cleaned and cleaned["status"] not in ("active", "inactive", "suspended"):
+        raise HTTPException(status_code=400, detail="status must be active|inactive|suspended")
+    await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": cleaned})
+    await audit_log(user, "vendor", vendor_id, "updated", cleaned)
+    return {"message": "Vendor updated"}
+
+
+# ============== EMPLOYEE: REFUNDS, FAVOURITES ==============
+
+@api_router.get("/refunds")
+async def employee_refunds(user: dict = Depends(get_current_user)):
+    """Employee sees their own refunded/cancelled orders."""
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees")
+    cursor = db.orders.find({
+        "user_id": user["id"],
+        "$or": [
+            {"status": "cancelled"},
+            {"refund_status": {"$exists": True, "$nin": [None, ""]}},
+        ],
+    }).sort("created_at", -1).limit(100)
+    out = []
+    async for o in cursor:
+        out.append({
+            "order_id": str(o["_id"]),
+            "vendor_id": o.get("vendor_id"),
+            "total_amount": o.get("total_amount", 0),
+            "status": o.get("status"),
+            "refund_status": o.get("refund_status"),
+            "payment_status": o.get("payment_status"),
+            "cancelled_at": o.get("cancelled_at").isoformat() if o.get("cancelled_at") else None,
+            "refunded_at": o.get("refunded_at").isoformat() if o.get("refunded_at") else None,
+            "cancelled_by": o.get("cancelled_by"),
+            "created_at": o.get("created_at").isoformat() if o.get("created_at") else None,
+        })
+    return out
+
+
+@api_router.get("/favorites")
+async def list_favorites(user: dict = Depends(get_current_user)):
+    """List employee's favorite vendors."""
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees")
+    favs = []
+    async for f in db.favorites.find({"user_id": user["id"]}).sort("created_at", -1):
+        vendor = await db.vendors.find_one({"_id": safe_objectid(f["vendor_id"], "Vendor")})
+        if vendor:
+            favs.append({
+                "vendor_id": f["vendor_id"],
+                "name": vendor.get("name"),
+                "cuisine_type": vendor.get("cuisine_type"),
+                "rating": vendor.get("rating", 0),
+                "image_url": vendor.get("image_url"),
+                "favorited_at": f.get("created_at").isoformat() if f.get("created_at") else None,
+            })
+    return favs
+
+
+@api_router.post("/favorites/{vendor_id}")
+async def add_favorite(vendor_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees")
+    vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    if await db.favorites.find_one({"user_id": user["id"], "vendor_id": vendor_id}):
+        return {"message": "Already favorited"}
+    await db.favorites.insert_one({
+        "user_id": user["id"],
+        "vendor_id": vendor_id,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"message": "Added to favorites"}
+
+
+@api_router.delete("/favorites/{vendor_id}")
+async def remove_favorite(vendor_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees")
+    await db.favorites.delete_one({"user_id": user["id"], "vendor_id": vendor_id})
+    return {"message": "Removed from favorites"}
+
+
+@api_router.get("/orders/last")
+async def get_last_order(user: dict = Depends(get_current_user)):
+    """Returns the employee's most recent order to enable 'reorder my usual'."""
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees")
+    order = await db.orders.find_one(
+        {"user_id": user["id"], "status": {"$in": ["completed", "ready", "confirmed", "preparing"]}},
+        sort=[("created_at", -1)]
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="No previous orders to reorder")
+    return {
+        "vendor_id": order.get("vendor_id"),
+        "items": order.get("items", []),
+        "total_amount": order.get("total_amount"),
+    }
+
+
+# ============== ONBOARDING: BULK EXCEL IMPORT ==============
+
+@api_router.post("/onboarding/vendors/bulk-import")
+async def bulk_import_onboardings(
+    file: UploadFile = File(...),
+    site_id: str = "",
+    user: dict = Depends(get_current_user),
+):
+    """Master/Site/City admin uploads an Excel sheet to bulk-create onboarding records.
+    Columns: vendor_name, company_name, contact_person, mobile_number, email, business_address, cuisine_type"""
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not (file.filename or "").lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
+    if user["role"] == "site_admin":
+        site_id = user.get("site_id") or site_id
+    if not site_id:
+        raise HTTPException(status_code=400, detail="site_id required")
+    site = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")})
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if user["role"] == "site_admin" and site_id != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+
+    content = await file.read()
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File must be under 2 MB")
+
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Excel: {e}")
+
+    if len(rows) < 2:
+        raise HTTPException(status_code=400, detail="Excel must have header + at least 1 data row")
+    headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+    required = ["vendor_name", "company_name", "contact_person", "mobile_number", "email", "business_address"]
+    missing = [r for r in required if r not in headers]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing columns: {', '.join(missing)}")
+
+    inserted, errors = 0, []
+    for idx, row in enumerate(rows[1:], start=2):
+        try:
+            rec = {headers[i]: (str(row[i]).strip() if row[i] is not None else "") for i in range(min(len(headers), len(row)))}
+            if not rec.get("vendor_name") or not rec.get("email"):
+                errors.append({"row": idx, "error": "vendor_name and email required"})
+                continue
+            doc = {
+                "vendor_name": rec.get("vendor_name"),
+                "company_name": rec.get("company_name", ""),
+                "contact_person": rec.get("contact_person", ""),
+                "mobile_number": rec.get("mobile_number", ""),
+                "email": rec.get("email"),
+                "business_address": rec.get("business_address", ""),
+                "cuisine_type": rec.get("cuisine_type", "Multi-cuisine"),
+                "site_id": site_id,
+                "city_id": site.get("city_id"),
+                "status": "draft",
+                "checklist": {},
+                "documents": {},
+                "remarks": [],
+                "created_by": user["id"],
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            res = await db.vendor_onboarding.insert_one(doc)
+            await audit_log(user, "vendor_onboarding", str(res.inserted_id), "bulk_imported", {"vendor_name": rec.get("vendor_name")})
+            inserted += 1
+        except Exception as e:
+            errors.append({"row": idx, "error": str(e)})
+
+    return {"inserted": inserted, "errors": errors, "total_attempted": len(rows) - 1}
+
+
+# ============== ONBOARDING: MENU PRE-LOAD ==============
+
+@api_router.post("/onboarding/vendors/{onb_id}/menu/upload-excel")
+async def onboarding_menu_excel(
+    onb_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Pre-load menu items as 'draft' under onboarding — get activated when vendor is approved."""
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if o.get("status") in ("approved", "active", "rejected"):
+        raise HTTPException(status_code=400, detail=f"Cannot edit menu — status is '{o.get('status')}'")
+    if not (file.filename or "").lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Excel: {e}")
+    if len(rows) < 2:
+        raise HTTPException(status_code=400, detail="Excel must have header + at least 1 data row")
+    headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+    required = ["name", "category", "price"]
+    missing = [r for r in required if r not in headers]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing columns: {', '.join(missing)}")
+    items = []
+    errors = []
+    for idx, row in enumerate(rows[1:], start=2):
+        try:
+            rec = {headers[i]: (row[i] if i < len(row) else None) for i in range(len(headers))}
+            name = (str(rec.get("name") or "")).strip()
+            if not name:
+                errors.append({"row": idx, "error": "Missing name"})
+                continue
+            price = float(rec.get("price") or 0)
+            if price <= 0:
+                errors.append({"row": idx, "error": f"Invalid price for {name}"})
+                continue
+            items.append({
+                "name": name,
+                "description": str(rec.get("description") or ""),
+                "category": str(rec.get("category") or "Main").strip(),
+                "price": price,
+                "is_vegetarian": str(rec.get("is_vegetarian", "")).lower() in ("true", "yes", "1", "veg"),
+                "image_url": str(rec.get("image_url") or "") or None,
+                "is_available": True,
+            })
+        except Exception as e:
+            errors.append({"row": idx, "error": str(e)})
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": {"draft_menu": items, "updated_at": datetime.now(timezone.utc)}})
+    # Auto-tick "menu_uploaded" in checklist
+    new_checklist = {**(o.get("checklist", {})), "menu_uploaded": True}
+    await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": {"checklist": new_checklist}})
+    await audit_log(user, "vendor_onboarding", onb_id, "menu_uploaded", {"items": len(items)})
+    return {"inserted": len(items), "errors": errors, "total_attempted": len(rows) - 1}
+
+
+# ============== EMPLOYEE: CURRENT MEAL PERIOD ==============
+
+def get_current_meal_period_default():
+    """Return the current meal period based on IST time (no per-site schedule)."""
+    from datetime import timezone as tz, timedelta as td
+    ist = datetime.now(tz(td(hours=5, minutes=30)))
+    h = ist.hour + ist.minute / 60
+    if 6 <= h < 11:
+        return "breakfast"
+    if 11 <= h < 16:
+        return "lunch"
+    if 16 <= h < 19:
+        return "snacks"
+    if 19 <= h < 23:
+        return "dinner"
+    return None
+
+
+@api_router.get("/meal-period/current")
+async def get_current_meal_period_api():
+    """Public endpoint — clients use this to filter menu by meal type."""
+    return {"period": get_current_meal_period_default()}
 
 
 # ============== CITIES & CITY ADMINS ==============

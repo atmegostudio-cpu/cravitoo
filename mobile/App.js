@@ -23,6 +23,10 @@ import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import LoyaltyScreen from './src/screens/LoyaltyScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import FavoritesScreen from './src/screens/FavoritesScreen';
+import RefundsScreen from './src/screens/RefundsScreen';
+import SubscriptionScreen from './src/screens/SubscriptionScreen';
+import EventOrderScreen from './src/screens/EventOrderScreen';
 
 // Vendor Screens
 import VendorDashboard from './src/screens/vendor/VendorDashboard';
@@ -230,6 +234,10 @@ function RootNavigator() {
       <Stack.Screen name="Cart" component={CartScreen} options={{ headerShown: true, title: 'Your Cart' }} />
       <Stack.Screen name="OrderDetail" component={OrderDetailScreen} options={{ headerShown: true, title: 'Order Details' }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
+      <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Refunds" component={RefundsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Subscription" component={SubscriptionScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="EventOrder" component={EventOrderScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }

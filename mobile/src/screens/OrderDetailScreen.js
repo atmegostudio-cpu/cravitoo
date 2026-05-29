@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import client from '../api/client';
@@ -65,6 +65,38 @@ export default function OrderDetailScreen({ route, navigation }) {
   const qrUrl = order.pickup_qr
     ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.pickup_qr)}`
     : null;
+
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Auto-prompt for review when order becomes completed
+  useEffect(() => {
+    if (order.status === 'completed' && !order.reviewed) {
+      const t = setTimeout(() => setShowReviewModal(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [order.status, order.reviewed]);
+
+  const submitReview = async () => {
+    setSubmittingReview(true);
+    try {
+      await client.post('/reviews', {
+        vendor_id: order.vendor_id,
+        order_id: order.id,
+        rating: reviewRating,
+        comment: reviewComment,
+      });
+      setOrder({ ...order, reviewed: true });
+      setShowReviewModal(false);
+      Alert.alert('Thanks!', 'Your review helps the vendor and other diners.');
+    } catch (e) {
+      Alert.alert('Failed', e?.response?.data?.detail || 'Try again');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -143,6 +175,39 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         ))}
       </View>
+
+      <Modal visible={showReviewModal} transparent animationType="slide">
+        <View style={styles.modalBg}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>How was your meal?</Text>
+            <Text style={styles.modalSub}>Your rating helps other diners and the vendor.</Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity key={n} onPress={() => setReviewRating(n)} testID={`star-${n}`}>
+                  <Ionicons name={n <= reviewRating ? 'star' : 'star-outline'} size={36} color="#F59E0B" />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              placeholder="Tell us more (optional)"
+              placeholderTextColor={colors.textMuted}
+              multiline
+              style={styles.reviewInput}
+              testID="review-input"
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity onPress={() => setShowReviewModal(false)} style={[styles.modalBtn, { backgroundColor: colors.background }]}>
+                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Later</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitReview} disabled={submittingReview} style={[styles.modalBtn, { backgroundColor: colors.primary }]} testID="submit-review-btn">
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{submittingReview ? '...' : 'Submit'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -173,4 +238,11 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
   itemQty: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   itemPrice: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: spacing.md },
+  modal: { backgroundColor: colors.card, borderRadius: borderRadius.lg, padding: spacing.lg },
+  modalTitle: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  modalSub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 4 },
+  starsRow: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginVertical: spacing.md },
+  reviewInput: { borderWidth: 1, borderColor: colors.borderLight, borderRadius: borderRadius.sm, padding: spacing.sm, fontSize: 14, minHeight: 60, textAlignVertical: 'top', color: colors.textPrimary },
+  modalBtn: { flex: 1, padding: 12, borderRadius: borderRadius.sm, alignItems: 'center' },
 });

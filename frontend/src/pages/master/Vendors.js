@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Percent, Edit, Save, X, Plus } from 'lucide-react';
+import { Store, Edit, Save, X, Settings } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -11,6 +11,8 @@ const MasterVendors = () => {
   const [editing, setEditing] = useState(null);
   const [pct, setPct] = useState('');
   const [saving, setSaving] = useState(false);
+  const [profileEdit, setProfileEdit] = useState(null);
+  const [pForm, setPForm] = useState({});
 
   const load = async () => {
     try {
@@ -33,6 +35,32 @@ const MasterVendors = () => {
       await axios.patch(`${API}/admin/vendors/${vendorId}/commission`,
         { commission_pct: v }, { withCredentials: true });
       setEditing(null);
+      await load();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openProfileEdit = (v) => {
+    setProfileEdit(v);
+    setPForm({
+      name: v.name || '',
+      description: v.description || '',
+      cuisine_type: v.cuisine_type || '',
+      phone: v.phone || '',
+      email: v.email || '',
+      address: v.address || '',
+      status: v.status || 'active',
+    });
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    try {
+      await axios.patch(`${API}/admin/vendors/${profileEdit.id}`, pForm, { withCredentials: true });
+      setProfileEdit(null);
       await load();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Failed');
@@ -70,8 +98,10 @@ const MasterVendors = () => {
                 <tr className="text-left text-xs text-text-muted uppercase">
                   <th className="px-4 py-3">Vendor</th>
                   <th className="px-4 py-3">Cuisine</th>
+                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Rating</th>
                   <th className="px-4 py-3">Commission %</th>
+                  <th className="px-4 py-3 w-12"></th>
                 </tr>
               </thead>
               <tbody>
@@ -89,9 +119,14 @@ const MasterVendors = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{v.cuisine_type || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">
-                      {v.rating ? `${v.rating.toFixed(1)} ⭐` : '—'}
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                        v.status === 'active' ? 'bg-emerald-50 text-emerald-700' :
+                        v.status === 'inactive' ? 'bg-gray-100 text-gray-600' :
+                        'bg-amber-50 text-amber-700'
+                      }`}>{v.status || 'active'}</span>
                     </td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">{v.rating ? `${v.rating.toFixed(1)} ⭐` : '—'}</td>
                     <td className="px-4 py-3">
                       {editing === v.id ? (
                         <div className="flex items-center gap-2">
@@ -130,6 +165,11 @@ const MasterVendors = () => {
                         </div>
                       )}
                     </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => openProfileEdit(v)} data-testid={`edit-profile-${v.id}`} className="text-text-secondary hover:text-primary p-1.5 rounded hover:bg-background">
+                        <Settings className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -143,6 +183,47 @@ const MasterVendors = () => {
           </div>
         </div>
       </div>
+      {profileEdit && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setProfileEdit(null)}>
+          <div className="bg-card rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-border-light">
+              <h2 className="font-heading text-xl font-medium">Edit Vendor Profile</h2>
+              <button onClick={() => setProfileEdit(null)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-6 space-y-3">
+              {[
+                { k: 'name', label: 'Name', required: true },
+                { k: 'description', label: 'Description', textarea: true },
+                { k: 'cuisine_type', label: 'Cuisine Type' },
+                { k: 'phone', label: 'Phone' },
+                { k: 'email', label: 'Email', type: 'email' },
+                { k: 'address', label: 'Address', textarea: true },
+              ].map((f) => (
+                <div key={f.k}>
+                  <label className="text-sm font-medium text-text-primary">{f.label}{f.required && <span className="text-red-500"> *</span>}</label>
+                  {f.textarea ? (
+                    <textarea data-testid={`edit-vendor-${f.k}`} value={pForm[f.k] || ''} onChange={(e) => setPForm({ ...pForm, [f.k]: e.target.value })} rows={2} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm" />
+                  ) : (
+                    <input data-testid={`edit-vendor-${f.k}`} type={f.type || 'text'} value={pForm[f.k] || ''} onChange={(e) => setPForm({ ...pForm, [f.k]: e.target.value })} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm" />
+                  )}
+                </div>
+              ))}
+              <div>
+                <label className="text-sm font-medium text-text-primary">Status</label>
+                <select data-testid="edit-vendor-status" value={pForm.status || 'active'} onChange={(e) => setPForm({ ...pForm, status: e.target.value })} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-3">
+                <button onClick={() => setProfileEdit(null)} className="flex-1 px-4 py-2.5 border border-border-light rounded-xl font-medium">Cancel</button>
+                <button data-testid="save-vendor-profile-btn" onClick={saveProfile} disabled={saving} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

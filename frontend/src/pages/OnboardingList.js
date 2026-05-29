@@ -58,9 +58,35 @@ const OnboardingList = () => {
               <p className="text-text-secondary mt-2">Track applications through documents, review, and final approval</p>
             </div>
             {canCreate && (
-              <Link to="/onboarding/new" data-testid="new-onboarding-btn" className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover">
-                <Plus className="h-4 w-4" /> Onboard Vendor
-              </Link>
+              <div className="flex gap-2">
+                <label className="cursor-pointer flex items-center gap-2 bg-card border border-border-light text-text-primary px-4 py-2.5 rounded-xl font-medium hover:bg-background" data-testid="bulk-import-onboarding-label">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    data-testid="bulk-import-file"
+                    onChange={async (e) => {
+                      const f = e.target.files[0];
+                      if (!f) return;
+                      const sid = prompt('Enter site_id (leave blank if you are site_admin):') || '';
+                      const fd = new FormData();
+                      fd.append('file', f);
+                      try {
+                        const { data } = await axios.post(`${API}/onboarding/vendors/bulk-import?site_id=${sid}`, fd, { withCredentials: true, headers: { 'Content-Type': 'multipart/form-data' } });
+                        alert(`Imported ${data.inserted} onboardings (${data.errors.length} errors)`);
+                        await load();
+                      } catch (err) {
+                        alert(err?.response?.data?.detail || 'Failed');
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                  <span>Bulk Import Excel</span>
+                </label>
+                <Link to="/onboarding/new" data-testid="new-onboarding-btn" className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover">
+                  <Plus className="h-4 w-4" /> Onboard Vendor
+                </Link>
+              </div>
             )}
           </div>
 
