@@ -227,6 +227,7 @@ class MenuItemCreate(BaseModel):
     image_url: Optional[str] = None
     is_vegetarian: bool = False
     is_available: bool = True
+    vendor_id: Optional[str] = None  # master_admin must supply; vendors cannot create menu items
 
 class MenuItemResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -927,16 +928,24 @@ async def get_vendor(vendor_id: str):
 # Menu Routes
 @api_router.post("/menu")
 async def create_menu_item(data: MenuItemCreate, user: dict = Depends(get_current_user)):
-    if user["role"] != "vendor":
-        raise HTTPException(status_code=403, detail="Only vendors can create menu items")
-    
+    # Only Cravitoo (master_admin) can create menu items. Vendors are read-only.
+    if user["role"] != "master_admin":
+        raise HTTPException(status_code=403, detail="Only Cravitoo (Master Admin) can create menu items. Vendors cannot modify menus or pricing.")
+    payload = data.model_dump()
+    target_vendor_id = payload.pop("vendor_id", None)
+    if not target_vendor_id:
+        raise HTTPException(status_code=400, detail="vendor_id is required when creating menu items")
+    # Validate vendor exists
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(target_vendor_id, "Vendor")})
+    if not vendor_doc:
+        raise HTTPException(status_code=404, detail="Vendor not found")
     menu_doc = {
-        **data.model_dump(),
-        "vendor_id": user.get("vendor_id"),
+        **payload,
+        "vendor_id": target_vendor_id,
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.menu_items.insert_one(menu_doc)
-    return {"id": str(result.inserted_id), **data.model_dump()}
+    return {"id": str(result.inserted_id), **payload, "vendor_id": target_vendor_id}
 
 @api_router.get("/menu/{vendor_id}")
 async def get_menu(vendor_id: str):
@@ -947,10 +956,14 @@ async def get_menu(vendor_id: str):
 
 @api_router.patch("/menu/{item_id}")
 async def update_menu_item(item_id: str, data: Dict[str, Any], user: dict = Depends(get_current_user)):
-    if user["role"] != "vendor":
-        raise HTTPException(status_code=403, detail="Only vendors can update menu items")
-    
-    await db.menu_items.update_one({"_id": safe_objectid(item_id, "Menu item"), "vendor_id": user.get("vendor_id")}, {"$set": data})
+    # Only Cravitoo (master_admin) can edit menu items / pricing. Vendors use /menu/{id}/availability for out-of-stock only.
+    if user["role"] != "master_admin":
+        raise HTTPException(status_code=403, detail="Only Cravitoo (Master Admin) can update menu items or pricing. Vendors can only toggle availability.")
+    # vendor_id is immutable here — strip it from update payload
+    data.pop("vendor_id", None)
+    result = await db.menu_items.update_one({"_id": safe_objectid(item_id, "Menu item")}, {"$set": data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Menu item not found")
     return {"message": "Menu item updated"}
 
 # Order Routes
@@ -1440,15 +1453,17 @@ async def create_notification(user_id: str, title: str, message: str, notif_type
 # Menu CRUD - DELETE
 @api_router.delete("/menu/{item_id}")
 async def delete_menu_item(item_id: str, user: dict = Depends(get_current_user)):
-    if user["role"] != "vendor":
-        raise HTTPException(status_code=403, detail="Only vendors can delete menu items")
-    result = await db.menu_items.delete_one({"_id": safe_objectid(item_id, "Menu item"), "vendor_id": user.get("vendor_id")})
+    # Only Cravitoo (master_admin) can delete menu items.
+    if user["role"] != "master_admin":
+        raise HTTPException(status_code=403, detail="Only Cravitoo (Master Admin) can delete menu items.")
+    result = await db.menu_items.delete_one({"_id": safe_objectid(item_id, "Menu item")})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Menu item not found")
     return {"message": "Menu item deleted"}
 
 @api_router.get("/menu/vendor/all")
 async def get_my_menu(user: dict = Depends(get_current_user)):
+    # Vendors see their own menu (read-only). Master_admin can pass vendor_id (handled by /menu/{vendor_id}).
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can access this")
     items = await db.menu_items.find({"vendor_id": user.get("vendor_id")}).to_list(1000)
@@ -2304,8 +2319,9 @@ async def upload_menu_image(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):
-    if user["role"] not in ("vendor", "master_admin", "site_admin"):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    # Only Cravitoo (master/site_admin) can upload menu images. Vendors are read-only.
+    if user["role"] not in ("master_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Only Cravitoo admins can upload menu images.")
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
     ext = (file.filename or "img").rsplit(".", 1)[-1].lower()[:5]

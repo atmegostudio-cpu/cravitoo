@@ -64,6 +64,25 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 10: Vendor Menu Lock-down (Feb 2026) ✅
+- **Policy**: Menus and pricing are now centrally managed by Cravitoo (master_admin). Vendors are read-only on menu items and prices, but can still toggle daily availability (out-of-stock).
+- **Backend** (`server.py`):
+  - `POST /api/menu` → master_admin only; requires `vendor_id` in body (validates vendor exists)
+  - `PATCH /api/menu/{id}` → master_admin only; strips `vendor_id` from updates
+  - `DELETE /api/menu/{id}` → master_admin only
+  - `POST /api/upload/menu-image` → master_admin / site_admin only (removed vendor)
+  - `PATCH /api/menu/{id}/availability` → **kept for vendor** (operational out-of-stock toggle)
+  - `GET /api/menu/vendor/all` → **kept for vendor** (read-only own menu)
+  - `MenuItemCreate` schema gained `vendor_id: Optional[str]`
+- **Web Frontend** (`/app/frontend/src/pages/vendor/Menu.js`):
+  - Removed Add / Edit / Delete UI
+  - Added prominent "Menu & pricing managed by Cravitoo" banner with mailto request-change link
+  - Single per-item action: In stock ↔ Out of stock toggle
+- **Mobile Partner App** (`/app/mobile/src/screens/vendor/VendorMenu.js`):
+  - Same treatment: read-only list, banner header, availability toggle only
+  - "Request menu change" opens `mailto:partners@cravitoo.com`
+- **Verified**: Vendor POST/DELETE return 403 with clear copy. Master POST/DELETE return 200. Vendor availability toggle still works.
+
 ### Iteration 9: Mobile APK Login Fix + OTA Setup (Feb 2026) ✅
 - **Login fix**: `LoginScreen.js` showed a misleading "Mobile app supports Employees & Vendors" alert for `master_admin` / `site_admin` logins on the Partner APK. Made the role check variant-aware (Partner accepts vendor/master_admin/site_admin; Customer accepts employee). Network errors now show "Cannot reach the server" instead of generic failure.
 - **Env**: `mobile/.env` `EXPO_PUBLIC_BACKEND_URL` switched preview → production (`https://app.cravitoo.com`).
