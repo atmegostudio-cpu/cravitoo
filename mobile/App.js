@@ -8,6 +8,7 @@ import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth, isPartnerApp, isMasterAdmin, isSiteAdmin, isPartnerRole } from './src/context/AuthContext';
+import useOTAUpdates from './src/hooks/useOTAUpdates';
 import { colors } from './src/theme';
 
 // Auth Screens
@@ -243,6 +244,8 @@ function RootNavigator() {
 }
 
 export default function App() {
+  // Check for OTA updates on launch (no-op in dev / Expo Go)
+  useOTAUpdates();
   return (
     <SafeAreaProvider>
       <AuthProvider>

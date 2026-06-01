@@ -9,6 +9,10 @@ const SLUG = IS_VENDOR ? 'cravitoo-partner' : 'cravitoo';
 const BUNDLE_ID = IS_VENDOR ? 'com.cravitoo.partner' : 'com.cravitoo.app';
 const SCHEME = IS_VENDOR ? 'cravitoo-partner' : 'cravitoo';
 
+const CUSTOMER_EAS_PROJECT_ID = '8e1d75df-6b09-4130-b2f6-49ece283b9eb';
+const VENDOR_EAS_PROJECT_ID = process.env.VENDOR_EAS_PROJECT_ID || '81d21be4-16e8-4f76-b5b8-2bf2f40523ca';
+const EAS_PROJECT_ID = IS_VENDOR ? VENDOR_EAS_PROJECT_ID : CUSTOMER_EAS_PROJECT_ID;
+
 module.exports = {
   expo: {
     name: NAME,
@@ -24,6 +28,22 @@ module.exports = {
       backgroundColor: '#FFFFFF',
     },
     assetBundlePatterns: ['**/*'],
+    // ──────────────────────────────────────────────────────────────────
+    // OTA (Over-The-Air) Updates via EAS Update
+    //   • runtimeVersion is locked to appVersion → JS-only fixes ship via OTA;
+    //     when version bumps (e.g. 1.0.0 → 1.0.1), a fresh native build is required.
+    //   • Channels are set per build profile in eas.json (preview, production, etc.)
+    //   • To publish: `eas update --branch <channel> --message "..."`
+    // ──────────────────────────────────────────────────────────────────
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
+    updates: {
+      url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+      enabled: true,
+      checkAutomatically: 'ON_LOAD',
+      fallbackToCacheTimeout: 0,
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: BUNDLE_ID,
@@ -42,6 +62,7 @@ module.exports = {
     },
     plugins: [
       'expo-secure-store',
+      'expo-updates',
       [
         'expo-build-properties',
         {
@@ -62,9 +83,7 @@ module.exports = {
     extra: {
       appVariant: IS_VENDOR ? 'vendor' : 'customer',
       eas: {
-        projectId: IS_VENDOR
-          ? process.env.VENDOR_EAS_PROJECT_ID || ''
-          : '8e1d75df-6b09-4130-b2f6-49ece283b9eb',
+        projectId: EAS_PROJECT_ID,
       },
     },
     owner: 'atmego',

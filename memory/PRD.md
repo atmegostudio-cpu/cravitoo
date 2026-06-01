@@ -64,14 +64,21 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
-### Iteration 9: Mobile APK Login Fix (Feb 2026) ✅
-- **Root cause**: `LoginScreen.js` showed a misleading alert ("Mobile app supports Employees & Vendors") for `master_admin` / `site_admin` logins on the Partner APK, even though `App.js` correctly routes those roles. Users perceived this as a login failure.
-- **Fix**: Made the post-login role check variant-aware:
-  - Partner APK accepts `vendor`, `master_admin`, `site_admin`; warns employees only
-  - Customer APK accepts `employee`; warns vendors/admins only
-- **Network error UX**: Differentiated "Cannot reach the server" (network failure) from credential errors and other generic failures.
-- **Env update**: `mobile/.env` `EXPO_PUBLIC_BACKEND_URL` switched from preview to production (`https://app.cravitoo.com`) so the next EAS build talks to the production backend. Existing APK still has the old URL baked in (EAS rebuild required).
-- **Verified**: All 5 demo accounts (master/site/corporate/vendor/employee) authenticate via `/api/auth/login` and return correct role.
+### Iteration 9: Mobile APK Login Fix + OTA Setup (Feb 2026) ✅
+- **Login fix**: `LoginScreen.js` showed a misleading "Mobile app supports Employees & Vendors" alert for `master_admin` / `site_admin` logins on the Partner APK. Made the role check variant-aware (Partner accepts vendor/master_admin/site_admin; Customer accepts employee). Network errors now show "Cannot reach the server" instead of generic failure.
+- **Env**: `mobile/.env` `EXPO_PUBLIC_BACKEND_URL` switched preview → production (`https://app.cravitoo.com`).
+- **OTA (Over-The-Air) Updates** via EAS Update:
+  - Installed `expo-updates@56.0.17`
+  - `app.config.js`: `runtimeVersion: { policy: 'appVersion' }`, per-variant `updates.url`, `expo-updates` plugin
+  - `eas.json`: each build profile tagged with `channel` (preview, preview-vendor, production, production-vendor)
+  - `App.js`: calls `useOTAUpdates()` on launch — checks for updates, downloads in background, reloads with new bundle
+  - `/app/mobile/src/hooks/useOTAUpdates.js`: safe update-check hook (errors swallowed, never crashes app)
+  - `/app/mobile/OTA_GUIDE.md`: workflow documentation (when to use OTA vs EAS build, how to publish/rollback, quota info)
+- **Verified**: All 5 demo accounts authenticate via `/api/auth/login` and return correct role. Both variants resolve correct EAS Update URL.
+- **One-time bootstrap rebuild required** when EAS quota resets:
+  - `eas build -p android --profile production` (Customer)
+  - `eas build -p android --profile production-vendor` (Partner)
+  - All future JS/UI fixes ship instantly via `eas update --branch <channel>` (free up to 1k MAU)
 
 ### Iteration 8: P1 Batch — Refunds/Favorites/Subscription/Onboarding-tooling (Feb 2026) ✅
 - **Backend** (22 new + 201/201 regression tests passing):
