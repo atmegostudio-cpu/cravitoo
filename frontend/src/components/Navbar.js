@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield } from 'lucide-react';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
 
@@ -114,6 +114,14 @@ const Navbar = () => {
             </Link>
           )}
           <NotificationBell />
+          <Link
+            to="/settings/data"
+            data-testid="nav-data-privacy"
+            className="hidden lg:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200"
+            title="Data & Privacy"
+          >
+            <Shield className="h-4 w-4" />
+          </Link>
           <div className="text-right hidden sm:block">
             <p className="text-sm font-medium text-text-primary">{user?.name}</p>
             <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')}</p>

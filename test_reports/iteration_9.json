@@ -1,0 +1,40 @@
+{
+  "summary": "Iter12 backend testing complete. 32/32 new tests pass covering DPDP /api/me/data GET+DELETE (incl happy path of throwaway user → 401 after deletion), all 5 confirm-flag edge cases, vendor menu lock-down across POST/PATCH/DELETE /api/menu and /api/upload/menu-image, /api/menu/{id}/availability still allowed for vendors, master_admin can still create menu items, push token register/test/delete (Expo format validation), /privacy and /terms public SPA pages serve 200 HTML, and 8 regression endpoints across all 5 roles after models.py refactor. Full broader regression (test_iter3/6/7/8 + cancel/refund/loyalty + master_admin_sites) = 180/185 passed; the 5 failures are NOT regressions — they are intentional consequences of the iter12 vendor menu lock-down feature that those older test files predate.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "Older tests need updating",
+        "issue": "test_iter6_vendor_upload_commission.py::TestUpload (4 tests) and test_iter3_features.py::TestMenuCRUD::test_create_update_delete_menu_item now fail because they were written when vendors COULD upload menu images and create menu items. Iter12 intentionally locks these down to master_admin. These older tests should be rewritten to (a) expect 403 for vendor role and (b) use master_admin token for the happy path. NOT a regression — expected behavior change."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_dpdp_menu_push.py",
+    "/app/test_reports/pytest/pytest_iter12.xml",
+    "/app/test_reports/pytest/pytest_iter12_regression.xml"
+  ],
+  "action_items": [
+    "Update test_iter6_vendor_upload_commission.py::TestUpload to use master_admin token (or assert 403 with vendor token) — vendor upload is now intentionally blocked.",
+    "Update test_iter3_features.py::TestMenuCRUD::test_create_update_delete_menu_item to use master_admin token — vendor menu CRUD is now blocked."
+  ],
+  "critical_code_review_comments": [
+    "models.py refactor (~290 lines extracted) verified clean — no Pydantic validation regressions found across 30+ endpoints touching RegisterRequest/LoginRequest/MenuItemCreate/OrderCreate/SiteCreate/VendorOnboarding*/PushTokenRegister/CompanyCreate/VendorCreate/ReviewCreate/SubscriptionCreate models.",
+    "DPDP DELETE /api/me/data correctly anonymises orders+reviews and hard-deletes favorites/preferences/subscriptions/notifications/push_tokens/loyalty/login_attempts/audit_log; subsequent /api/auth/me returns 401 as expected.",
+    "GET /api/me/data properly excludes password_hash and redacts push tokens with '[REDACTED]'.",
+    "Vendor lock-down (POST/PATCH/DELETE /api/menu + POST /api/upload/menu-image) is consistent: all return 403 with the same Cravitoo-branded error message; /api/menu/{id}/availability remains operational for vendor toggle.",
+    "/api/notifications/test-push is fire-and-forget and swallows Expo errors — returns 200 even with bogus tokens, as documented. send_push_to_user behavior verified end-to-end.",
+    "server.py is still 3,901 lines (was 4,184 before refactor — good). Recommend continuing the split (routers for menu, orders, onboarding, notifications) — the models.py extraction was a great first step."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_dpdp_menu_push.py (new, 32 tests)"
+  ],
+  "success_rate": {"backend": "100% on iter12 (32/32); 97.3% on full regression (180/185 — 5 pre-existing tests need updating for new lock-down)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Used /app/memory/test_credentials.md — all 5 demo accounts (admin, siteadmin, vendor, employee, demo) logged in successfully and /auth/me returned the right email.",
+  "seed_data_creation": "Created and deleted: (1) throwaway DPDP user test_dpdp_<ts>@example.com (auto-erased via DELETE /api/me/data happy-path test), (2) ephemeral TEST_iter12_admin_item_<ts> menu item (deleted at end of test), (3) two push tokens registered+deactivated for employee. No persistent data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_iter12_dpdp_menu_push.py -v` for iter12 coverage. Full regression also runnable but expect 5 known failures in iter3/iter6 (vendor menu CRUD/upload) — these need test rewrites, not code fixes. The models.py refactor is solid; no Pydantic import surprises were found at any tested endpoint.",
+  "rca_of_the_issue": "N/A — no bugs found. The 5 'failures' in older test files are intentional behavior changes from the new vendor menu lock-down, not regressions."
+}

@@ -163,296 +163,27 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# Models
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    role: str = "employee"
-    company_id: Optional[str] = None
+# Models — extracted to /app/backend/models.py during iteration 12 refactor
+from models import (  # noqa: E402
+    RegisterRequest, LoginRequest, UserResponse,
+    CompanyCreate, CompanyResponse,
+    VendorCreate, VendorResponse,
+    MenuItemCreate, MenuItemResponse, MenuItemSiteUpdate,
+    OrderItemInput, OrderCreate, OrderResponse, OrderStatus, CheckoutRequest,
+    AIRecommendationRequest,
+    SiteCreate, VendorSiteMappingCreate, MealScheduleEntry, MealScheduleUpdate,
+    CityCreate, CityAdminCreate,
+    VendorOnboardingBasic, VendorOnboardingUpdate, ChecklistUpdate, OnboardingDecision,
+    CHECKLIST_FIELDS, DOC_TYPES, ONBOARDING_STATUSES,
+    SiteAdminCreate, SuperAdminCreate, MasterAdminCreate,
+    ReviewCreate, PreferencesUpdate, SubscriptionCreate,
+    EmployeeCreate, BulkOrderItem, BulkOrderCreate, EventCateringCreate,
+    NotificationCreate, LoyaltyRedeemRequest,
+    RazorpayOrderCreate, RazorpayVerify,
+    PushTokenRegister,
+)
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(alias="_id")
-    email: str
-    name: str
-    role: str
-    company_id: Optional[str] = None
-    vendor_id: Optional[str] = None
-    created_at: datetime
-
-class CompanyCreate(BaseModel):
-    name: str
-    address: str
-    contact_email: EmailStr
-    contact_phone: str
-
-class CompanyResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    name: str
-    address: str
-    contact_email: str
-    contact_phone: str
-    status: str
-    created_at: datetime
-
-class VendorCreate(BaseModel):
-    name: str
-    description: str
-    cuisine_type: str
-    contact_email: EmailStr
-    contact_phone: str
-
-class VendorResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    name: str
-    description: str
-    cuisine_type: str
-    contact_email: str
-    contact_phone: str
-    rating: float
-    status: str
-    created_at: datetime
-
-class MenuItemCreate(BaseModel):
-    name: str
-    description: str
-    category: str
-    price: float
-    image_url: Optional[str] = None
-    is_vegetarian: bool = False
-    is_available: bool = True
-    vendor_id: Optional[str] = None  # master_admin must supply; vendors cannot create menu items
-
-class MenuItemResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    vendor_id: str
-    name: str
-    description: str
-    category: str
-    price: float
-    image_url: Optional[str] = None
-    is_vegetarian: bool
-    is_available: bool
-    created_at: datetime
-
-class OrderItemInput(BaseModel):
-    menu_item_id: str
-    quantity: int
-    price: float
-
-class OrderCreate(BaseModel):
-    vendor_id: str
-    items: List[OrderItemInput]
-    delivery_type: str = "pickup"
-    special_instructions: Optional[str] = None
-
-class OrderResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    user_id: str
-    vendor_id: str
-    items: List[Dict[str, Any]]
-    total_amount: float
-    status: str
-    delivery_type: str
-    special_instructions: Optional[str] = None
-    created_at: datetime
-
-class AIRecommendationRequest(BaseModel):
-    user_preferences: Optional[str] = None
-    dietary_restrictions: Optional[str] = None
-
-# ====== Multi-tenant Site Models ======
-
-class SiteCreate(BaseModel):
-    name: str
-    company_id: Optional[str] = None
-    city_id: Optional[str] = None  # Link to City entity (new)
-    address: str
-    city: str  # Free-text city name (legacy)
-    contact_email: EmailStr
-    contact_phone: str
-    # Ordering controls
-    allow_pre_order: bool = True
-    allow_cash_carry: bool = True
-    allow_company_paid: bool = False
-    allow_employee_paid: bool = True
-
-class VendorSiteMappingCreate(BaseModel):
-    vendor_id: str
-    site_id: str
-
-class MealScheduleEntry(BaseModel):
-    meal_period: str  # 'breakfast' | 'lunch' | 'snacks' | 'dinner'
-    start_time: str  # "07:30"
-    end_time: str    # "10:30"
-    enabled: bool = True
-
-class MealScheduleUpdate(BaseModel):
-    schedules: List[MealScheduleEntry]
-
-# ============== CITY & VENDOR ONBOARDING MODELS ==============
-
-class CityCreate(BaseModel):
-    name: str  # e.g. "Bangalore", "Mumbai"
-    state: str  # e.g. "Karnataka"
-    country: str = "India"
-
-class CityAdminCreate(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    city_id: str
-
-class VendorOnboardingBasic(BaseModel):
-    vendor_name: str
-    company_name: str
-    contact_person: str
-    mobile_number: str
-    email: EmailStr
-    business_address: str
-    cuisine_type: Optional[str] = "Multi-cuisine"
-    site_id: str
-
-class VendorOnboardingUpdate(BaseModel):
-    vendor_name: Optional[str] = None
-    company_name: Optional[str] = None
-    contact_person: Optional[str] = None
-    mobile_number: Optional[str] = None
-    business_address: Optional[str] = None
-    cuisine_type: Optional[str] = None
-
-class ChecklistUpdate(BaseModel):
-    gst_verified: Optional[bool] = None
-    pan_verified: Optional[bool] = None
-    fssai_verified: Optional[bool] = None
-    bank_verified: Optional[bool] = None
-    menu_uploaded: Optional[bool] = None
-    pricing_verified: Optional[bool] = None
-    documents_uploaded: Optional[bool] = None
-    site_visit_completed: Optional[bool] = None
-    commercial_terms_accepted: Optional[bool] = None
-    agreement_signed: Optional[bool] = None
-    notes: Optional[str] = None
-
-class OnboardingDecision(BaseModel):
-    decision: str  # "approve" | "reject" | "request_changes"
-    remarks: Optional[str] = None
-
-CHECKLIST_FIELDS = [
-    "gst_verified", "pan_verified", "fssai_verified", "bank_verified",
-    "menu_uploaded", "pricing_verified", "documents_uploaded",
-    "site_visit_completed", "commercial_terms_accepted", "agreement_signed",
-]
-
-DOC_TYPES = [
-    "gst_certificate", "pan_card", "fssai_license", "shop_establishment",
-    "bank_details", "cancelled_cheque", "msme_certificate", "insurance",
-]
-
-ONBOARDING_STATUSES = [
-    "draft", "documents_pending", "under_site_review",
-    "changes_requested", "under_master_review", "approved",
-    "rejected", "active",
-]
-
-class SiteAdminCreate(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    site_id: str
-
-class SuperAdminCreate(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    assigned_sites: List[str]
-
-class MasterAdminCreate(BaseModel):
-    email: EmailStr  # MUST be @cravitoo.com
-    password: str
-    name: str
-
-class MenuItemSiteUpdate(BaseModel):
-    is_available: Optional[bool] = None
-    price: Optional[float] = None
-    show_price: Optional[bool] = None
-    meal_periods: Optional[List[str]] = None
-
-class CheckoutRequest(BaseModel):
-    order_id: str
-    origin_url: str
-
-class ReviewCreate(BaseModel):
-    vendor_id: str
-    order_id: str
-    rating: int = Field(ge=1, le=5)
-    comment: Optional[str] = None
-
-class PreferencesUpdate(BaseModel):
-    dietary_preferences: Optional[List[str]] = None
-    allergies: Optional[List[str]] = None
-    favorite_cuisines: Optional[List[str]] = None
-
-class SubscriptionCreate(BaseModel):
-    vendor_id: str
-    plan_type: str
-    meal_type: str
-    duration_days: int
-
-class EmployeeCreate(BaseModel):
-    email: EmailStr
-    password: str
-    name: str
-    department: Optional[str] = None
-    employee_id: Optional[str] = None
-
-class BulkOrderItem(BaseModel):
-    user_email: EmailStr
-    items: List[OrderItemInput]
-
-class BulkOrderCreate(BaseModel):
-    vendor_id: str
-    orders: List[BulkOrderItem]
-    delivery_type: str = "pickup"
-    sponsored: bool = False
-    occasion: Optional[str] = None
-
-class EventCateringCreate(BaseModel):
-    vendor_id: str
-    event_name: str
-    event_date: str
-    headcount: int
-    menu_items: List[OrderItemInput]
-    notes: Optional[str] = None
-
-class NotificationCreate(BaseModel):
-    user_id: str
-    title: str
-    message: str
-    type: str = "info"
-
-class LoyaltyRedeemRequest(BaseModel):
-    points: int
-    order_id: str
-
-from enum import Enum
-
-class OrderStatus(str, Enum):
-    pending = "pending"
-    confirmed = "confirmed"
-    preparing = "preparing"
-    ready = "ready"
-    completed = "completed"
-    cancelled = "cancelled"
+from enum import Enum  # kept for any local enums elsewhere
 
 # Helper - safe ObjectId parsing
 def safe_objectid(id_str: str, entity_name: str = "Resource") -> ObjectId:
@@ -871,6 +602,163 @@ async def logout(response: Response):
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return {"message": "Logged out successfully"}
+
+
+# ============== DPDP / GDPR — Right to Access & Right to Erasure ==============
+
+def _stringify_datetimes(doc: Any) -> Any:
+    """Recursively convert datetime/ObjectId/bson types to JSON-safe primitives."""
+    if isinstance(doc, dict):
+        return {k: _stringify_datetimes(v) for k, v in doc.items()}
+    if isinstance(doc, list):
+        return [_stringify_datetimes(x) for x in doc]
+    if isinstance(doc, datetime):
+        return doc.isoformat()
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    return doc
+
+
+@api_router.get("/me/data")
+async def export_my_data(user: dict = Depends(get_current_user)):
+    """DPDP Act / GDPR right-to-access. Returns a JSON snapshot of all personal data
+    Cravitoo holds about the calling user. Sensitive fields (password_hash, tokens) are excluded."""
+    uid = user["id"]
+    uid_obj = safe_objectid(uid, "User")
+
+    # User profile (drop sensitive fields)
+    profile = await db.users.find_one(
+        {"_id": uid_obj},
+        {"password_hash": 0},
+    ) or {}
+    if profile:
+        profile["id"] = str(profile.pop("_id", uid))
+
+    # Orders + reviews + favorites + loyalty + subscriptions + notifications
+    orders = await db.orders.find({"user_id": uid}).to_list(2000)
+    for o in orders:
+        o["id"] = str(o.pop("_id"))
+
+    reviews = await db.reviews.find({"user_id": uid}).to_list(2000)
+    for r in reviews:
+        r["id"] = str(r.pop("_id"))
+
+    favorites = await db.favorites.find({"user_id": uid}).to_list(2000)
+    for f in favorites:
+        f["id"] = str(f.pop("_id"))
+
+    loyalty = await db.loyalty.find_one({"user_id": uid}) or {}
+    if loyalty:
+        loyalty["id"] = str(loyalty.pop("_id", ""))
+
+    subscriptions = await db.subscriptions.find({"user_id": uid}).to_list(500)
+    for s in subscriptions:
+        s["id"] = str(s.pop("_id"))
+
+    notifications = await db.notifications.find({"user_id": uid}).to_list(2000)
+    for n in notifications:
+        n["id"] = str(n.pop("_id"))
+
+    preferences = await db.preferences.find_one({"user_id": uid}) or {}
+    if preferences:
+        preferences["id"] = str(preferences.pop("_id", ""))
+
+    push_tokens = await db.push_tokens.find({"user_id": uid}, {"token": 0}).to_list(50)
+    for pt in push_tokens:
+        pt["id"] = str(pt.pop("_id"))
+        pt["token"] = "[REDACTED]"  # don't expose actual tokens
+
+    return _stringify_datetimes({
+        "export_format_version": "1.0",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "data_controller": "Cravitoo Foods Private Limited",
+        "user": user["email"],
+        "profile": profile,
+        "orders": orders,
+        "reviews": reviews,
+        "favorites": favorites,
+        "loyalty": loyalty,
+        "subscriptions": subscriptions,
+        "notifications": notifications,
+        "preferences": preferences,
+        "push_tokens": push_tokens,
+        "_note": "Vendor KYC documents, payment processor metadata, and 7-year retention financial records are managed under separate compliance regimes (GST/Companies Act/RBI). For those, please email privacy@cravitoo.com.",
+    })
+
+
+@api_router.delete("/me/data")
+async def delete_my_data(
+    confirm: str = Query(..., description="Must equal 'DELETE' to confirm"),
+    user: dict = Depends(get_current_user),
+):
+    """DPDP Act / GDPR right-to-erasure. Deletes personal data and anonymises tax-mandated records.
+
+    Master_admin accounts cannot self-delete via this endpoint (would lock the platform) —
+    they must contact another master_admin or escalate via privacy@cravitoo.com.
+    """
+    if confirm != "DELETE":
+        raise HTTPException(status_code=400, detail="Pass ?confirm=DELETE to confirm")
+
+    if user["role"] == "master_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Master Admin accounts cannot be self-deleted via this endpoint. Please contact privacy@cravitoo.com to escalate.",
+        )
+
+    uid = user["id"]
+    uid_obj = safe_objectid(uid, "User")
+    email_lower = user["email"].lower()
+
+    # 1) Anonymise orders (keep for tax/audit but strip PII)
+    anon_marker = f"deleted_user_{secrets.token_hex(6)}"
+    await db.orders.update_many(
+        {"user_id": uid},
+        {
+            "$set": {
+                "user_id": anon_marker,
+                "user_email_anon": True,
+                "deleted_at": datetime.now(timezone.utc),
+            },
+            "$unset": {"special_instructions": ""},
+        },
+    )
+
+    # 2) Anonymise reviews (keep ratings for vendor reputation, drop user link)
+    await db.reviews.update_many(
+        {"user_id": uid},
+        {"$set": {"user_id": anon_marker, "anonymised": True, "comment": "[Comment removed by user]"}},
+    )
+
+    # 3) Hard-delete personal records
+    deletions = [
+        db.favorites.delete_many({"user_id": uid}),
+        db.preferences.delete_many({"user_id": uid}),
+        db.subscriptions.delete_many({"user_id": uid}),
+        db.notifications.delete_many({"user_id": uid}),
+        db.push_tokens.delete_many({"user_id": uid}),
+        db.loyalty.delete_many({"user_id": uid}),
+        db.login_attempts.delete_many({"identifier": {"$regex": email_lower}}),
+        db.audit_log.delete_many({"user_id": uid}),
+    ]
+    await asyncio.gather(*deletions)
+
+    # 4) Delete the user account itself
+    await db.users.delete_one({"_id": uid_obj})
+
+    # 5) Record this deletion in a compliance log (no PII — just the fact it happened)
+    await db.deletion_log.insert_one({
+        "anon_id": anon_marker,
+        "role": user["role"],
+        "deleted_at": datetime.now(timezone.utc),
+        "compliance_basis": "DPDP_2023_section_12",
+    })
+
+    return {
+        "ok": True,
+        "message": "Your account and personal data have been deleted. Order records have been anonymised for tax compliance (retained 7 years).",
+        "anonymisation_id": anon_marker,
+    }
+
 
 # Company Routes
 @api_router.post("/companies")
@@ -1513,12 +1401,6 @@ async def send_push_to_user(user_id: str, title: str, body: str, data: Optional[
         await send_expo_push(messages)
 
 
-class PushTokenRegister(BaseModel):
-    token: str
-    platform: Optional[str] = None  # 'ios' | 'android'
-    variant: Optional[str] = None   # 'customer' | 'vendor'
-
-
 @api_router.post("/notifications/push-token")
 async def register_push_token(data: PushTokenRegister, user: dict = Depends(get_current_user)):
     """Register or refresh an Expo push token for the authenticated user."""
@@ -2021,14 +1903,6 @@ def get_razorpay_client():
         return None
     return razorpay.Client(auth=(os.environ['RAZORPAY_KEY_ID'], os.environ['RAZORPAY_KEY_SECRET']))
 
-class RazorpayOrderCreate(BaseModel):
-    order_id: str  # internal Cravitoo order ID
-
-class RazorpayVerify(BaseModel):
-    order_id: str  # Cravitoo order ID
-    razorpay_payment_id: str
-    razorpay_order_id: str
-    razorpay_signature: str
 
 @api_router.post("/payments/razorpay/create-order")
 async def razorpay_create_order(data: RazorpayOrderCreate, user: dict = Depends(get_current_user)):

@@ -152,6 +152,11 @@ const LandingPage = () => {
             <p className="text-gray-400 text-sm">
               © 2026 Cravitoo. Good Food. Easy Order. Happy Team.
             </p>
+            <div className="flex space-x-6 text-sm">
+              <Link to="/privacy" data-testid="footer-privacy-link" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</Link>
+              <Link to="/terms" data-testid="footer-terms-link" className="text-gray-400 hover:text-white transition-colors">Terms of Service</Link>
+              <a href="mailto:support@cravitoo.com" className="text-gray-400 hover:text-white transition-colors">Support</a>
+            </div>
           </div>
         </div>
       </footer>

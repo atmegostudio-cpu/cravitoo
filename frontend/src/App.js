@@ -42,6 +42,10 @@ import OnboardingDetail from './pages/OnboardingDetail';
 
 import EventCatering from './pages/shared/EventCatering';
 
+import PrivacyPolicy from './pages/legal/PrivacyPolicy';
+import TermsOfService from './pages/legal/TermsOfService';
+import DataSettings from './pages/legal/DataSettings';
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -229,6 +233,15 @@ function AppRoutes() {
       <Route path="/site-admin/site/:siteId" element={
         <ProtectedRoute allowedRoles={['site_admin', 'master_admin', 'super_admin']}>
           <SiteDetail />
+        </ProtectedRoute>
+      } />
+
+      {/* Legal & Privacy (public + protected for data settings) */}
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/settings/data" element={
+        <ProtectedRoute allowedRoles={['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin']}>
+          <DataSettings />
         </ProtectedRoute>
       } />
     </Routes>
