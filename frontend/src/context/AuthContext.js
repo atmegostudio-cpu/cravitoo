@@ -42,6 +42,25 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const loginWithOtp = async (email, code) => {
+    const { data } = await axios.post(
+      `${API}/auth/otp/verify`,
+      { email, code },
+      { withCredentials: true }
+    );
+    setUser(data);
+    return data;
+  };
+
+  const requestOtp = async (email, channel = 'email') => {
+    const { data } = await axios.post(
+      `${API}/auth/otp/request`,
+      { email, channel, purpose: 'Login' },
+      { withCredentials: true }
+    );
+    return data;
+  };
+
   const register = async (email, password, name, role) => {
     const { data } = await axios.post(
       `${API}/auth/register`,
@@ -58,7 +77,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithOtp, requestOtp, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

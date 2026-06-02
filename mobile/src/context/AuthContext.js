@@ -93,6 +93,24 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const requestOtp = async (email, channel = 'email') => {
+    const { data } = await client.post('/auth/otp/request', { email, channel, purpose: 'Login' });
+    return data;
+  };
+
+  const loginWithOtp = async (email, code) => {
+    const { data } = await client.post('/auth/otp/verify', { email, code });
+    if (data.access_token) {
+      await SecureStore.setItemAsync('access_token', data.access_token);
+    }
+    if (data.refresh_token) {
+      await SecureStore.setItemAsync('refresh_token', data.refresh_token);
+    }
+    setUser(data);
+    tryRegisterPushTokenAfterLogin();
+    return data;
+  };
+
   const logout = async () => {
     await SecureStore.deleteItemAsync('access_token');
     await SecureStore.deleteItemAsync('refresh_token');
@@ -105,7 +123,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithOtp, requestOtp, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
