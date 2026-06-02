@@ -64,6 +64,34 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 11: Push Notifications (Expo Push) (Feb 2026) ✅
+- **Why Expo Push over FCM**: No Firebase service account JSON, no Apple Push cert, unified iOS+Android API, free unlimited delivery. Expo handles all of FCM/APNs internally.
+- **Mobile** (`/app/mobile/`):
+  - Installed `expo-notifications@56.0.15`, `expo-device@56.0.4`
+  - `app.config.js` — added `expo-notifications` plugin with brand color + icon (variant-aware)
+  - `/src/hooks/usePushNotifications.js` — new hook called from App.js. Sets module-level `setNotificationHandler` (foreground banner), creates Android HIGH-importance channel, requests permission, fetches ExpoPushToken tied to EAS projectId, POSTs to backend
+  - `AuthContext.js` — after login/register, re-registers push token (handles "token fetched before login" case)
+  - Tap → deep-link via `navigationRef.current.navigate(data.screen, data)` for `OrderDetail`, `Orders`, `Notifications`
+  - `App.js` — wired `useRef` for `NavigationContainer` + invokes `usePushNotifications(navigationRef)`
+- **Backend** (`server.py`):
+  - Added `httpx` import + module-level `_push_http_client` (reusable async client)
+  - `send_expo_push(messages)` — POSTs batch to `https://exp.host/--/api/v2/push/send`; filters invalid tokens; swallows errors
+  - `send_push_to_user(user_id, title, body, data)` — looks up all active tokens for user → batch push
+  - **`create_notification` enhanced**: every existing in-app notification call now ALSO fires a push (zero changes to existing trigger sites — new orders, status updates, refunds, low-stock, etc. all auto-push)
+  - **NEW endpoints**:
+    - `POST /api/notifications/push-token` — register/refresh token (validates `ExponentPushToken[...]` format)
+    - `DELETE /api/notifications/push-token?token=...` — unregister on logout
+    - `POST /api/notifications/test-push` — fire a test push to the calling user (for debugging)
+  - New collection: `push_tokens` (user_id, token, platform, variant, active, registered_at, last_seen_at)
+- **Trigger points already wired automatically** (via `create_notification`):
+  - 🆕 New order → vendor users get push: "New Order Received — ₹X"
+  - ✅ Vendor confirms/preparing/ready/completed → employee gets status push
+  - ❌ Auto-confirm on order placement → employee gets push
+  - 💰 Refund processed → employee gets push (via existing notification call)
+  - ⚠️ Low stock crossing threshold → vendor users get push
+- **Verified**: 400 for invalid format, 200 for valid Expo token, 200 for test push, 401 for unauth.
+- **Production readiness**: Requires next EAS rebuild to activate native push module in APKs. After install, mobile auto-registers token on login; all existing notification points fire push automatically.
+
 ### Iteration 10: Vendor Menu Lock-down (Feb 2026) ✅
 - **Policy**: Menus and pricing are now centrally managed by Cravitoo (master_admin). Vendors are read-only on menu items and prices, but can still toggle daily availability (out-of-stock).
 - **Backend** (`server.py`):

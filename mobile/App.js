@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth, isPartnerApp, isMasterAdmin, isSiteAdmin, isPartnerRole } from './src/context/AuthContext';
 import useOTAUpdates from './src/hooks/useOTAUpdates';
+import usePushNotifications from './src/hooks/usePushNotifications';
 import { colors } from './src/theme';
 
 // Auth Screens
@@ -244,12 +245,15 @@ function RootNavigator() {
 }
 
 export default function App() {
+  const navigationRef = useRef(null);
   // Check for OTA updates on launch (no-op in dev / Expo Go)
   useOTAUpdates();
+  // Set up push notifications (permission, token registration, tap handlers)
+  usePushNotifications(navigationRef);
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <StatusBar style="dark" />
           <RootNavigator />
         </NavigationContainer>

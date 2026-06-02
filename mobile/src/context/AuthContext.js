@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import client from '../api/client';
 
@@ -13,6 +16,26 @@ export const isMasterAdmin = (user) => user?.role === 'master_admin';
 export const isSiteAdmin = (user) => user?.role === 'site_admin';
 export const isVendorRole = (user) => user?.role === 'vendor';
 export const isPartnerRole = (user) => ['vendor', 'master_admin', 'site_admin'].includes(user?.role);
+
+// Re-register the Expo push token with the backend (best-effort, called after login)
+async function tryRegisterPushTokenAfterLogin() {
+  try {
+    if (!Device.isDevice) return;
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ??
+      Constants?.easConfig?.projectId;
+    if (!projectId) return;
+    const tokenResult = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = tokenResult.data;
+    const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+    const variant = APP_VARIANT;
+    await client.post('/notifications/push-token', { token, platform, variant });
+  } catch (err) {
+    // Silently no-op — backend will pick up token on next app open
+  }
+}
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
@@ -52,6 +75,8 @@ export const AuthProvider = ({ children }) => {
       await SecureStore.setItemAsync('refresh_token', data.refresh_token);
     }
     setUser(data);
+    // Re-register push token now that user is authenticated
+    tryRegisterPushTokenAfterLogin();
     return data;
   };
 
@@ -64,6 +89,7 @@ export const AuthProvider = ({ children }) => {
       await SecureStore.setItemAsync('refresh_token', data.refresh_token);
     }
     setUser(data);
+    tryRegisterPushTokenAfterLogin();
     return data;
   };
 

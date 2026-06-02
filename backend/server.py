@@ -26,6 +26,7 @@ import hashlib
 import razorpay
 import io
 import openpyxl
+import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 
@@ -1440,7 +1441,8 @@ async def get_subscriptions(user: dict = Depends(get_current_user)):
     return subs
 
 # Notifications Helper
-async def create_notification(user_id: str, title: str, message: str, notif_type: str = "info"):
+async def create_notification(user_id: str, title: str, message: str, notif_type: str = "info", push_data: Optional[Dict[str, Any]] = None):
+    """Persist an in-app notification AND fire a push notification (if user has a registered token)."""
     await db.notifications.insert_one({
         "user_id": user_id,
         "title": title,
@@ -1449,6 +1451,120 @@ async def create_notification(user_id: str, title: str, message: str, notif_type
         "read": False,
         "created_at": datetime.now(timezone.utc)
     })
+    # Best-effort push (failures never break the calling flow)
+    try:
+        await send_push_to_user(user_id, title, message, push_data or {"screen": "Notifications", "type": notif_type})
+    except Exception as e:
+        logger.warning(f"Push send failed for user {user_id}: {e}")
+
+
+# ============== EXPO PUSH NOTIFICATIONS ==============
+
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+_push_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_push_http_client() -> httpx.AsyncClient:
+    global _push_http_client
+    if _push_http_client is None:
+        _push_http_client = httpx.AsyncClient(timeout=10.0)
+    return _push_http_client
+
+
+async def send_expo_push(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Send a batch of Expo push messages. messages is a list of dicts with 'to', 'title', 'body', 'data'."""
+    if not messages:
+        return {}
+    valid_messages = [m for m in messages if m.get("to", "").startswith("ExponentPushToken[")]
+    if not valid_messages:
+        return {}
+    try:
+        client_http = _get_push_http_client()
+        resp = await client_http.post(
+            EXPO_PUSH_URL,
+            json=valid_messages,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip, deflate",
+            },
+        )
+        return resp.json()
+    except Exception as e:
+        logger.warning(f"Expo push failed: {e}")
+        return {"error": str(e)}
+
+
+async def send_push_to_user(user_id: str, title: str, body: str, data: Optional[Dict[str, Any]] = None):
+    """Look up all active Expo push tokens for a user and send them a push notification."""
+    tokens_cursor = db.push_tokens.find({"user_id": user_id, "active": True})
+    messages = []
+    async for t in tokens_cursor:
+        messages.append({
+            "to": t["token"],
+            "title": title,
+            "body": body,
+            "data": data or {},
+            "sound": "default",
+            "priority": "high",
+            "channelId": "default",
+        })
+    if messages:
+        await send_expo_push(messages)
+
+
+class PushTokenRegister(BaseModel):
+    token: str
+    platform: Optional[str] = None  # 'ios' | 'android'
+    variant: Optional[str] = None   # 'customer' | 'vendor'
+
+
+@api_router.post("/notifications/push-token")
+async def register_push_token(data: PushTokenRegister, user: dict = Depends(get_current_user)):
+    """Register or refresh an Expo push token for the authenticated user."""
+    if not data.token or not data.token.startswith("ExponentPushToken["):
+        raise HTTPException(status_code=400, detail="Invalid Expo push token format")
+    now = datetime.now(timezone.utc)
+    # Upsert by (user_id, token) — same physical device only stores one row per user
+    await db.push_tokens.update_one(
+        {"user_id": user["id"], "token": data.token},
+        {
+            "$set": {
+                "user_id": user["id"],
+                "token": data.token,
+                "platform": data.platform,
+                "variant": data.variant,
+                "active": True,
+                "last_seen_at": now,
+            },
+            "$setOnInsert": {"registered_at": now},
+        },
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.delete("/notifications/push-token")
+async def unregister_push_token(token: str = Query(...), user: dict = Depends(get_current_user)):
+    """Mark a push token inactive (on logout / app uninstall)."""
+    await db.push_tokens.update_one(
+        {"user_id": user["id"], "token": token},
+        {"$set": {"active": False, "deactivated_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/test-push")
+async def test_push(user: dict = Depends(get_current_user)):
+    """Send a test push notification to the calling user. Useful for debugging in production."""
+    await send_push_to_user(
+        user["id"],
+        "🍴 Cravitoo test notification",
+        "If you can see this, push notifications are working!",
+        {"screen": "Notifications"},
+    )
+    return {"ok": True, "sent_to": user["id"]}
+
 
 # Menu CRUD - DELETE
 @api_router.delete("/menu/{item_id}")

@@ -64,6 +64,13 @@ module.exports = {
       'expo-secure-store',
       'expo-updates',
       [
+        'expo-notifications',
+        {
+          icon: './assets/icon.png',
+          color: IS_VENDOR ? '#111827' : '#FF5A1F',
+        },
+      ],
+      [
         'expo-build-properties',
         {
           android: {
