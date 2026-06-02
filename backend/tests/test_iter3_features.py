@@ -10,6 +10,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.prev
 
 CREDS = {
     "super_admin": ("admin@cravitoo.com", "admin123"),
+    "master_admin": ("admin@cravitoo.com", "admin123"),
     "corporate_admin": ("demo@techcorp.com", "demo123"),
     "vendor": ("vendor@spicekitchen.com", "vendor123"),
     "employee": ("employee@techcorp.com", "employee123"),
@@ -42,8 +43,11 @@ class TestMenuCRUD:
         assert len(items) >= 1
 
     def test_create_update_delete_menu_item(self):
+        # NOTE (iter12): vendor menu CRUD is now master_admin-only. Vendors get 403.
+        # We test (a) vendor is blocked, (b) master_admin happy path with vendor_id.
         vs, _ = login("vendor")
-        # CREATE
+        vendor_id = vs.get(f"{BASE_URL}/api/auth/me", timeout=10).json().get("vendor_id")
+        # Vendor blocked
         payload = {
             "name": f"TEST_dish_{int(time.time())}",
             "description": "Test item",
@@ -52,18 +56,28 @@ class TestMenuCRUD:
             "is_vegetarian": True,
             "is_available": True,
         }
-        cr = vs.post(f"{BASE_URL}/api/menu", json=payload, timeout=10)
+        vr = vs.post(f"{BASE_URL}/api/menu", json=payload, timeout=10)
+        assert vr.status_code == 403, vr.text
+        # Master admin happy path
+        ms, _ = login("master_admin")
+        cr = ms.post(f"{BASE_URL}/api/menu", json={**payload, "vendor_id": vendor_id}, timeout=10)
         assert cr.status_code == 200, cr.text
         item_id = cr.json()["id"]
-        # UPDATE
-        ur = vs.patch(f"{BASE_URL}/api/menu/{item_id}", json={"price": 120.0, "is_available": False}, timeout=10)
+        # UPDATE — master only
+        ur = ms.patch(f"{BASE_URL}/api/menu/{item_id}", json={"price": 120.0, "is_available": False}, timeout=10)
         assert ur.status_code == 200
-        # Verify via vendor-all (since is_available is False)
+        # Vendor update blocked
+        vur = vs.patch(f"{BASE_URL}/api/menu/{item_id}", json={"price": 10.0}, timeout=10)
+        assert vur.status_code == 403
+        # Verify update via vendor-all read
         all_items = vs.get(f"{BASE_URL}/api/menu/vendor/all", timeout=10).json()
         found = [i for i in all_items if i["id"] == item_id]
         assert found and found[0]["price"] == 120.0 and found[0]["is_available"] is False
-        # DELETE
-        dr = vs.delete(f"{BASE_URL}/api/menu/{item_id}", timeout=10)
+        # Vendor delete blocked
+        vdr = vs.delete(f"{BASE_URL}/api/menu/{item_id}", timeout=10)
+        assert vdr.status_code == 403
+        # Master DELETE
+        dr = ms.delete(f"{BASE_URL}/api/menu/{item_id}", timeout=10)
         assert dr.status_code == 200, dr.text
         # Verify deletion
         after = vs.get(f"{BASE_URL}/api/menu/vendor/all", timeout=10).json()

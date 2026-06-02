@@ -64,6 +64,25 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 12: Legal Pages + DPDP Rights + server.py Refactor (Feb 2026) ✅
+- **Privacy Policy** (`/privacy`): Full DPDP Act 2023 / GDPR compliant, 10 sections (collection, use, storage, sharing, retention, rights, security, children, cookies, changes), grievance officer contact, India data-residency notes (Mumbai). 14-day notice for material changes.
+- **Terms of Service** (`/terms`): 13 sections covering eligibility, orders/payments, pickup, loyalty rules, vendor responsibilities (incl. new menu-managed-by-Cravitoo clause), prohibited conduct, IP, disclaimers, liability cap (₹10k or 3-month spend), Bengaluru jurisdiction.
+- **DataSettings page** (`/settings/data`): In-app self-service for the right to access (Download data → JSON file) and right to erasure (DELETE confirmation flow with type-DELETE-to-confirm).
+- **Backend DPDP endpoints**:
+  - `GET /api/me/data` → returns structured JSON (profile excluding password_hash, orders, reviews, favorites, loyalty, subscriptions, notifications, preferences, push_tokens with REDACTED). Marked under DPDP_2023_section_12.
+  - `DELETE /api/me/data?confirm=DELETE` → anonymises orders/reviews, hard-deletes favorites/preferences/subscriptions/notifications/push_tokens/loyalty/audit_log; deletes user; writes deletion_log entry. Master_admin self-delete blocked (would lock platform).
+- **Footer + Navbar links**: LandingPage footer now shows Privacy/Terms/Support. Navbar has Shield icon → /settings/data for all logged-in roles.
+- **server.py refactor (phase 1)**:
+  - Extracted all 35+ Pydantic models + 3 constants (CHECKLIST_FIELDS, DOC_TYPES, ONBOARDING_STATUSES) + OrderStatus enum + PushTokenRegister + RazorpayOrderCreate/Verify into new `/app/backend/models.py` (380 lines).
+  - server.py: **4,184 → 3,901 lines** (-283), now imports from `models`. Pure refactor — zero behavior change.
+  - Future phases (P2): extract routes into `/app/backend/routes/*.py` per feature module.
+- **Test updates**: Fixed `test_iter3_features.py` + `test_iter6_vendor_upload_commission.py` to expect 403 for vendor menu CRUD/image upload (these were written before iter12 lock-down).
+- **Verified**:
+  - Backend: **234/234 pytest passing** ✅ (up from 201, includes new test_iter12_dpdp_menu_push.py with 32 DPDP/menu-lockdown/push tests)
+  - 18-endpoint smoke test across 5 roles all 200 ✅
+  - Privacy/Terms pages render properly ✅
+  - DPDP export + delete + master_admin-protection verified via curl ✅
+
 ### Iteration 11: Push Notifications (Expo Push) (Feb 2026) ✅
 - **Why Expo Push over FCM**: No Firebase service account JSON, no Apple Push cert, unified iOS+Android API, free unlimited delivery. Expo handles all of FCM/APNs internally.
 - **Mobile** (`/app/mobile/`):

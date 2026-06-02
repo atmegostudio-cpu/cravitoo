@@ -264,16 +264,24 @@ def _png_bytes(width=100, height=100):
 class TestUpload:
     uploaded_filename = None
 
-    def test_vendor_uploads_png(self):
-        vs, _ = login("vendor")
+    def test_master_admin_uploads_png(self):
+        # NOTE (iter12): vendor menu lock-down. Only master/site_admin can upload menu images.
+        ms, _ = login("master_admin")
         png = _png_bytes()
         files = {"file": ("test.png", png, "image/png")}
-        r = vs.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)
+        r = ms.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)
         assert r.status_code == 200, r.text
         d = r.json()
         assert "url" in d and "filename" in d
         assert d["filename"].endswith(".png")
         TestUpload.uploaded_filename = d["filename"]
+
+    def test_vendor_upload_403(self):
+        # iter12: vendors can no longer upload menu images
+        vs, _ = login("vendor")
+        files = {"file": ("x.png", _png_bytes(), "image/png")}
+        r = vs.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)
+        assert r.status_code == 403
 
     def test_employee_upload_403(self):
         es, _ = login("employee")
@@ -282,20 +290,20 @@ class TestUpload:
         assert r.status_code == 403
 
     def test_non_image_400(self):
-        vs, _ = login("vendor")
+        ms, _ = login("master_admin")
         files = {"file": ("evil.txt", b"hello world", "text/plain")}
-        r = vs.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)
+        r = ms.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)
         assert r.status_code == 400
 
     def test_oversize_400(self):
-        vs, _ = login("vendor")
+        ms, _ = login("master_admin")
         big = b"\x00" * (5 * 1024 * 1024 + 1024)
         files = {"file": ("big.png", big, "image/png")}
-        r = vs.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=30)
+        r = ms.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=30)
         assert r.status_code == 400
 
     def test_serve_uploaded(self):
-        assert TestUpload.uploaded_filename, "depends on test_vendor_uploads_png"
+        assert TestUpload.uploaded_filename, "depends on test_master_admin_uploads_png"
         r = requests.get(f"{BASE_URL}/api/uploads/{TestUpload.uploaded_filename}", timeout=10)
         assert r.status_code == 200
         assert r.headers.get("content-type", "").startswith("image/")
