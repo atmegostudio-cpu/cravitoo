@@ -64,6 +64,34 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 14: Vendor Menu Change Request Workflow (Feb 2026) ✅
+- **Replaced** the mailto:partners@cravitoo.com link with a proper in-app ticketing workflow
+- **Backend** — new collection `menu_change_requests` + 5 endpoints:
+  - `POST /api/menu-change-requests` (vendor) — submit add/edit/remove request with snapshot of current state
+  - `GET /api/menu-change-requests` (role-filtered) — vendor sees own; site_admin sees `can_site_approve=True` only; master_admin sees all
+  - `GET /api/menu-change-requests/{id}` — detail view with diff
+  - `POST /api/menu-change-requests/{id}/decision` — approve/reject with optional auto-apply (default: apply on approve)
+  - `DELETE /api/menu-change-requests/{id}` — vendor cancels own pending request
+- **Smart routing logic** (`_request_can_auto_route_to_site_admin`):
+  - Site Admin can approve: **remove** + **description-only edits**
+  - Master Admin owns: **add**, **price changes**, **vegetarian-flag changes**
+- **Auto-apply on approval**: New items inserted into menu_items; edits applied with $set; removes hard-delete the item. Approval logs `menu_change_request_id` on the resulting item for traceability.
+- **Notifications wired**: Vendor → master/site admins on submission (push + in-app). Admin → vendor on decision.
+- **Full audit trail** stored in `audit_trail` array on each request: submitted_at, approved_at, rejected_at, cancelled_at — with email of actor + optional remarks.
+- **Frontend**:
+  - `/app/frontend/src/pages/vendor/MenuRequests.js` — submit-form modal (type selector, item picker for edit/remove, price/description fields, photo URL, vegetarian toggle, reason); list view with status badges + diff cards + cancel button for pending
+  - `/app/frontend/src/pages/master/MenuRequests.js` — admin queue with filter pills (pending/approved/rejected/all), color-coded diff view, one-click Approve & Apply, reject-with-remarks modal, expandable audit trail
+- **Navbar**: Vendor + master_admin + site_admin all gained a "Menu Requests" nav link with MessageSquare icon
+- **Vendor Menu page**: "Request menu / pricing change" link now routes to `/vendor/menu-requests` (no more email handoff)
+- **Verified** via 10-step curl smoke test:
+  - ✅ Vendor submit add → 200
+  - ✅ Vendor submit description-only edit → 200 with can_site_approve=true
+  - ✅ Non-vendor cannot submit → 403
+  - ✅ Vendor sees own requests; Master Admin sees all; Site Admin filters to can_site_approve
+  - ✅ Site Admin approves description edit → 200 (works); Site Admin tries to approve add → 403 (blocked)
+  - ✅ Master Admin approves add → 200 + new menu item appears in vendor's menu
+  - ✅ Re-decide already-decided → 400 (idempotency)
+
 ### Iteration 13: Email OTP + Resend Integration + Compliance (Feb 2026) ✅
 - **Email OTP Login**: Channel-agnostic OTP system (`email_service.py`). 6-digit codes, bcrypt-hashed, 10-min expiry, max 5 verify attempts, rate-limited 3/hour per email.
   - `POST /api/auth/otp/request` — generate + send code via email (SMS/WhatsApp stubs return 501 for future)

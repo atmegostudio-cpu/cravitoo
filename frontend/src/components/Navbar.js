@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare } from 'lucide-react';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
 
@@ -32,6 +32,7 @@ const Navbar = () => {
           { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
           { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
           { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
+          { path: '/vendor/menu-requests', label: 'Menu Requests', icon: MessageSquare },
           { path: '/vendor/ai-insights', label: 'AI Insights', icon: Sparkles },
           { path: '/vendor/verify-pickup', label: 'Pickup', icon: QrCode },
         ];
@@ -52,6 +53,7 @@ const Navbar = () => {
           { path: '/master/sites', label: 'Sites', icon: Building2 },
           { path: '/master/vendors', label: 'Vendors', icon: Store },
           { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
+          { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
           { path: '/master/admins', label: 'Admins', icon: ShieldCheck },
           { path: '/master/bulk-onboard', label: 'Bulk Onboard', icon: UploadCloud },
         ];
@@ -59,6 +61,7 @@ const Navbar = () => {
         return [
           { path: '/site-admin/dashboard', label: 'Dashboard', icon: BarChart3 },
           { path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList },
+          { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
         ];
       case 'city_admin':
         return [

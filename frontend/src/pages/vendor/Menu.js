@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Leaf, ImageIcon, Lock, Mail } from 'lucide-react';
+import { Leaf, ImageIcon, Lock, MessageSquare } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -76,14 +77,14 @@ const VendorMenu = () => {
                 to ensure quality and consistency across all sites. You can only mark items as <strong>In stock</strong> or
                 <strong> Out of stock</strong> for day-to-day operations.
               </p>
-              <a
-                href="mailto:partners@cravitoo.com?subject=Menu%20change%20request"
+              <Link
+                to="/vendor/menu-requests"
                 data-testid="contact-cravitoo-link"
                 className="inline-flex items-center space-x-2 text-sm font-medium text-primary hover:underline"
               >
-                <Mail className="h-4 w-4" />
+                <MessageSquare className="h-4 w-4" />
                 <span>Request menu / pricing change</span>
-              </a>
+              </Link>
             </div>
           </div>
 

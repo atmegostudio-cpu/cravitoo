@@ -47,6 +47,9 @@ import TermsOfService from './pages/legal/TermsOfService';
 import DataSettings from './pages/legal/DataSettings';
 import CookieConsent from './components/CookieConsent';
 
+import VendorMenuRequests from './pages/vendor/MenuRequests';
+import AdminMenuRequests from './pages/master/MenuRequests';
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -243,6 +246,18 @@ function AppRoutes() {
       <Route path="/settings/data" element={
         <ProtectedRoute allowedRoles={['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin']}>
           <DataSettings />
+        </ProtectedRoute>
+      } />
+
+      {/* Menu change requests */}
+      <Route path="/vendor/menu-requests" element={
+        <ProtectedRoute allowedRoles={['vendor']}>
+          <VendorMenuRequests />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/menu-requests" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'super_admin', 'site_admin', 'city_admin']}>
+          <AdminMenuRequests />
         </ProtectedRoute>
       } />
     </Routes>

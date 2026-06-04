@@ -953,6 +953,375 @@ async def delete_my_data(
     }
 
 
+# ============== VENDOR → CRAVITOO MENU CHANGE REQUESTS ==============
+# Vendors are read-only on menus (iter10 lock-down). They submit change requests
+# that Master Admin (and optionally Site Admin for "remove"+"edit_description")
+# review and approve. On approval, the menu is auto-updated.
+
+class MenuChangeRequestCreate(BaseModel):
+    request_type: str  # "add" | "edit" | "remove"
+    # For 'add': name, description, category, price, image_url, is_vegetarian REQUIRED
+    # For 'edit': item_id REQUIRED + any of name/description/price/image_url/is_vegetarian
+    # For 'remove': item_id REQUIRED + reason
+    item_id: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    image_url: Optional[str] = None
+    is_vegetarian: Optional[bool] = None
+    reason: Optional[str] = None
+
+
+class MenuChangeDecision(BaseModel):
+    decision: str  # "approve" | "reject"
+    remarks: Optional[str] = None
+    auto_apply: bool = True  # if True (default), changes are applied to the live menu immediately
+
+
+def _request_can_auto_route_to_site_admin(request_type: str, has_price_change: bool) -> bool:
+    """Iter14 routing rule: Site Admin can approve 'remove' + 'edit_description'-only.
+    Master Admin owns: 'add', any price change, any vegetarian-flag change."""
+    if request_type == "remove":
+        return True
+    if request_type == "edit" and not has_price_change:
+        return True
+    return False
+
+
+@api_router.post("/menu-change-requests")
+async def create_menu_change_request(data: MenuChangeRequestCreate, user: dict = Depends(get_current_user)):
+    """Vendor submits a menu change request to Cravitoo for approval."""
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can submit menu change requests")
+
+    vendor_id = user.get("vendor_id")
+    if not vendor_id:
+        raise HTTPException(status_code=400, detail="No vendor record linked to this account")
+
+    rt = data.request_type.lower()
+    if rt not in ("add", "edit", "remove"):
+        raise HTTPException(status_code=400, detail="request_type must be 'add', 'edit', or 'remove'")
+
+    # Per-type validation
+    if rt == "add":
+        if not all([data.name, data.description, data.category, data.price is not None]):
+            raise HTTPException(status_code=400, detail="Add request requires name, description, category, price")
+    elif rt == "edit":
+        if not data.item_id:
+            raise HTTPException(status_code=400, detail="Edit request requires item_id")
+        # Must change at least one field
+        change_fields = [data.name, data.description, data.price, data.image_url, data.is_vegetarian]
+        if all(v is None for v in change_fields):
+            raise HTTPException(status_code=400, detail="At least one field must be provided for edit")
+    elif rt == "remove":
+        if not data.item_id:
+            raise HTTPException(status_code=400, detail="Remove request requires item_id")
+
+    # If editing/removing, verify the item exists & belongs to this vendor
+    existing_item = None
+    if data.item_id:
+        existing_item = await db.menu_items.find_one({"_id": safe_objectid(data.item_id, "Menu item")})
+        if not existing_item:
+            raise HTTPException(status_code=404, detail="Menu item not found")
+        if str(existing_item.get("vendor_id")) != str(vendor_id):
+            raise HTTPException(status_code=403, detail="You can only request changes to your own menu")
+
+    has_price_change = data.price is not None and (
+        rt == "add" or (existing_item and abs(float(existing_item.get("price", 0)) - float(data.price)) > 0.001)
+    )
+
+    # Determine routing
+    can_site_approve = _request_can_auto_route_to_site_admin(rt, has_price_change)
+
+    # Snapshot the existing item state (for "diff" view on the approver's screen)
+    existing_snapshot = None
+    if existing_item:
+        existing_snapshot = {
+            "name": existing_item.get("name"),
+            "description": existing_item.get("description"),
+            "category": existing_item.get("category"),
+            "price": existing_item.get("price"),
+            "image_url": existing_item.get("image_url"),
+            "is_vegetarian": existing_item.get("is_vegetarian"),
+        }
+
+    now = datetime.now(timezone.utc)
+    request_doc = {
+        "vendor_id": vendor_id,
+        "submitted_by": user["id"],
+        "submitted_by_email": user["email"],
+        "request_type": rt,
+        "item_id": data.item_id,
+        "existing_snapshot": existing_snapshot,
+        "proposed": {
+            "name": data.name,
+            "description": data.description,
+            "category": data.category,
+            "price": data.price,
+            "image_url": data.image_url,
+            "is_vegetarian": data.is_vegetarian,
+        },
+        "reason": data.reason,
+        "has_price_change": has_price_change,
+        "can_site_approve": can_site_approve,
+        "status": "pending",  # pending | approved | rejected
+        "audit_trail": [{
+            "event": "submitted",
+            "by": user["id"],
+            "by_email": user["email"],
+            "at": now,
+        }],
+        "created_at": now,
+    }
+    result = await db.menu_change_requests.insert_one(request_doc)
+    req_id = str(result.inserted_id)
+
+    # Notify all master_admins (and site_admins if they can approve this type)
+    # Find the site for this vendor (so we notify the right site admin)
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+    vendor_name = (vendor_doc or {}).get("name", "Vendor")
+
+    target_roles = ["master_admin"]
+    if can_site_approve:
+        target_roles.append("site_admin")
+
+    admin_users = await db.users.find({"role": {"$in": target_roles}}).to_list(500)
+    for admin in admin_users:
+        await create_notification(
+            user_id=str(admin["_id"]),
+            title=f"New menu request from {vendor_name}",
+            message=f"{rt.capitalize()} request — review in admin dashboard.",
+            notif_type="menu_request",
+            push_data={"screen": "MenuChangeRequests", "request_id": req_id},
+        )
+
+    return {"id": req_id, "status": "pending", "can_site_approve": can_site_approve}
+
+
+@api_router.get("/menu-change-requests")
+async def list_menu_change_requests(
+    status: Optional[str] = Query(None, description="Filter: pending | approved | rejected | all"),
+    user: dict = Depends(get_current_user),
+):
+    """List menu change requests:
+      - Vendor → sees own requests
+      - Site Admin → sees requests for vendors at their site that they can approve
+      - Master Admin → sees all
+    """
+    role = user["role"]
+    query: Dict[str, Any] = {}
+    if status and status != "all":
+        query["status"] = status
+
+    if role == "vendor":
+        vendor_id = user.get("vendor_id")
+        if not vendor_id:
+            return []
+        query["vendor_id"] = vendor_id
+    elif role == "site_admin":
+        site_id = user.get("site_id")
+        if not site_id:
+            return []
+        # Vendors mapped to this site
+        mappings = await db.vendor_site_mappings.find({"site_id": site_id}).to_list(500)
+        vendor_ids = [m["vendor_id"] for m in mappings]
+        query["vendor_id"] = {"$in": vendor_ids}
+        # Site admin only sees requests they can approve
+        query["can_site_approve"] = True
+    elif role in ("master_admin", "super_admin"):
+        pass  # sees all
+    else:
+        raise HTTPException(status_code=403, detail="Not authorised")
+
+    docs = await db.menu_change_requests.find(query).sort("created_at", -1).to_list(500)
+    out = []
+    # Cache vendor names
+    vendor_name_cache: Dict[str, str] = {}
+    for d in docs:
+        vid = d.get("vendor_id")
+        vname = vendor_name_cache.get(vid)
+        if vname is None:
+            try:
+                vdoc = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")})
+                vname = (vdoc or {}).get("name", "Unknown Vendor")
+            except Exception:
+                vname = "Unknown Vendor"
+            vendor_name_cache[vid] = vname
+        d["id"] = str(d.pop("_id"))
+        d["vendor_name"] = vname
+        # ISO-stringify dates
+        for k in ("created_at",):
+            if isinstance(d.get(k), datetime):
+                d[k] = d[k].isoformat()
+        for entry in d.get("audit_trail", []):
+            if isinstance(entry.get("at"), datetime):
+                entry["at"] = entry["at"].isoformat()
+        out.append(d)
+    return out
+
+
+@api_router.get("/menu-change-requests/{request_id}")
+async def get_menu_change_request(request_id: str, user: dict = Depends(get_current_user)):
+    """Get a single menu change request (with full diff). Vendor sees own; admins see based on role."""
+    doc = await db.menu_change_requests.find_one({"_id": safe_objectid(request_id, "Menu change request")})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    role = user["role"]
+    if role == "vendor" and doc.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="Not authorised")
+    if role == "site_admin" and not doc.get("can_site_approve"):
+        raise HTTPException(status_code=403, detail="This request requires Master Admin approval")
+
+    doc["id"] = str(doc.pop("_id"))
+    if isinstance(doc.get("created_at"), datetime):
+        doc["created_at"] = doc["created_at"].isoformat()
+    for entry in doc.get("audit_trail", []):
+        if isinstance(entry.get("at"), datetime):
+            entry["at"] = entry["at"].isoformat()
+
+    # Attach vendor name
+    try:
+        vdoc = await db.vendors.find_one({"_id": safe_objectid(doc.get("vendor_id"), "Vendor")})
+        doc["vendor_name"] = (vdoc or {}).get("name", "Unknown Vendor")
+    except Exception:
+        doc["vendor_name"] = "Unknown Vendor"
+
+    return doc
+
+
+@api_router.post("/menu-change-requests/{request_id}/decision")
+async def decide_menu_change_request(
+    request_id: str,
+    decision: MenuChangeDecision,
+    user: dict = Depends(get_current_user),
+):
+    """Approve or reject a menu change request.
+       If approved AND auto_apply=True (default), the menu is updated immediately."""
+    role = user["role"]
+    if role not in ("master_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Only Master or Site Admin can decide")
+
+    doc = await db.menu_change_requests.find_one({"_id": safe_objectid(request_id, "Menu change request")})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if doc.get("status") != "pending":
+        raise HTTPException(status_code=400, detail=f"Request already {doc['status']}")
+    if role == "site_admin" and not doc.get("can_site_approve"):
+        raise HTTPException(
+            status_code=403,
+            detail="This request requires Master Admin approval (price changes / new items)",
+        )
+
+    decision_value = decision.decision.lower()
+    if decision_value not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
+
+    now = datetime.now(timezone.utc)
+    rt = doc["request_type"]
+    vendor_id = doc["vendor_id"]
+
+    if decision_value == "reject":
+        await db.menu_change_requests.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {"status": "rejected", "decided_at": now, "decided_by": user["id"], "decided_by_role": role},
+                "$push": {"audit_trail": {"event": "rejected", "by": user["id"], "by_email": user["email"], "at": now, "remarks": decision.remarks}},
+            },
+        )
+    else:  # approve
+        applied = False
+        applied_item_id = None
+        if decision.auto_apply:
+            proposed = doc.get("proposed", {}) or {}
+            if rt == "add":
+                new_doc = {
+                    "vendor_id": vendor_id,
+                    "name": proposed.get("name"),
+                    "description": proposed.get("description"),
+                    "category": proposed.get("category"),
+                    "price": float(proposed.get("price") or 0),
+                    "image_url": proposed.get("image_url"),
+                    "is_vegetarian": bool(proposed.get("is_vegetarian", False)),
+                    "is_available": True,
+                    "created_at": now,
+                    "created_via": "menu_change_request",
+                    "menu_change_request_id": str(doc["_id"]),
+                }
+                ins = await db.menu_items.insert_one(new_doc)
+                applied_item_id = str(ins.inserted_id)
+                applied = True
+            elif rt == "edit":
+                set_fields = {}
+                for k in ("name", "description", "category", "price", "image_url", "is_vegetarian"):
+                    if proposed.get(k) is not None:
+                        set_fields[k] = proposed[k]
+                if set_fields:
+                    await db.menu_items.update_one(
+                        {"_id": safe_objectid(doc["item_id"], "Menu item")},
+                        {"$set": set_fields},
+                    )
+                    applied_item_id = doc["item_id"]
+                    applied = True
+            elif rt == "remove":
+                await db.menu_items.delete_one({"_id": safe_objectid(doc["item_id"], "Menu item")})
+                applied_item_id = doc["item_id"]
+                applied = True
+
+        await db.menu_change_requests.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "status": "approved",
+                    "decided_at": now,
+                    "decided_by": user["id"],
+                    "decided_by_role": role,
+                    "applied": applied,
+                    "applied_item_id": applied_item_id,
+                },
+                "$push": {"audit_trail": {"event": "approved", "by": user["id"], "by_email": user["email"], "at": now, "remarks": decision.remarks, "applied": applied}},
+            },
+        )
+
+    # Notify the vendor
+    submitted_by = doc.get("submitted_by")
+    if submitted_by:
+        vendor_doc = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+        vname = (vendor_doc or {}).get("name", "your")
+        verb = "approved" if decision_value == "approve" else "rejected"
+        await create_notification(
+            user_id=submitted_by,
+            title=f"Menu request {verb}",
+            message=f"Your {rt} request for {vname} has been {verb} by Cravitoo." + (f" Note: {decision.remarks}" if decision.remarks else ""),
+            notif_type="menu_request_decision",
+            push_data={"screen": "MenuChangeRequests", "request_id": str(doc["_id"])},
+        )
+
+    return {"ok": True, "status": "approved" if decision_value == "approve" else "rejected"}
+
+
+@api_router.delete("/menu-change-requests/{request_id}")
+async def cancel_menu_change_request(request_id: str, user: dict = Depends(get_current_user)):
+    """Vendor cancels their own pending request."""
+    doc = await db.menu_change_requests.find_one({"_id": safe_objectid(request_id, "Menu change request")})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if user["role"] != "vendor" or doc.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="Only the submitting vendor can cancel")
+    if doc["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Only pending requests can be cancelled")
+    now = datetime.now(timezone.utc)
+    await db.menu_change_requests.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {"status": "cancelled", "cancelled_at": now},
+            "$push": {"audit_trail": {"event": "cancelled_by_vendor", "by": user["id"], "by_email": user["email"], "at": now}},
+        },
+    )
+    return {"ok": True}
+
+
 # Company Routes
 @api_router.post("/companies")
 async def create_company(data: CompanyCreate, user: dict = Depends(get_current_user)):
