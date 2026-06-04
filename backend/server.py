@@ -545,7 +545,15 @@ async def register(data: RegisterRequest, request: Request, response: Response):
     samesite_value = "none" if secure_cookie else "lax"
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
-    
+
+    # Best-effort welcome email (fire-and-forget — failure doesn't block registration)
+    try:
+        import email_service
+        w_html, w_text = email_service.render_welcome_email(data.name, data.role)
+        email_service.send_email(email_lower, "Welcome to Cravitoo 🍴", w_html, w_text)
+    except Exception as e:
+        logger.warning(f"Welcome email send failed for {email_lower}: {e}")
+
     return {"id": user_id, "email": email_lower, "name": data.name, "role": data.role, "access_token": access_token, "refresh_token": refresh_token}
 
 @api_router.post("/auth/login")
@@ -1125,6 +1133,24 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
         "amount": total_amount,
         "items_count": len(validated_items)
     })
+
+    # Send order confirmation email to the employee (best-effort)
+    try:
+        import email_service
+        oc_html, oc_text = email_service.render_order_confirmation_email(
+            name=user.get("name") or user["email"],
+            order_id=order_id,
+            vendor_name=vendor_doc.get("name", "Cravitoo Vendor") if vendor_doc else "Cravitoo Vendor",
+            items=validated_items,
+            total=total_amount,
+        )
+        email_service.send_email(
+            user["email"],
+            f"Order Confirmed — ₹{total_amount:.2f} from {vendor_doc.get('name', 'Cravitoo') if vendor_doc else 'Cravitoo'}",
+            oc_html, oc_text,
+        )
+    except Exception as e:
+        logger.warning(f"Order confirmation email failed: {e}")
 
     # Low-stock alert: count items sold today per menu_item_id, notify vendor if any drops below threshold
     try:
@@ -4072,7 +4098,133 @@ async def websocket_vendor(websocket: WebSocket, token: str = Query(...)):
         logger.error(f"WS error for vendor {vendor_id}: {e}")
         manager.disconnect_vendor(vendor_id, websocket)
 
+# ============== WEEKLY ADMIN REPORTS ==============
+# Endpoint: POST /api/admin/reports/weekly/send
+# Computes the last 7 days' metrics and emails master_admin + site_admin users.
+
+@api_router.post("/admin/reports/weekly/send")
+async def send_weekly_admin_reports(
+    user: dict = Depends(get_current_user),
+    target_role: Optional[str] = Query(None, description="Filter recipients: master_admin | site_admin"),
+):
+    """Compute & email last-7-days summary to admins. Only callable by master_admin."""
+    if user["role"] != "master_admin":
+        raise HTTPException(status_code=403, detail="Only Master Admin can trigger weekly reports.")
+
+    import email_service
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=7)
+    period_label = f"{week_start.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"
+
+    # Aggregate orders in the last 7 days
+    orders_cursor = db.orders.find({
+        "created_at": {"$gte": week_start, "$lt": now},
+        "status": {"$ne": "cancelled"},
+    })
+    total_orders = 0
+    total_revenue = 0.0
+    vendor_stats: Dict[str, Dict[str, Any]] = {}
+    async for o in orders_cursor:
+        total_orders += 1
+        amt = float(o.get("total_amount", 0) or 0)
+        total_revenue += amt
+        vid = o.get("vendor_id")
+        if vid:
+            vs = vendor_stats.setdefault(vid, {"orders": 0, "revenue": 0.0})
+            vs["orders"] += 1
+            vs["revenue"] += amt
+
+    top_vendor_ids = sorted(vendor_stats.keys(), key=lambda k: vendor_stats[k]["revenue"], reverse=True)[:5]
+    top_vendors = []
+    for vid in top_vendor_ids:
+        try:
+            vdoc = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")})
+            top_vendors.append({
+                "name": (vdoc or {}).get("name", "Vendor"),
+                "orders": vendor_stats[vid]["orders"],
+                "revenue": vendor_stats[vid]["revenue"],
+            })
+        except Exception:
+            continue
+
+    refunds_cursor = db.refunds.find({"created_at": {"$gte": week_start, "$lt": now}})
+    refunds_count = 0
+    refunds_amount = 0.0
+    async for r in refunds_cursor:
+        refunds_count += 1
+        refunds_amount += float(r.get("amount", 0) or 0)
+
+    active_employees = await db.orders.distinct("user_id", {"created_at": {"$gte": week_start, "$lt": now}})
+    new_signups = await db.users.count_documents({"role": "employee", "created_at": {"$gte": week_start, "$lt": now}})
+
+    metrics = {
+        "orders": total_orders,
+        "revenue": total_revenue,
+        "aov": (total_revenue / total_orders) if total_orders else 0.0,
+        "active_employees": len(active_employees),
+        "new_signups": new_signups,
+        "refunds_count": refunds_count,
+        "refunds_amount": refunds_amount,
+    }
+
+    recipient_roles = ["master_admin"]
+    if target_role == "site_admin":
+        recipient_roles = ["site_admin"]
+    elif target_role is None or target_role == "all":
+        recipient_roles = ["master_admin", "site_admin"]
+
+    recipients = await db.users.find(
+        {"role": {"$in": recipient_roles}, "email": {"$ne": None}},
+        {"email": 1, "name": 1, "role": 1},
+    ).to_list(500)
+
+    sent, failed = 0, 0
+    for r in recipients:
+        try:
+            html, text = email_service.render_weekly_admin_report_email(
+                admin_name=r.get("name", "Admin"),
+                period_label=period_label,
+                metrics=metrics,
+                top_vendors=top_vendors,
+            )
+            ok, _err = email_service.send_email(
+                r["email"],
+                f"Cravitoo Weekly Report — {period_label}",
+                html, text,
+            )
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+        except Exception as e:
+            logger.warning(f"Weekly report email failed for {r.get('email')}: {e}")
+            failed += 1
+
+    await db.report_runs.insert_one({
+        "type": "weekly_admin_summary",
+        "triggered_by": user["id"],
+        "triggered_at": now,
+        "period_start": week_start,
+        "period_end": now,
+        "metrics": metrics,
+        "sent": sent,
+        "failed": failed,
+        "recipient_count": len(recipients),
+    })
+
+    return {
+        "ok": True,
+        "period": period_label,
+        "metrics": metrics,
+        "top_vendors": top_vendors,
+        "recipients_total": len(recipients),
+        "sent": sent,
+        "failed": failed,
+    }
+
+
 app.include_router(api_router)
+
 
 app.add_middleware(
     CORSMiddleware,

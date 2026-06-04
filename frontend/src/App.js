@@ -45,6 +45,7 @@ import EventCatering from './pages/shared/EventCatering';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy';
 import TermsOfService from './pages/legal/TermsOfService';
 import DataSettings from './pages/legal/DataSettings';
+import CookieConsent from './components/CookieConsent';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -253,6 +254,7 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <AppRoutes />
+        <CookieConsent />
       </BrowserRouter>
     </AuthProvider>
   );

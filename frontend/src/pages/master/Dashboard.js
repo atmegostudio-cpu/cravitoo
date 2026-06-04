@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity } from 'lucide-react';
+import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -10,6 +10,22 @@ const MasterDashboard = () => {
   const [charts, setCharts] = useState(null);
   const [leaderboard, setLeaderboard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportMessage, setReportMessage] = useState('');
+
+  const handleSendWeeklyReport = async () => {
+    setSendingReport(true);
+    setReportMessage('');
+    try {
+      const { data: result } = await axios.post(`${API}/admin/reports/weekly/send?target_role=all`, {}, { withCredentials: true });
+      setReportMessage(`✓ Report sent to ${result.sent}/${result.recipients_total} admins (period: ${result.period}).`);
+    } catch (e) {
+      setReportMessage(`✗ ${e.response?.data?.detail || 'Failed to send report'}`);
+    } finally {
+      setSendingReport(false);
+      setTimeout(() => setReportMessage(''), 8000);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -69,6 +85,40 @@ const MasterDashboard = () => {
                 <p className="font-heading text-2xl font-semibold">₹{(data?.total_revenue || 0).toLocaleString('en-IN')}</p>
               </div>
             </div>
+          </div>
+
+          {/* Quick actions row */}
+          <div className="bg-card border border-border-light rounded-2xl p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="bg-primary-light rounded-xl p-2.5">
+                <Mail className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-heading font-semibold text-text-primary">Weekly admin email report</h3>
+                <p className="text-sm text-text-secondary mt-0.5">Send a 7-day performance summary to all master &amp; site admins</p>
+                {reportMessage && (
+                  <p data-testid="report-message" className={`text-xs mt-2 ${reportMessage.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{reportMessage}</p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleSendWeeklyReport}
+              disabled={sendingReport}
+              data-testid="send-weekly-report-btn"
+              className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sendingReport ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4" />
+                  <span>Send weekly report now</span>
+                </>
+              )}
+            </button>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">

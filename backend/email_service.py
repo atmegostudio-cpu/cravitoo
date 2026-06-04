@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import secrets
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any, List
 
 import bcrypt
 import resend
@@ -196,3 +196,159 @@ def send_otp_channel(identifier: str, code: str, channel: str = "email", purpose
         return False, f"{channel}_not_configured"
 
     return False, f"unknown_channel:{channel}"
+
+
+# ─── Transactional email templates ───
+
+def _brand_wrapper(title: str, intro_html: str, body_html: str = "", footer_note: str = "") -> str:
+    """Shared brand wrapper for all Cravitoo transactional emails."""
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#FFF7F0;color:#1F1410;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#FFF7F0;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:560px;background-color:#ffffff;border:1px solid rgba(255,90,31,0.15);border-radius:16px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#FF5A1F 0%,#FF7A45 100%);padding:24px 32px;">
+          <div style="font-size:28px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Cravitoo</div>
+          <div style="font-size:13px;color:#FFE8DC;margin-top:2px;">Good food. Easy order. Happy team.</div>
+        </td></tr>
+        <tr><td style="padding:36px 32px 24px 32px;">
+          <h1 style="margin:0 0 12px 0;font-size:22px;color:#1F1410;font-weight:600;">{title}</h1>
+          <div style="font-size:15px;color:#52443A;line-height:1.6;">{intro_html}</div>
+          {body_html}
+        </td></tr>
+        <tr><td style="border-top:1px solid #F3E8DD;padding:18px 32px;background-color:#FFFBF7;">
+          <p style="margin:0;font-size:12px;color:#9C8B80;line-height:1.5;">
+            © 2026 Cravitoo Foods Private Limited.<br>
+            {footer_note or "Need help? Reply to this email or write to support@cravitoo.com"}
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+
+def render_welcome_email(name: str, role: str = "employee") -> Tuple[str, str]:
+    """Welcome email for new signups."""
+    safe_name = (name or "there").split()[0][:40]
+    if role == "vendor":
+        body = """<p style="margin:24px 0 12px 0;font-weight:600;color:#1F1410;">What's next:</p>
+<ul style="padding-left:20px;margin:0;color:#52443A;line-height:1.7;">
+  <li>Complete your onboarding checklist</li>
+  <li>Submit your KYC documents (GST, FSSAI, bank details)</li>
+  <li>Review your Cravitoo-managed menu</li>
+  <li>Start accepting orders on go-live day</li>
+</ul>"""
+    else:
+        body = """<p style="margin:24px 0 12px 0;font-weight:600;color:#1F1410;">Here's what you can do:</p>
+<ul style="padding-left:20px;margin:0;color:#52443A;line-height:1.7;">
+  <li>🍴 Browse fresh menu options from your office cafe</li>
+  <li>📱 Place an order — pickup with a QR code in seconds</li>
+  <li>⭐ Earn loyalty points on every order</li>
+  <li>❤️ Save your favorite vendors for one-tap reorders</li>
+</ul>"""
+    intro = f"Hi {safe_name}, welcome to Cravitoo! Your account is ready and waiting for you."
+    html = _brand_wrapper("Welcome to Cravitoo!", f"<p>{intro}</p>", body)
+    text = f"""Welcome to Cravitoo!
+
+Hi {safe_name},
+
+Your account is ready. Sign in and start exploring delicious food from your office vendors.
+
+— Team Cravitoo
+"""
+    return html, text
+
+
+def render_order_confirmation_email(name: str, order_id: str, vendor_name: str, items: list, total: float, pickup_time: Optional[str] = None) -> Tuple[str, str]:
+    """Order placed confirmation email."""
+    safe_name = (name or "there").split()[0][:40]
+    safe_vendor = (vendor_name or "your vendor")[:80]
+    items_html = "".join([
+        f'<tr><td style="padding:8px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#1F1410;">{(it.get("name") or "Item")[:60]} <span style="color:#9C8B80;">× {it.get("quantity", 1)}</span></td><td style="padding:8px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#1F1410;text-align:right;">₹{(it.get("price", 0) * it.get("quantity", 1)):.2f}</td></tr>'
+        for it in items[:20]  # cap to avoid huge emails
+    ])
+    body = f"""
+<div style="background-color:#FFF1E5;border-radius:12px;padding:20px;margin:24px 0;">
+  <p style="margin:0;font-size:13px;color:#9C8B80;">Order #</p>
+  <p style="margin:2px 0 0 0;font-family:'SFMono-Regular',Menlo,monospace;font-size:18px;font-weight:700;color:#FF5A1F;letter-spacing:1px;">{order_id[-8:].upper()}</p>
+</div>
+<p style="margin:0 0 8px 0;font-weight:600;color:#1F1410;">Order details</p>
+<p style="margin:0 0 16px 0;color:#52443A;font-size:14px;">From <strong>{safe_vendor}</strong>{f" — pickup at {pickup_time}" if pickup_time else ""}</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:16px;">
+  {items_html}
+  <tr><td style="padding:14px 0 0 0;font-size:16px;font-weight:700;color:#1F1410;">Total</td><td style="padding:14px 0 0 0;font-size:16px;font-weight:700;color:#FF5A1F;text-align:right;">₹{total:.2f}</td></tr>
+</table>
+<p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">Open the Cravitoo app and show your unique QR code at the pickup counter. You can track your order in real-time.</p>
+"""
+    intro = f"Hi {safe_name}, we've received your order and the vendor is being notified."
+    html = _brand_wrapper("Order Confirmed 🍴", f"<p>{intro}</p>", body)
+    text = f"""Order Confirmed!
+
+Hi {safe_name},
+
+Your order from {safe_vendor} has been confirmed.
+
+Order ID: {order_id[-8:].upper()}
+Total: ₹{total:.2f}
+
+Open the Cravitoo app to track your order and get your pickup QR code.
+
+— Team Cravitoo
+"""
+    return html, text
+
+
+def render_weekly_admin_report_email(
+    admin_name: str,
+    period_label: str,
+    metrics: Dict[str, Any],
+    top_vendors: list,
+) -> Tuple[str, str]:
+    """Weekly summary report for master/site admins."""
+    safe_name = (admin_name or "Admin").split()[0][:40]
+
+    rows = [
+        ("Total orders", str(metrics.get("orders", 0))),
+        ("Revenue", f"₹{metrics.get('revenue', 0):,.2f}"),
+        ("Average order value", f"₹{metrics.get('aov', 0):,.2f}"),
+        ("Active employees", str(metrics.get('active_employees', 0))),
+        ("New signups", str(metrics.get('new_signups', 0))),
+        ("Refunds issued", f"{metrics.get('refunds_count', 0)} (₹{metrics.get('refunds_amount', 0):,.2f})"),
+    ]
+    metrics_html = "".join([
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#52443A;">{k}</td><td style="padding:10px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#1F1410;text-align:right;font-weight:600;">{v}</td></tr>'
+        for k, v in rows
+    ])
+    vendors_html = ""
+    if top_vendors:
+        vendors_html = """
+<h3 style="margin:32px 0 12px 0;font-size:16px;color:#1F1410;font-weight:600;">Top vendors this week</h3>
+<table cellspacing="0" cellpadding="0" border="0" width="100%">
+""" + "".join([
+            f'<tr><td style="padding:8px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#1F1410;">#{i+1} {(v.get("name") or "Vendor")[:50]}</td><td style="padding:8px 0;border-bottom:1px solid #F3E8DD;font-size:14px;color:#52443A;text-align:right;">{v.get("orders",0)} orders · ₹{v.get("revenue",0):,.0f}</td></tr>'
+            for i, v in enumerate(top_vendors[:5])
+        ]) + "</table>"
+
+    body = f"""
+<p style="margin:24px 0 12px 0;font-weight:600;color:#1F1410;font-size:16px;">{period_label}</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%">
+  {metrics_html}
+</table>
+{vendors_html}
+<p style="margin:32px 0 0 0;font-size:13px;color:#9C8B80;">Open the admin dashboard for detailed analytics, leaderboards, and exportable reports.</p>
+"""
+    intro = f"Hi {safe_name}, here's your Cravitoo performance summary."
+    html = _brand_wrapper("Your Weekly Report", f"<p>{intro}</p>", body)
+    text = f"""Cravitoo Weekly Report — {period_label}
+
+Hi {safe_name},
+
+{chr(10).join([f"{k}: {v}" for k, v in rows])}
+
+Open the admin dashboard for detailed analytics.
+
+— Team Cravitoo
+"""
+    return html, text
