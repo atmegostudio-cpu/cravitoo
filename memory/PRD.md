@@ -64,6 +64,42 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 13: Email OTP + Resend Integration + Compliance (Feb 2026) ✅
+- **Email OTP Login**: Channel-agnostic OTP system (`email_service.py`). 6-digit codes, bcrypt-hashed, 10-min expiry, max 5 verify attempts, rate-limited 3/hour per email.
+  - `POST /api/auth/otp/request` — generate + send code via email (SMS/WhatsApp stubs return 501 for future)
+  - `POST /api/auth/otp/verify` — verify code → issue JWT, auto-create employee account if new
+  - Anti-enumeration: identical response whether email exists or not
+- **Resend Integration**:
+  - `resend@2.30.1` installed; `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `RESEND_FROM_NAME` in `.env`
+  - Domain `cravitoo.com` verified in Resend (US-East-1)
+  - DNS records: DKIM TXT, SPF MX + TXT, DMARC TXT — all green on Hostinger
+  - Sender: `Cravitoo <noreply@cravitoo.com>`
+- **Transactional Email Templates** (`email_service.py`):
+  - Branded OTP code email (orange/cream Cravitoo design)
+  - Welcome email (role-aware — different copy for vendor vs employee)
+  - Order confirmation email with itemised total + pickup instructions
+  - Weekly admin summary report (metrics + top-5 vendors)
+- **Trigger Points**:
+  - `POST /api/auth/register` → fires welcome email
+  - `POST /api/orders` → fires order confirmation to customer
+  - `POST /api/admin/reports/weekly/send` → master_admin-only; computes 7-day metrics & emails admins
+- **Web LoginPage**: Mode-toggle UI — Password ↔ "Login with Email Code" ↔ "Enter Verification Code" with countdown + resend
+- **Mobile LoginScreen**: Same 3-mode UI for both Customer + Partner variants
+- **`AuthContext`**: Exposed `loginWithOtp(email, code)` + `requestOtp(email, channel)` (web + mobile)
+- **Cookie Consent Banner** (`/app/frontend/src/components/CookieConsent.js`):
+  - One-time banner, localStorage-persisted choice (`accepted` | `dismissed`)
+  - Honest messaging: "We use only essential cookies" — no dark patterns
+  - Links to Privacy Policy
+- **Master Dashboard**: "Send weekly report now" quick action button with live status feedback
+- **Verified**:
+  - ✅ Real Resend send to admin@cravitoo.com succeeded (sender = `noreply@cravitoo.com`)
+  - ✅ OTP request → verify → JWT issued → /auth/me works
+  - ✅ Replay of used OTP code → 400
+  - ✅ Weekly report endpoint sent 1 email to master admin
+  - ✅ Vendor blocked from triggering weekly report (403)
+  - ✅ Cookie banner shows on first visit, hides on accept
+  - ✅ 68/68 existing tests still pass
+
 ### Iteration 12: Legal Pages + DPDP Rights + server.py Refactor (Feb 2026) ✅
 - **Privacy Policy** (`/privacy`): Full DPDP Act 2023 / GDPR compliant, 10 sections (collection, use, storage, sharing, retention, rights, security, children, cookies, changes), grievance officer contact, India data-residency notes (Mumbai). 14-day notice for material changes.
 - **Terms of Service** (`/terms`): 13 sections covering eligibility, orders/payments, pickup, loyalty rules, vendor responsibilities (incl. new menu-managed-by-Cravitoo clause), prohibited conduct, IP, disclaimers, liability cap (₹10k or 3-month spend), Bengaluru jurisdiction.
