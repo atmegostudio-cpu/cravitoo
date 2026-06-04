@@ -1135,19 +1135,25 @@ async def list_menu_change_requests(
         raise HTTPException(status_code=403, detail="Not authorised")
 
     docs = await db.menu_change_requests.find(query).sort("created_at", -1).to_list(500)
-    out = []
-    # Cache vendor names
+
+    # Batch-fetch all vendor names in a single query (avoid N+1)
+    vendor_id_strs = list({d.get("vendor_id") for d in docs if d.get("vendor_id")})
+    vendor_id_objs = []
+    for vid in vendor_id_strs:
+        try:
+            vendor_id_objs.append(safe_objectid(vid, "Vendor"))
+        except Exception:
+            continue
     vendor_name_cache: Dict[str, str] = {}
+    if vendor_id_objs:
+        vendors_cursor = db.vendors.find({"_id": {"$in": vendor_id_objs}}, {"_id": 1, "name": 1})
+        async for vdoc in vendors_cursor:
+            vendor_name_cache[str(vdoc["_id"])] = vdoc.get("name", "Unknown Vendor")
+
+    out = []
     for d in docs:
         vid = d.get("vendor_id")
-        vname = vendor_name_cache.get(vid)
-        if vname is None:
-            try:
-                vdoc = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")})
-                vname = (vdoc or {}).get("name", "Unknown Vendor")
-            except Exception:
-                vname = "Unknown Vendor"
-            vendor_name_cache[vid] = vname
+        vname = vendor_name_cache.get(vid, "Unknown Vendor")
         d["id"] = str(d.pop("_id"))
         d["vendor_name"] = vname
         # ISO-stringify dates
@@ -1423,11 +1429,15 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     if user["role"] != "employee":
         raise HTTPException(status_code=403, detail="Only employees can create orders")
     
-    # Server-side price validation - look up actual prices from DB
+    # Server-side price validation - batch-look up actual prices from DB (avoid N+1)
+    menu_item_ids = [safe_objectid(item.menu_item_id, "Menu item") for item in data.items]
+    menu_items_cursor = db.menu_items.find({"_id": {"$in": menu_item_ids}})
+    menu_items_dict = {str(mi["_id"]): mi async for mi in menu_items_cursor}
+
     validated_items = []
     total_amount = 0.0
     for item in data.items:
-        menu_item = await db.menu_items.find_one({"_id": safe_objectid(item.menu_item_id, "Menu item")})
+        menu_item = menu_items_dict.get(item.menu_item_id)
         if not menu_item:
             raise HTTPException(status_code=400, detail=f"Menu item {item.menu_item_id} not found")
         if not menu_item.get("is_available", False):
