@@ -163,6 +163,55 @@ def make_router(
         return {"message": "Logged out successfully"}
 
 
+    @r.post("/auth/refresh")
+    async def refresh(request: Request, response: Response):
+        """Issue a new access_token using the refresh_token cookie.
+
+        Solves the "Not authenticated" mid-session bug where the 15-min access
+        token expires while the user is still actively using the app.
+
+        Reads `refresh_token` from cookie OR Authorization header (mobile).
+        Returns a new short-lived access token + sets it as a cookie.
+        """
+        import jwt as _jwt
+        token = request.cookies.get("refresh_token")
+        if not token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+        if not token:
+            raise HTTPException(status_code=401, detail="No refresh token")
+
+        from os import environ as _env
+        secret = _env.get("JWT_SECRET", "")
+        algo = _env.get("JWT_ALGORITHM", "HS256")
+        try:
+            payload = _jwt.decode(token, secret, algorithms=[algo])
+            if payload.get("type") != "refresh":
+                raise HTTPException(status_code=401, detail="Invalid token type")
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid refresh token")
+        except _jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Refresh token expired — please log in again")
+        except _jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        user = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+        if not user:
+            raise HTTPException(status_code=401, detail="User no longer exists")
+
+        new_access = create_access_token(str(user["_id"]), user["email"], user["role"])
+        secure_cookie = is_secure_request(request)
+        samesite_value = "none" if secure_cookie else "lax"
+        response.set_cookie(
+            key="access_token", value=new_access,
+            httponly=True, secure=secure_cookie, samesite=samesite_value,
+            max_age=900, path="/",
+        )
+        return {"access_token": new_access}
+
+
     # ============== Email OTP login (channel-agnostic — SMS can be added later) ==============
 
 

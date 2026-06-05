@@ -68,6 +68,15 @@ const LoginPage = () => {
   const { login, loginWithOtp, requestOtp } = useAuth();
   const navigate = useNavigate();
 
+  // Show a friendly message if the user was bounced here by the axios interceptor
+  // due to a 401 (refresh token expired / no session)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('expired') === '1') {
+      setInfo('Your session expired. Please log in again — your work is safe.');
+    }
+  }, []);
+
   useEffect(() => {
     if (otpCountdown <= 0) return undefined;
     const t = setTimeout(() => setOtpCountdown((s) => s - 1), 1000);
