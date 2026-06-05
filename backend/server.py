@@ -323,6 +323,42 @@ async def startup_event():
     # Fire-and-forget — does NOT block startup probe
     asyncio.create_task(_index_and_seed())
 
+    # Daily digest scheduler — sends end-of-day recap emails at 20:30 IST.
+    # Runs in-process: cheap, no extra cron dependency. Survives container restarts
+    # because it re-aligns to the next 20:30 IST on every boot.
+    async def _daily_digest_scheduler():
+        from routers.notifications_prefs import send_daily_digest_to_user, IST
+        await asyncio.sleep(60)  # give the server 1 min to be fully ready
+        while True:
+            try:
+                now_ist = datetime.now(IST)
+                # Target = 20:30 IST today, or tomorrow if we're past it
+                target = now_ist.replace(hour=20, minute=30, second=0, microsecond=0)
+                if now_ist >= target:
+                    target = target + timedelta(days=1)
+                sleep_seconds = max(60, (target - now_ist).total_seconds())
+                logger.info(f"Daily digest: next run at {target.isoformat()} (in {int(sleep_seconds)}s)")
+                await asyncio.sleep(sleep_seconds)
+
+                # Fan-out
+                ist_today = datetime.now(IST).date()
+                sent, skipped = 0, 0
+                cursor = db.users.find({"role": "employee"}, {"_id": 1, "email": 1, "name": 1, "notification_preferences": 1}).limit(5000)
+                async for u in cursor:
+                    res = await send_daily_digest_to_user(db, u, ist_today)
+                    if res.get("sent"):
+                        sent += 1
+                    else:
+                        skipped += 1
+                logger.info(f"Daily digest fan-out done. sent={sent} skipped={skipped} date={ist_today}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Daily digest scheduler error: {e}")
+                await asyncio.sleep(300)  # back off 5 min on unexpected error
+
+    asyncio.create_task(_daily_digest_scheduler())
+
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -733,21 +769,24 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
         "items_count": len(validated_items)
     })
 
-    # Send order confirmation email to the employee (best-effort)
+    # Send order confirmation email to the employee (best-effort) — opt-in via notification_preferences.
+    # Default is OFF; users can flip it on in Settings → Notifications. The daily digest covers most cases.
     try:
-        import email_service
-        oc_html, oc_text = email_service.render_order_confirmation_email(
-            name=user.get("name") or user["email"],
-            order_id=order_id,
-            vendor_name=vendor_doc.get("name", "Cravitoo Vendor") if vendor_doc else "Cravitoo Vendor",
-            items=validated_items,
-            total=total_amount,
-        )
-        email_service.send_email(
-            user["email"],
-            f"Order Confirmed — ₹{total_amount:.2f} from {vendor_doc.get('name', 'Cravitoo') if vendor_doc else 'Cravitoo'}",
-            oc_html, oc_text,
-        )
+        prefs = (user.get("notification_preferences") or {})
+        if prefs.get("order_confirm_email", False):
+            import email_service
+            oc_html, oc_text = email_service.render_order_confirmation_email(
+                name=user.get("name") or user["email"],
+                order_id=order_id,
+                vendor_name=vendor_doc.get("name", "Cravitoo Vendor") if vendor_doc else "Cravitoo Vendor",
+                items=validated_items,
+                total=total_amount,
+            )
+            email_service.send_email(
+                user["email"],
+                f"Order Confirmed — ₹{total_amount:.2f} from {vendor_doc.get('name', 'Cravitoo') if vendor_doc else 'Cravitoo'}",
+                oc_html, oc_text,
+            )
     except Exception as e:
         logger.warning(f"Order confirmation email failed: {e}")
 
@@ -2699,6 +2738,8 @@ from routers.onboarding import make_router as make_onboarding_router  # noqa: E4
 from routers.sites import make_router as make_sites_router  # noqa: E402
 from routers.auth import make_router as make_auth_router  # noqa: E402
 from routers.ai_menu_photos import make_router as make_ai_menu_photos_router  # noqa: E402
+from routers.notifications_prefs import make_router as make_notifications_prefs_router  # noqa: E402
+from routers.broadcasts import make_router as make_broadcasts_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2713,6 +2754,8 @@ app.include_router(make_auth_router(
     LOCKOUT_MINUTES,
 ), prefix="/api")
 app.include_router(make_ai_menu_photos_router(db, safe_objectid, get_current_user, UPLOAD_DIR), prefix="/api")
+app.include_router(make_notifications_prefs_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_broadcasts_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 
 
 app.add_middleware(

@@ -53,6 +53,7 @@ import AdminMenuRequests from './pages/master/MenuRequests';
 import EmployeeReservations from './pages/employee/Reservations';
 import VendorReservations from './pages/vendor/Reservations';
 import AdminReservations from './pages/master/Reservations';
+import MasterBroadcasts from './pages/master/Broadcasts';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -212,6 +213,11 @@ function AppRoutes() {
       <Route path="/master/cities" element={
         <ProtectedRoute allowedRoles={['master_admin']}>
           <MasterCities />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/broadcasts" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterBroadcasts />
         </ProtectedRoute>
       } />
 

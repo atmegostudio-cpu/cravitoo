@@ -352,3 +352,96 @@ Open the admin dashboard for detailed analytics.
 — Team Cravitoo
 """
     return html, text
+
+
+
+def render_daily_digest_email(name: str, date_label: str, orders: list, reservations: list) -> Tuple[str, str]:
+    """End-of-day digest summarising the user's orders + tomorrow's pre-orders.
+
+    Sent once per active user instead of a per-order email. Drops Resend volume ~70%
+    when employees place multiple orders/reservations per day.
+    """
+    safe_name = (name or "there").split()[0][:40]
+    has_orders = len(orders) > 0
+    has_reservations = len(reservations) > 0
+
+    orders_section = ""
+    if has_orders:
+        rows = "".join([
+            f'<tr><td style="padding:6px 0;font-size:14px;color:#1F1410;">{(o.get("vendor_name") or "Vendor")[:60]}</td>'
+            f'<td style="padding:6px 0;font-size:13px;color:#9C8B80;">{o.get("items_count", 0)} item(s)</td>'
+            f'<td style="padding:6px 0;font-size:14px;color:#FF5A1F;text-align:right;font-weight:600;">₹{(o.get("amount") or 0):.2f}</td></tr>'
+            for o in orders[:15]
+        ])
+        total = sum((o.get("amount") or 0) for o in orders)
+        orders_section = f"""
+<p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;">Today's orders</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;">
+  {rows}
+  <tr><td colspan="2" style="padding:12px 0 0 0;font-size:15px;font-weight:700;color:#1F1410;border-top:1px solid #F3E8DD;">Total spent today</td>
+  <td style="padding:12px 0 0 0;font-size:15px;font-weight:700;color:#FF5A1F;text-align:right;border-top:1px solid #F3E8DD;">₹{total:.2f}</td></tr>
+</table>"""
+
+    reservations_section = ""
+    if has_reservations:
+        rrows = "".join([
+            f'<tr><td style="padding:6px 0;font-size:14px;color:#1F1410;text-transform:capitalize;">{r.get("meal_period", "")}</td>'
+            f'<td style="padding:6px 0;font-size:13px;color:#9C8B80;">{(r.get("vendor_name") or "Vendor")[:60]}</td>'
+            f'<td style="padding:6px 0;font-size:12px;color:#9C8B80;text-align:right;font-family:SFMono-Regular,Menlo,monospace;">{(r.get("pickup_qr") or "")[-8:]}</td></tr>'
+            for r in reservations[:8]
+        ])
+        first_date = reservations[0].get("delivery_date", "tomorrow") if reservations else "tomorrow"
+        reservations_section = f"""
+<p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;">Tomorrow's pre-orders ({first_date})</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;">
+  {rrows}
+</table>
+<p style="margin:8px 0 0 0;color:#9C8B80;font-size:12px;">Show the last 8 chars of your QR code at the counter for instant pickup.</p>"""
+
+    if not has_orders and not has_reservations:
+        # No activity — skip the email entirely (caller should also guard against this)
+        body = '<p style="color:#52443A;">No orders or reservations today. See you tomorrow!</p>'
+    else:
+        body = (orders_section + reservations_section).strip()
+
+    intro = f"Hi {safe_name}, here's your Cravitoo recap for {date_label}."
+    html = _brand_wrapper("Your Cravitoo recap", f"<p>{intro}</p>", body)
+
+    text_parts = [f"Cravitoo recap for {date_label}", "", f"Hi {safe_name},", ""]
+    if has_orders:
+        text_parts.append("Today's orders:")
+        for o in orders[:15]:
+            text_parts.append(f"  • {o.get('vendor_name', 'Vendor')} — {o.get('items_count', 0)} item(s) — ₹{(o.get('amount') or 0):.2f}")
+        text_parts.append(f"  Total: ₹{sum((o.get('amount') or 0) for o in orders):.2f}")
+        text_parts.append("")
+    if has_reservations:
+        first_date = reservations[0].get("delivery_date", "tomorrow")
+        text_parts.append(f"Tomorrow's pre-orders ({first_date}):")
+        for r in reservations[:8]:
+            text_parts.append(f"  • {r.get('meal_period', '')} — {r.get('vendor_name', 'Vendor')} — QR ...{(r.get('pickup_qr') or '')[-8:]}")
+        text_parts.append("")
+    text_parts.append("Open the Cravitoo app for full details.")
+    text_parts.append("— Team Cravitoo")
+    text = "\n".join(text_parts)
+    return html, text
+
+
+def render_broadcast_email(name: str, title: str, message: str, sender: str = "Cravitoo Team") -> Tuple[str, str]:
+    """Master Admin broadcast announcement (email channel, optional)."""
+    safe_name = (name or "there").split()[0][:40]
+    safe_title = (title or "Announcement")[:120]
+    safe_message = (message or "").replace("\n", "<br>")[:4000]
+    body = f"""
+<p style="margin:0 0 16px 0;color:#52443A;font-size:15px;line-height:1.6;">{safe_message}</p>
+<p style="margin:24px 0 0 0;color:#9C8B80;font-size:12px;">Sent by {sender}</p>"""
+    html = _brand_wrapper(safe_title, f"<p>Hi {safe_name},</p>", body)
+    text = f"""{safe_title}
+
+Hi {safe_name},
+
+{message[:4000]}
+
+Sent by {sender}
+— Team Cravitoo
+"""
+    return html, text

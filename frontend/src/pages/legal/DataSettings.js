@@ -1,11 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Link } from 'react-router-dom';
-import { Shield, Download, Trash2, AlertTriangle, CheckCircle2, Mail, Loader2 } from 'lucide-react';
+import { Shield, Download, Trash2, AlertTriangle, CheckCircle2, Mail, Loader2, Bell } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+const PREF_LABELS = [
+  { key: 'daily_digest_email', label: 'Daily recap email', description: 'One end-of-day summary (~8:30 PM IST) with your orders and pre-orders. Recommended.' },
+  { key: 'order_confirm_email', label: 'Per-order confirmation email', description: 'Receive a separate email for every order. Off by default to keep your inbox clean.' },
+  { key: 'reservation_confirm_email', label: 'Pre-order confirmation email', description: 'Email each time you reserve a meal. Pre-orders also send a push notification.' },
+  { key: 'push_notifications', label: 'Push notifications', description: 'Order updates, pre-order reminders, and Cravitoo announcements (free, no email).' },
+  { key: 'marketing_email', label: 'Announcements & offers via email', description: 'Occasional product updates and partner offers from Cravitoo.' },
+];
+
+const NotificationPrefsCard = () => {
+  const [prefs, setPrefs] = useState(null);
+  const [saving, setSaving] = useState({});
+  const [message, setMessage] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/me/notification-preferences`, { withCredentials: true });
+      setPrefs(data.preferences);
+    } catch (e) {
+      setMessage(e?.response?.data?.detail || 'Could not load preferences');
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (key) => {
+    if (!prefs) return;
+    const next = !prefs[key];
+    setSaving((s) => ({ ...s, [key]: true }));
+    setMessage('');
+    // Optimistic update
+    setPrefs((p) => ({ ...p, [key]: next }));
+    try {
+      const { data } = await axios.patch(`${API}/me/notification-preferences`, { [key]: next }, { withCredentials: true });
+      setPrefs(data.preferences);
+      setMessage('Preference saved');
+      setTimeout(() => setMessage(''), 2000);
+    } catch (e) {
+      setPrefs((p) => ({ ...p, [key]: !next })); // rollback
+      setMessage(e?.response?.data?.detail || 'Could not save — try again');
+    } finally {
+      setSaving((s) => ({ ...s, [key]: false }));
+    }
+  };
+
+  if (!prefs) {
+    return (
+      <div className="bg-card border border-border-light rounded-2xl p-6 mb-6" data-testid="notification-prefs-loading">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 mb-6" data-testid="notification-prefs-card">
+      <div className="flex items-start space-x-4">
+        <div className="bg-primary-light rounded-xl p-3">
+          <Bell className="h-6 w-6 text-primary" />
+        </div>
+        <div className="flex-1">
+          <h2 className="font-heading text-xl font-semibold text-text-primary">Notification preferences</h2>
+          <p className="text-text-secondary text-sm mt-1 mb-5">
+            Choose which alerts you want from Cravitoo. Push notifications are always free; opting out of emails helps us reduce delivery costs and keeps your inbox clean.
+          </p>
+          <div className="space-y-3">
+            {PREF_LABELS.map((p) => (
+              <div key={p.key} className="flex items-start justify-between gap-4 py-3 border-b border-border-light last:border-b-0">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-text-primary text-sm">{p.label}</p>
+                  <p className="text-text-muted text-xs mt-0.5">{p.description}</p>
+                </div>
+                <button
+                  data-testid={`pref-toggle-${p.key}`}
+                  onClick={() => toggle(p.key)}
+                  disabled={saving[p.key]}
+                  aria-pressed={prefs[p.key]}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${prefs[p.key] ? 'bg-primary' : 'bg-border-light'} ${saving[p.key] ? 'opacity-50' : ''}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${prefs[p.key] ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {message && (
+            <p data-testid="prefs-message" className="text-xs text-text-muted mt-3">{message}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const DataSettings = () => {
   const { user, logout } = useAuth();
@@ -122,6 +213,9 @@ const DataSettings = () => {
               </div>
             </dl>
           </div>
+
+          {/* Notification preferences */}
+          <NotificationPrefsCard />
 
           {/* Export data */}
           <div className="bg-card border border-border-light rounded-2xl p-6 mb-6">

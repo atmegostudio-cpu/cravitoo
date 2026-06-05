@@ -64,6 +64,46 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 19: Notification Prefs + Daily Digest + Master Admin Broadcasts (Feb 2026) ✅
+
+**Email volume reduction (resolves Resend 100/day cap risk):**
+- Added `notification_preferences` JSON to user schema. Defaults chosen to **minimize email volume**:
+  - `order_confirm_email: false` (was implicit-true before — this is the biggest win)
+  - `reservation_confirm_email: false`
+  - `daily_digest_email: true` ← the new single-email-per-day replacement
+  - `push_notifications: true` (free, always-on by default)
+  - `marketing_email: false`
+- Wrapped per-order confirmation email in `prefs.order_confirm_email` check at `server.py:736`. New users get ~70% fewer emails by default.
+- New router `routers/notifications_prefs.py` exposes:
+  - `GET/PATCH /api/me/notification-preferences` (user-managed, DPDP opt-out compliant)
+  - `POST /api/admin/digest/send-now` — Master can fire the digest fan-out manually
+  - `GET /api/admin/digest/preview/{user_id}` — preview a user's digest without sending
+- **Daily Digest** (`render_daily_digest_email` in `email_service.py`):
+  - One email per active user at **20:30 IST** (after pre-order cutoff)
+  - Summarises today's orders + tomorrow's pre-orders with QR-code last-8 chars
+  - Skips users with zero activity OR `daily_digest_email: false`
+  - In-process `asyncio` scheduler in `server.py` — re-aligns on each boot, no extra cron dependency
+- Web UI: `/settings/data` now has a **Notification preferences** card with 5 toggles, optimistic save, rollback on error
+
+**Master Admin Broadcasts (push to all users):**
+- New router `routers/broadcasts.py` with 2 endpoints:
+  - `POST /api/admin/broadcasts` — fan-out to filtered audience (`all` / `role` / `site` / `city`); sends in-app notification + push via existing `create_notification()` pipeline; optional email respects `marketing_email` preference per user
+  - `GET /api/admin/broadcasts` — admin history with delivery stats
+- Broadcasts surface in the **existing notification bell** automatically (uses `notif_type="broadcast"`)
+- New web page `/master/broadcasts` (linked from Navbar with `Megaphone` icon):
+  - Compose form (title, message, 4 audience cards, role/site/city sub-pickers, push + email channel toggles)
+  - History list with delivery stats per broadcast
+  - `data-testid` attributes everywhere for testability
+
+**Verified end-to-end (preview):**
+- Notification prefs GET/PATCH cycle works; defaults correct on new users
+- Master broadcast → reached 64 employees (role=employee), 64 in-app notifications + pushes fired
+- Broadcast appears in employee's notification bell with `type=broadcast`
+- Non-master gets 403, bad audience → 400
+- Admin history endpoint shows delivery stats
+
+**Lint clean** (ruff + ESLint). **87 regression tests pass.**
+
 ### Iteration 18b: 🔴 P0 Hotfix — Pre-order IST Timezone Bug (Feb 2026) ✅
 - **Bug**: Production employees saw "Cutoff passed" for ALL meal slots during business hours. Cards said "Tomorrow • 2026-06-05" when today was actually 2026-06-05 (i.e. off-by-one day).
 - **Root cause** (`routers/reservations.py`):
