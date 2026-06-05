@@ -6,12 +6,32 @@ import { UserPlus } from 'lucide-react';
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
 
 const formatApiErrorDetail = (detail) => {
-  if (detail == null) return 'Something went wrong. Please try again.';
+  if (detail == null) return null;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail))
     return detail.map((e) => (e && typeof e.msg === 'string' ? e.msg : JSON.stringify(e))).filter(Boolean).join(' ');
   if (detail && typeof detail.msg === 'string') return detail.msg;
   return String(detail);
+};
+
+const extractErrorMessage = (err) => {
+  const detail = formatApiErrorDetail(err?.response?.data?.detail);
+  if (detail) return detail;
+  if (err?.response?.status) {
+    const code = err.response.status;
+    if (code === 400) return 'Please double-check the details you entered.';
+    if (code === 429) return 'Too many attempts. Please wait a few minutes and try again.';
+    if (code >= 500) return `Our server hit a snag (${code}). Please try again in a moment.`;
+    return `Request failed (${code}). Please try again.`;
+  }
+  const msg = (err?.message || '').toLowerCase();
+  if (msg.includes('network') || msg.includes('failed to fetch')) {
+    return "Can't reach Cravitoo right now. Check your internet connection and try again.";
+  }
+  if (msg.includes('timeout') || err?.code === 'ECONNABORTED') {
+    return "Request timed out. Please try again.";
+  }
+  return err?.message ? `Registration failed: ${err.message}` : 'Registration failed. Please try again.';
 };
 
 const RegisterPage = () => {
@@ -48,7 +68,7 @@ const RegisterPage = () => {
           navigate('/');
       }
     } catch (err) {
-      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+      setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
     }

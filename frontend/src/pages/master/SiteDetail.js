@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet } from 'lucide-react';
+import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -182,6 +182,175 @@ const VendorsTab = ({ siteId }) => {
   );
 };
 
+const AIPhotoModal = ({ item, onClose, onApplied }) => {
+  const [count, setCount] = useState(1);
+  const [cuisineHint, setCuisineHint] = useState(item?.category || '');
+  const [promptOverride, setPromptOverride] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [promptUsed, setPromptUsed] = useState('');
+  const [selectedIdx, setSelectedIdx] = useState(null);
+  const [error, setError] = useState('');
+
+  const generate = async () => {
+    setLoading(true);
+    setError('');
+    setSuggestions([]);
+    setSelectedIdx(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/suggest`,
+        {
+          name: item.name,
+          is_vegetarian: item.is_vegetarian,
+          cuisine_hint: cuisineHint || undefined,
+          prompt_override: promptOverride.trim() || undefined,
+          count,
+        },
+        { withCredentials: true, timeout: 120000 }
+      );
+      setSuggestions(data.suggestions || []);
+      setPromptUsed(data.prompt_used || '');
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'AI generation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async () => {
+    if (selectedIdx === null) return;
+    setApplying(true);
+    setError('');
+    try {
+      await axios.post(
+        `${API}/ai/menu-photos/apply`,
+        { menu_item_id: item.id, photo_filename: suggestions[selectedIdx].filename },
+        { withCredentials: true }
+      );
+      onApplied();
+      onClose();
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to apply photo');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div data-testid="ai-photo-modal" className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-card border-b border-border-light px-6 py-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-heading text-xl font-medium flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> AI Photo for "{item.name}"
+            </h3>
+            <p className="text-text-muted text-xs mt-1">Generates photorealistic menu photos via Cravitoo's AI.</p>
+          </div>
+          <button data-testid="ai-photo-close" onClick={onClose} className="text-text-muted hover:text-text-primary">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Controls */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-text-secondary uppercase">Cuisine hint (optional)</label>
+              <input
+                data-testid="ai-cuisine-input"
+                type="text"
+                value={cuisineHint}
+                onChange={(e) => setCuisineHint(e.target.value)}
+                placeholder="e.g. North Indian, South Indian, Continental"
+                className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-secondary uppercase">Variants to generate</label>
+              <select
+                data-testid="ai-count-select"
+                value={count}
+                onChange={(e) => setCount(parseInt(e.target.value))}
+                className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm"
+              >
+                <option value={1}>1 (fastest, ~30s)</option>
+                <option value={2}>2 (~50s)</option>
+                <option value={3}>3 (~75s)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-text-secondary uppercase">Custom prompt (optional)</label>
+            <textarea
+              data-testid="ai-prompt-textarea"
+              value={promptOverride}
+              onChange={(e) => setPromptOverride(e.target.value)}
+              placeholder="Leave blank to auto-generate from dish name + cuisine. Tip: describe the plating, lighting, garnish."
+              rows={2}
+              className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm"
+            />
+          </div>
+
+          <button
+            data-testid="ai-generate-btn"
+            onClick={generate}
+            disabled={loading}
+            className="w-full px-4 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {loading ? 'Generating… this can take ~30-75 seconds' : (suggestions.length > 0 ? 'Regenerate' : 'Generate Photo')}
+          </button>
+
+          {error && <p className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          {promptUsed && !loading && (
+            <p className="text-xs text-text-muted bg-background-secondary px-3 py-2 rounded-lg">
+              <span className="font-medium">Prompt used:</span> {promptUsed}
+            </p>
+          )}
+
+          {/* Suggestions grid */}
+          {suggestions.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-sm text-text-secondary">Pick one to save as the menu photo:</p>
+              <div className={`grid gap-3 ${suggestions.length === 1 ? 'grid-cols-1' : suggestions.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={s.filename}
+                    data-testid={`ai-suggestion-${i}`}
+                    onClick={() => setSelectedIdx(i)}
+                    className={`relative rounded-xl overflow-hidden border-4 transition-all ${selectedIdx === i ? 'border-primary shadow-xl scale-[1.02]' : 'border-transparent hover:border-border-light'}`}
+                  >
+                    <img src={s.url} alt={`Variant ${i + 1}`} className="w-full aspect-square object-cover" />
+                    {selectedIdx === i && (
+                      <div className="absolute top-2 right-2 bg-primary text-white rounded-full p-1.5">
+                        <Check className="h-4 w-4" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <button
+                data-testid="ai-apply-btn"
+                onClick={apply}
+                disabled={selectedIdx === null || applying}
+                className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {applying ? 'Saving…' : selectedIdx === null ? 'Pick a variant above' : 'Use this photo'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const MenuTab = ({ siteId }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -190,6 +359,7 @@ const MenuTab = ({ siteId }) => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
+  const [aiPhotoItem, setAiPhotoItem] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -295,6 +465,7 @@ const MenuTab = ({ siteId }) => {
           <table className="w-full">
             <thead>
               <tr className="text-left text-xs text-text-muted uppercase border-b border-border-light">
+                <th className="pb-2">Photo</th>
                 <th className="pb-2">Name</th>
                 <th className="pb-2">Category</th>
                 <th className="pb-2">Price (₹)</th>
@@ -305,6 +476,30 @@ const MenuTab = ({ siteId }) => {
             <tbody>
               {items.map((it) => (
                 <tr key={it.id} data-testid={`menu-row-${it.id}`} className="border-b border-border-light/50">
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      {it.image_url ? (
+                        <img
+                          src={it.image_url}
+                          alt={it.name}
+                          className="w-12 h-12 rounded-lg object-cover border border-border-light"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-background-secondary border border-dashed border-border-light flex items-center justify-center text-text-muted text-xs">
+                          ?
+                        </div>
+                      )}
+                      <button
+                        data-testid={`ai-photo-btn-${it.id}`}
+                        onClick={() => setAiPhotoItem(it)}
+                        className="text-xs text-primary hover:text-primary-hover flex items-center gap-1 underline-offset-2 hover:underline"
+                        title="Generate AI photo"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> AI
+                      </button>
+                    </div>
+                  </td>
                   <td className="py-3">
                     <div>
                       <p className="font-medium text-text-primary text-sm">{it.name}</p>
@@ -338,6 +533,14 @@ const MenuTab = ({ siteId }) => {
           </table>
         </div>
       </div>
+
+      {aiPhotoItem && (
+        <AIPhotoModal
+          item={aiPhotoItem}
+          onClose={() => setAiPhotoItem(null)}
+          onApplied={load}
+        />
+      )}
     </div>
   );
 };

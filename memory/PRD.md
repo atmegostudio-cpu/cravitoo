@@ -64,6 +64,24 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 18: Login Error UX + iOS App Store Guide + AI Menu Photos (Feb 2026) ✅
+- **Login error UX cleanup** (`LoginPage.js`, `RegisterPage.js`, `index.js`):
+  - Replaced generic "Something went wrong. Please try again." with **status-aware messages**: `Invalid email or password` (401), `Too many attempts. Please wait...` (429), `Server hit a snag (500)`, `Can't reach Cravitoo — check your internet` (network), `Request timed out` (>25s)
+  - Added **global axios timeout = 25s** so hung requests fail fast with clear UX
+- **iOS App Store publish guide** (`/app/mobile/IOS_APP_STORE_GUIDE.md`) — 12-section step-by-step playbook covering: Apple Developer enrollment + D-U-N-S, EAS iOS build, TestFlight workflow, App Store Connect metadata, App Privacy disclosure, common rejections + fixes, OTA-vs-build decision tree, cost summary, realistic 2-week timeline.
+- **AI Menu Photos** (`/app/backend/routers/ai_menu_photos.py`, 188 lines):
+  - `POST /api/ai/menu-photos/suggest` — Master/Site Admin generates 1-3 photo variants via **OpenAI gpt-image-1** (Emergent LLM key, no extra key needed); auto-builds a high-quality prompt from dish name + veg flag + cuisine hint, or accepts a custom prompt override. Returns URLs + saves audit log to `ai_image_generations` collection.
+  - `POST /api/ai/menu-photos/apply` — Master Admin picks a variant; saves it as `menu_items.image_url` with `image_source: "ai_generated"` audit fields. Defence-in-depth: filename must start with `ai_` and reject path traversal.
+  - Tightened `/api/uploads/{filename}` regex to allow `ai_` and `onb_` prefixes (was hex-only).
+- **Web UI integration** (`SiteDetail.js → MenuTab`):
+  - Added "Photo" column to the menu items table — 12×12 thumbnail (or "?" placeholder if no image) + tiny "✨ AI" button per row
+  - `AIPhotoModal` shows cuisine input, custom prompt textarea, count selector (1/2/3), generates variants in parallel, lets admin pick one, applies in a click. All controls have `data-testid` attributes.
+- **Verified**:
+  - End-to-end: generated 1024×1024 PNG via gpt-image-1 (1.47 MB), served correctly via `/api/uploads/...`, applied to menu item — `image_url` updated in DB
+  - Security: non-master gets 403, path-traversal filenames get 400, missing key returns 500 with clean message
+  - All 213 existing backend regression tests still pass; lint clean (ruff + ESLint)
+- **Cost note**: gpt-image-1 ~$0.04 per 1024×1024 image at OpenAI list pricing. Audit log table `ai_image_generations` tracks per-user usage for cost control later.
+
 ### Iteration 17: server.py Phase 2 Refactor — Complete (Feb 2026) ✅
 - **server.py: 4,134 → 2,725 lines** (-1,409 / -34%) in this session. Total since iter12: **5,051 → 2,725** (-2,326 / -46%).
 - **5 routers extracted** to `/app/backend/routers/`:

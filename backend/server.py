@@ -2149,8 +2149,8 @@ async def upload_menu_image(
 
 @api_router.get("/uploads/{filename}")
 async def serve_upload(filename: str):
-    # Sanitize filename — only allow alphanumeric + .
-    if not re.match(r'^[a-f0-9]+\.[a-z]+$', filename):
+    # Sanitize filename — allow optional alphanumeric prefix (e.g. "ai_", "onb_") + hex + extension
+    if not re.match(r'^[a-z]{0,8}_?[a-f0-9]+\.[a-z]+$', filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
     fpath = UPLOAD_DIR / filename
     if not fpath.exists():
@@ -2698,6 +2698,7 @@ from routers.admin_reports import make_router as make_admin_reports_router  # no
 from routers.onboarding import make_router as make_onboarding_router  # noqa: E402
 from routers.sites import make_router as make_sites_router  # noqa: E402
 from routers.auth import make_router as make_auth_router  # noqa: E402
+from routers.ai_menu_photos import make_router as make_ai_menu_photos_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2711,6 +2712,7 @@ app.include_router(make_auth_router(
     check_brute_force, record_failed_login, clear_login_attempts,
     LOCKOUT_MINUTES,
 ), prefix="/api")
+app.include_router(make_ai_menu_photos_router(db, safe_objectid, get_current_user, UPLOAD_DIR), prefix="/api")
 
 
 app.add_middleware(
