@@ -30,7 +30,11 @@ const NotificationBell = () => {
       const { data } = await axios.get(`${API}/notifications`, { withCredentials: true });
       setNotifications(data);
     } catch (error) {
-      // Ignore errors for unauthenticated states
+      // 401 is expected when unauthenticated — silently swallowed by the global axios interceptor.
+      // Other errors logged for debugging without breaking the UI.
+      if (error?.response?.status !== 401) {
+        console.warn('Could not fetch notifications:', error?.message || error);
+      }
     }
   };
 

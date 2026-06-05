@@ -200,7 +200,7 @@ const EmployeeOrders = () => {
                     <p className="text-sm font-medium text-text-primary mb-2">Items:</p>
                     <div className="space-y-2">
                       {order.items.map((item, index) => (
-                        <div key={index} className="flex justify-between text-sm">
+                        <div key={item.menu_item_id || `${order.id}-${index}`} className="flex justify-between text-sm">
                           <span className="text-text-secondary">{item.quantity}x {item.name || 'Item'}</span>
                           <span className="text-text-primary">₹{(item.price * item.quantity).toFixed(2)}</span>
                         </div>

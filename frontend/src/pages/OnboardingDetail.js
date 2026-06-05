@@ -322,7 +322,7 @@ const OnboardingDetail = () => {
             <div className="space-y-2">
               {audit.length === 0 && <p className="text-text-muted text-sm">No actions logged yet.</p>}
               {audit.map((a, idx) => (
-                <div key={idx} className="bg-card border border-border-light rounded-xl p-4 flex items-start gap-3" data-testid={`audit-${idx}`}>
+                <div key={a.created_at ? `${a.created_at}-${idx}` : `audit-${idx}`} className="bg-card border border-border-light rounded-xl p-4 flex items-start gap-3" data-testid={`audit-${idx}`}>
                   <Activity className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm text-text-primary">

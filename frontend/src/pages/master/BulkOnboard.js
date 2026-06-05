@@ -18,7 +18,9 @@ const BulkOnboard = () => {
         const { data } = await axios.get(`${API}/companies`, { withCredentials: true });
         setCompanies(data);
         if (data.length === 1) setCompanyId(data[0].id);
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        console.warn('Could not load companies list:', e?.message || e);
+      }
     })();
   }, []);
 
@@ -120,7 +122,7 @@ const BulkOnboard = () => {
                   </div>
                   <ul className="space-y-1 text-xs text-amber-900">
                     {result.errors.slice(0, 20).map((err, idx) => (
-                      <li key={idx}>Row {err.row}: {err.error}</li>
+                      <li key={`${err.row || idx}-${err.error?.slice(0, 20) || idx}`}>Row {err.row}: {err.error}</li>
                     ))}
                     {result.errors.length > 20 && <li>...and {result.errors.length - 20} more</li>}
                   </ul>

@@ -44,7 +44,8 @@ const EmployeeDashboard = () => {
           };
         }
       } catch (e) {
-        // Ignore preferences fetch error and use defaults
+        // Preferences fetch is non-critical; fall back to defaults (intentional best-effort)
+        if (e?.response?.status !== 401) console.warn('Preferences fetch failed:', e?.message || e);
       }
       const { data } = await axios.post(
         `${API}/ai/recommendations`,

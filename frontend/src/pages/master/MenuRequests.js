@@ -224,7 +224,7 @@ const AdminMenuRequests = () => {
                         <summary className="text-xs text-text-muted cursor-pointer hover:text-text-primary">View audit trail ({r.audit_trail.length})</summary>
                         <ul className="mt-2 space-y-1 text-xs text-text-secondary pl-2 border-l-2 border-border-light">
                           {r.audit_trail.map((e, i) => (
-                            <li key={i} className="pl-2">
+                            <li key={`${r.id}-${e.at}-${i}`} className="pl-2">
                               <span className="capitalize font-medium">{e.event}</span> by {e.by_email} on {new Date(e.at).toLocaleString()}
                               {e.remarks && <span className="block text-text-muted">"{e.remarks}"</span>}
                             </li>

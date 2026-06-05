@@ -277,7 +277,6 @@ async def clear_login_attempts(identifier: str):
 async def startup_event():
     """Resilient, NON-BLOCKING startup — never block FastAPI from serving requests.
     Seed/index work runs in background so the health probe responds fast."""
-    import asyncio
 
     async def _index_and_seed():
         index_ops = [
@@ -407,7 +406,7 @@ async def seed_demo_data():
             "created_at": datetime.now(timezone.utc)
         })
         company_id = str(company_result.inserted_id)
-        logger.info(f"Demo company created: Tech Corp")
+        logger.info("Demo company created: Tech Corp")
     else:
         company_id = str((await db.companies.find_one({"name": "Tech Corp"}))['_id'])
     
@@ -420,7 +419,7 @@ async def seed_demo_data():
             "company_id": company_id,
             "created_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Demo corporate admin created")
+        logger.info("Demo corporate admin created")
     
     if not await db.vendors.find_one({"name": "Spice Kitchen"}):
         vendor_result = await db.vendors.insert_one({
@@ -434,7 +433,7 @@ async def seed_demo_data():
             "created_at": datetime.now(timezone.utc)
         })
         vendor_id = str(vendor_result.inserted_id)
-        logger.info(f"Demo vendor created: Spice Kitchen")
+        logger.info("Demo vendor created: Spice Kitchen")
     else:
         vendor_id = str((await db.vendors.find_one({"name": "Spice Kitchen"}))['_id'])
     
@@ -447,7 +446,7 @@ async def seed_demo_data():
             "vendor_id": vendor_id,
             "created_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Demo vendor user created")
+        logger.info("Demo vendor user created")
     
     if not await db.users.find_one({"email": demo_employee_email}):
         await db.users.insert_one({
@@ -458,7 +457,7 @@ async def seed_demo_data():
             "company_id": company_id,
             "created_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Demo employee created")
+        logger.info("Demo employee created")
     
     if await db.menu_items.count_documents({"vendor_id": vendor_id}) == 0:
         menu_items = [
@@ -469,7 +468,7 @@ async def seed_demo_data():
             {"vendor_id": vendor_id, "name": "Gulab Jamun", "description": "Sweet milk dumplings in sugar syrup", "category": "Dessert", "price": 80.0, "is_vegetarian": True, "is_available": True, "image_url": "https://images.unsplash.com/photo-1589119908995-c6b5f3e3bf6a", "created_at": datetime.now(timezone.utc)}
         ]
         await db.menu_items.insert_many(menu_items)
-        logger.info(f"Demo menu items created")
+        logger.info("Demo menu items created")
     
     # Seed a default site & vendor-site mapping
     site_id = None
@@ -501,7 +500,7 @@ async def seed_demo_data():
             ],
             "updated_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Demo site created with meal schedules")
+        logger.info("Demo site created with meal schedules")
     else:
         site_id = str(existing_site["_id"])
     
@@ -2250,7 +2249,7 @@ async def quick_toggle_menu_availability(item_id: str, user: dict = Depends(get_
 UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', '/tmp/cravitoo_uploads'))
 try:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-except (PermissionError, OSError) as e:
+except (PermissionError, OSError):
     # Fallback to /tmp if primary dir not writable (read-only k8s rootfs)
     UPLOAD_DIR = Path('/tmp/cravitoo_uploads')
     try:
@@ -2739,7 +2738,7 @@ async def bulk_employee_csv(
     if not cid:
         raise HTTPException(status_code=400, detail="company_id required")
 
-    import csv, io
+    import csv
     reader = csv.DictReader(io.StringIO(content))
     inserted, errors = 0, []
     for idx, row in enumerate(reader, start=2):

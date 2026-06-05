@@ -9,7 +9,10 @@ const BulkOrder = () => {
   const [vendors, setVendors] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [selectedVendor, setSelectedVendor] = useState('');
-  const [orders, setOrders] = useState([{ user_email: '', items: [] }]);
+  // Stable unique IDs so React can correctly track persons across add/remove.
+  // Index-as-key would cause state to mis-attach when a middle person is removed.
+  const newPersonUid = () => `p_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  const [orders, setOrders] = useState([{ _uid: newPersonUid(), user_email: '', items: [] }]);
   const [sponsored, setSponsored] = useState(false);
   const [occasion, setOccasion] = useState('');
   const [message, setMessage] = useState('');
@@ -43,7 +46,7 @@ const BulkOrder = () => {
   };
 
   const addPerson = () => {
-    setOrders([...orders, { user_email: '', items: [] }]);
+    setOrders([...orders, { _uid: newPersonUid(), user_email: '', items: [] }]);
   };
 
   const removePerson = (idx) => {
@@ -102,7 +105,7 @@ const BulkOrder = () => {
         { withCredentials: true }
       );
       setMessage(`Bulk order created! ${data.orders.length} orders, total ₹${data.total_amount.toFixed(2)}`);
-      setOrders([{ user_email: '', items: [] }]);
+      setOrders([{ _uid: newPersonUid(), user_email: '', items: [] }]);
       setOccasion('');
       setTimeout(() => setMessage(''), 5000);
     } catch (error) {
@@ -177,7 +180,7 @@ const BulkOrder = () => {
 
           <div className="space-y-4 mb-6">
             {orders.map((order, idx) => (
-              <div key={idx} data-testid={`bulk-person-${idx}`} className="bg-card border border-border-light rounded-2xl p-6">
+              <div key={order._uid || idx} data-testid={`bulk-person-${idx}`} className="bg-card border border-border-light rounded-2xl p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="font-heading text-lg font-medium text-text-primary">Person {idx + 1}</h3>
                   {orders.length > 1 && (

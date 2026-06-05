@@ -230,7 +230,7 @@ const RevenueChart = ({ data }) => {
         {data.map((d, i) => {
           const x = padX + i * stepX;
           const y = H - 6 - (d.revenue / max) * (H - 12);
-          return <circle key={i} cx={x} cy={y} r="0.8" fill="#FF6B35" />;
+          return <circle key={d.date || `dot-${i}`} cx={x} cy={y} r="0.8" fill="#FF6B35" />;
         })}
       </svg>
       <div className="flex justify-between mt-2 text-xs text-text-muted">
