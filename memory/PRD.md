@@ -64,6 +64,22 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 18b: 🔴 P0 Hotfix — Pre-order IST Timezone Bug (Feb 2026) ✅
+- **Bug**: Production employees saw "Cutoff passed" for ALL meal slots during business hours. Cards said "Tomorrow • 2026-06-05" when today was actually 2026-06-05 (i.e. off-by-one day).
+- **Root cause** (`routers/reservations.py`):
+  - `_now_ist()` returned `datetime.now(UTC) + 5h30m` but kept `tzinfo=UTC` — only correct by accident, broke when combined with timezone-naive arithmetic downstream.
+  - `_parse_delivery_date()` created `delivery_date` as `UTC-midnight - 5h30m` (= 18:30 UTC the prior day). Then frontend got `delivery_date.date().isoformat()` which is the **UTC** calendar date, not the IST date the timestamp represents → showed today as "tomorrow".
+  - `_cutoff_for_delivery_date()` did `delivery_date - 1 day` in UTC space, then anchored at `cutoff_hour:00 UTC` − 5h30m, which **double-subtracted** the IST offset → cutoff landed on the wrong day (yesterday's 8 PM IST instead of today's).
+- **Fix**:
+  - Made `IST = timezone(timedelta(hours=5, minutes=30))` and used real tz-aware datetimes throughout: `datetime.now(IST)`, `tzinfo=IST`, `.astimezone(IST)`.
+  - New `_ist_date_of(dt)` helper returns the IST calendar date for any tz-aware datetime; used at every API output boundary (5 callsites).
+  - `_cutoff_for_delivery_date()` now computes `day_before` in IST space, anchors at `tzinfo=IST`, then converts to UTC for storage/comparison.
+- **Regression tests** (`tests/test_reservation_timezone.py`, 13 tests):
+  - Frozen-clock simulations at IST 00:30, 05:30, 12:00, 15:33 (the screenshot scenario), 18:30, 19:59 (1 min before cutoff), 20:01 (1 min after), 23:59
+  - All pass. Bug cannot regress.
+- **End-to-end verified on preview**: At 3:41 PM IST, `/reservations/availability` correctly returns `delivery_date: "2026-06-06"`, `cutoff_at: 2026-06-05T14:30:00Z` (=20:00 IST today), `cutoff_passed: false`. Reserve, duplicate-409, error messages all show June 6.
+- **Awaiting production redeploy**: This fix is in preview only — push via "Save to GitHub" → Deploy to roll out to `app.cravitoo.com`.
+
 ### Iteration 18: Login Error UX + iOS App Store Guide + AI Menu Photos (Feb 2026) ✅
 - **Login error UX cleanup** (`LoginPage.js`, `RegisterPage.js`, `index.js`):
   - Replaced generic "Something went wrong. Please try again." with **status-aware messages**: `Invalid email or password` (401), `Too many attempts. Please wait...` (429), `Server hit a snag (500)`, `Can't reach Cravitoo — check your internet` (network), `Request timed out` (>25s)

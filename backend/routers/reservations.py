@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date as date_cls
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -36,6 +36,9 @@ DEFAULT_RESERVATION_SETTINGS: Dict[str, Any] = {
     "snacks":    {"enabled": True, "cutoff_hour": 20, "cutoff_minute": 0},
     "dinner":    {"enabled": True, "cutoff_hour": 20, "cutoff_minute": 0},
 }
+
+# Indian Standard Time = UTC+05:30 (no DST)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class ReservationCreate(BaseModel):
@@ -53,7 +56,15 @@ class ReservationSettingsUpdate(BaseModel):
 
 
 def _now_ist() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    """Tz-aware current time in IST."""
+    return datetime.now(IST)
+
+
+def _ist_date_of(dt: datetime) -> date_cls:
+    """Return the IST calendar date of a tz-aware datetime."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST).date()
 
 
 def _get_site_reservation_settings(site_doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -66,16 +77,25 @@ def _get_site_reservation_settings(site_doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _cutoff_for_delivery_date(delivery_date: datetime, meal_cfg: Dict[str, Any]) -> datetime:
-    day_before = delivery_date - timedelta(days=1)
+    """Cutoff = the day BEFORE delivery_date at cutoff_hour IST, returned as a tz-aware UTC datetime.
+
+    `delivery_date` is the canonical midnight-IST of the delivery day, stored in UTC
+    (e.g. delivery June 6 IST -> 2026-06-05 18:30:00+00:00). We must compute
+    'day before' in IST, not in UTC, otherwise the cutoff drifts by ±1 day
+    during the 18:30-23:59 UTC window every day.
+    """
+    delivery_ist_date = _ist_date_of(delivery_date)
+    day_before = delivery_ist_date - timedelta(days=1)
     cutoff_ist = datetime(
         day_before.year, day_before.month, day_before.day,
-        meal_cfg.get("cutoff_hour", 20), meal_cfg.get("cutoff_minute", 0),
-        tzinfo=timezone.utc,
+        int(meal_cfg.get("cutoff_hour", 20)), int(meal_cfg.get("cutoff_minute", 0)),
+        tzinfo=IST,
     )
-    return cutoff_ist - timedelta(hours=5, minutes=30)
+    return cutoff_ist.astimezone(timezone.utc)
 
 
 def _parse_delivery_date(date_str: Optional[str]) -> datetime:
+    """Returns midnight-IST of the delivery date, expressed as a tz-aware UTC datetime."""
     if not date_str:
         tomorrow = (_now_ist() + timedelta(days=1)).date()
     else:
@@ -83,7 +103,7 @@ def _parse_delivery_date(date_str: Optional[str]) -> datetime:
             tomorrow = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(status_code=400, detail="delivery_date must be in YYYY-MM-DD format")
-    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, tzinfo=timezone.utc) - timedelta(hours=5, minutes=30)
+    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, tzinfo=IST).astimezone(timezone.utc)
 
 
 def make_router(db, safe_objectid, get_current_user, create_notification):
@@ -144,12 +164,12 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                 "enabled": bool(cfg.get("enabled", True)),
                 "cutoff_at": cutoff_at.isoformat(),
                 "cutoff_passed": now_utc >= cutoff_at,
-                "delivery_date": delivery_date.date().isoformat(),
+                "delivery_date": _ist_date_of(delivery_date).isoformat(),
                 "already_reserved": existing_by_meal.get(meal),
                 "eligible_vendors": vendors_list,
             })
 
-        return {"date": delivery_date.date().isoformat(), "site_id": site_id, "meals": out}
+        return {"date": _ist_date_of(delivery_date).isoformat(), "site_id": site_id, "meals": out}
 
     @r.post("/reservations")
     async def create_reservation(data: ReservationCreate, user: dict = Depends(get_current_user)):
@@ -188,7 +208,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             "status": "reserved",
         })
         if existing:
-            raise HTTPException(status_code=409, detail=f"You already have a {data.meal_period} reservation for {delivery_date.date().isoformat()}")
+            raise HTTPException(status_code=409, detail=f"You already have a {data.meal_period} reservation for {_ist_date_of(delivery_date).isoformat()}")
 
         mapping = await db.vendor_site_mappings.find_one({"site_id": site_id, "vendor_id": data.vendor_id})
         if not mapping:
@@ -220,7 +240,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             await create_notification(
                 user_id=user["id"],
                 title=f"✅ {data.meal_period.title()} reserved",
-                message=f"Your {data.meal_period} for {delivery_date.date().isoformat()} is reserved with {vendor_name}.",
+                message=f"Your {data.meal_period} for {_ist_date_of(delivery_date).isoformat()} is reserved with {vendor_name}.",
                 notif_type="reservation_confirmed",
                 push_data={"screen": "Reservations", "reservation_id": reservation_id},
             )
@@ -230,7 +250,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         return {
             "id": reservation_id,
             "meal_period": data.meal_period,
-            "delivery_date": delivery_date.date().isoformat(),
+            "delivery_date": _ist_date_of(delivery_date).isoformat(),
             "vendor_id": data.vendor_id,
             "vendor_name": vendor_name,
             "cutoff_at": cutoff_at.isoformat(),
@@ -327,7 +347,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             if isinstance(rec.get("created_at"), datetime):
                 rec["created_at"] = rec["created_at"].isoformat()
         return {
-            "date": delivery_date.date().isoformat(),
+            "date": _ist_date_of(delivery_date).isoformat(),
             "vendor_id": vendor_id,
             "counts": counts,
             "total": sum(c["reserved"] for c in counts.values()),
@@ -366,7 +386,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         for rec in rows:
             total_by_meal[rec["meal_period"]] = total_by_meal.get(rec["meal_period"], 0) + rec["reserved"]
         return {
-            "date": delivery_date.date().isoformat(),
+            "date": _ist_date_of(delivery_date).isoformat(),
             "total_reservations": sum(total_by_meal.values()),
             "by_meal": total_by_meal,
             "breakdown": rows,
