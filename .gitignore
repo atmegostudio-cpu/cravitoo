@@ -80,9 +80,9 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
-.env
-.env.*
-*.env
+# Note: .env files are intentionally NOT ignored — Emergent deployment auto-fills
+# production values into the .env templates at deploy time. Keeping them in the
+# repo ensures the deploy pipeline has files to update.
 credentials.json
 *.key
 .credentials
