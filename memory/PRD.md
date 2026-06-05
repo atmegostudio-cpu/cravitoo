@@ -64,6 +64,26 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 16: Mobile Reservations UI + server.py Phase 2 Refactor (Feb 2026) ✅
+- **Mobile Reservations Screens**:
+  - `/app/mobile/src/screens/ReservationsScreen.js` (Customer APK) — 4 meal cards with vendor picker, countdown timer, reserve/cancel buttons, refresh control
+  - `/app/mobile/src/screens/vendor/VendorReservations.js` (Partner APK) — head-count cards, gradient total banner, customer list
+- **Navigation**:
+  - Customer tabs: Home / Menu / **Pre-order** / Orders / Profile (removed Rewards from tabs — accessible via stack)
+  - Vendor tabs: Dashboard / Orders / **Reservations** / Menu / Scan (AI Insights moved to stack)
+- **server.py Phase 2 Refactor**:
+  - New `/app/backend/routers/` directory + `__init__.py`
+  - Extracted `reservations` module → `/app/backend/routers/reservations.py` (430 lines)
+  - Used `make_router(db, safe_objectid, get_current_user, create_notification)` factory pattern (no circular imports)
+  - Wired via `app.include_router(make_reservations_router(...))`
+  - server.py: **5,051 → 4,621 lines (-430)**
+  - All endpoints still work, all routes unchanged externally
+- **Verified**:
+  - ✅ 53/53 backend tests still passing post-refactor
+  - ✅ `/api/reservations/availability`, `/my`, `/admin/summary` all return 200
+  - ✅ Lint clean on mobile + backend
+- **OTA shipping note**: Hermes JS engine binary in this container's `node_modules` has architecture mismatch (`Exec format error`) — OTA must be published from the user's own machine. Code is committed and will be picked up by next EAS build automatically.
+
 ### Iteration 15: Meal Reservations / Pre-Ordering (Feb 2026) ✅
 - **Concept**: Employees reserve **next-day** breakfast / lunch / snacks / dinner. Count-only — no payment. Vendor gets a clean head-count for kitchen prep planning.
 - **Backend** (`server.py`) — new collection `reservations` + 8 endpoints:

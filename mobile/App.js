@@ -29,6 +29,7 @@ import FavoritesScreen from './src/screens/FavoritesScreen';
 import RefundsScreen from './src/screens/RefundsScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import EventOrderScreen from './src/screens/EventOrderScreen';
+import ReservationsScreen from './src/screens/ReservationsScreen';
 
 // Vendor Screens
 import VendorDashboard from './src/screens/vendor/VendorDashboard';
@@ -37,6 +38,7 @@ import VendorMenu from './src/screens/vendor/VendorMenu';
 import VendorScanQR from './src/screens/vendor/VendorScanQR';
 import VendorAIInsights from './src/screens/vendor/VendorAIInsights';
 import VendorSettlement from './src/screens/vendor/VendorSettlement';
+import VendorReservations from './src/screens/vendor/VendorReservations';
 
 // Admin Screens
 import AdminDashboard from './src/screens/admin/AdminDashboard';
@@ -66,6 +68,7 @@ function EmployeeTabs() {
           let iconName = 'home';
           if (route.name === 'Home') iconName = 'home';
           if (route.name === 'Menu') iconName = 'restaurant';
+          if (route.name === 'PreOrder') iconName = 'calendar';
           if (route.name === 'Orders') iconName = 'receipt';
           if (route.name === 'Rewards') iconName = 'trophy';
           if (route.name === 'Profile') iconName = 'person';
@@ -75,8 +78,8 @@ function EmployeeTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Menu" component={MenuScreen} />
+      <Tab.Screen name="PreOrder" component={ReservationsScreen} options={{ tabBarLabel: 'Pre-order' }} />
       <Tab.Screen name="Orders" component={OrdersScreen} />
-      <Tab.Screen name="Rewards" component={LoyaltyScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -101,18 +104,18 @@ function VendorTabs() {
           let iconName = 'home';
           if (route.name === 'Dashboard') iconName = 'home';
           if (route.name === 'Orders') iconName = 'receipt';
+          if (route.name === 'Reservations') iconName = 'calendar';
           if (route.name === 'Menu') iconName = 'restaurant';
           if (route.name === 'Scan') iconName = 'qr-code';
-          if (route.name === 'AIInsights') iconName = 'sparkles';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}
     >
       <Tab.Screen name="Dashboard" component={VendorDashboard} />
       <Tab.Screen name="Orders" component={VendorOrders} />
+      <Tab.Screen name="Reservations" component={VendorReservations} options={{ tabBarLabel: 'Pre-order' }} />
       <Tab.Screen name="Menu" component={VendorMenu} />
       <Tab.Screen name="Scan" component={VendorScanQR} />
-      <Tab.Screen name="AIInsights" component={VendorAIInsights} options={{ tabBarLabel: 'AI' }} />
     </Tab.Navigator>
   );
 }
@@ -221,6 +224,7 @@ function RootNavigator() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="VendorMain" component={VendorTabs} />
+        <Stack.Screen name="VendorAIInsights" component={VendorAIInsights} options={{ headerShown: true, title: 'AI Insights' }} />
         <Stack.Screen name="VendorSettlement" component={VendorSettlement} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: true, title: 'Notifications' }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, title: 'Profile' }} />
@@ -240,6 +244,7 @@ function RootNavigator() {
       <Stack.Screen name="Refunds" component={RefundsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Subscription" component={SubscriptionScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EventOrder" component={EventOrderScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Rewards" component={LoyaltyScreen} options={{ headerShown: true, title: 'My Rewards' }} />
     </Stack.Navigator>
   );
 }
