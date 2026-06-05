@@ -327,7 +327,7 @@ async def startup_event():
     # Runs in-process: cheap, no extra cron dependency. Survives container restarts
     # because it re-aligns to the next 20:30 IST on every boot.
     async def _daily_digest_scheduler():
-        from routers.notifications_prefs import send_daily_digest_to_user, IST
+        from routers.notifications_prefs import send_daily_digest_to_user, send_vendor_digest_to_user, IST
         await asyncio.sleep(60)  # give the server 1 min to be fully ready
         while True:
             try:
@@ -340,22 +340,30 @@ async def startup_event():
                 logger.info(f"Daily digest: next run at {target.isoformat()} (in {int(sleep_seconds)}s)")
                 await asyncio.sleep(sleep_seconds)
 
-                # Fan-out
+                # Fan-out: employees, then vendors
                 ist_today = datetime.now(IST).date()
-                sent, skipped = 0, 0
+                emp_sent, emp_skipped = 0, 0
                 cursor = db.users.find({"role": "employee"}, {"_id": 1, "email": 1, "name": 1, "notification_preferences": 1}).limit(5000)
                 async for u in cursor:
                     res = await send_daily_digest_to_user(db, u, ist_today)
                     if res.get("sent"):
-                        sent += 1
+                        emp_sent += 1
                     else:
-                        skipped += 1
-                logger.info(f"Daily digest fan-out done. sent={sent} skipped={skipped} date={ist_today}")
+                        emp_skipped += 1
+                ven_sent, ven_skipped = 0, 0
+                cursor = db.users.find({"role": "vendor"}, {"_id": 1, "email": 1, "name": 1, "vendor_id": 1, "notification_preferences": 1}).limit(1000)
+                async for u in cursor:
+                    res = await send_vendor_digest_to_user(db, u, ist_today)
+                    if res.get("sent"):
+                        ven_sent += 1
+                    else:
+                        ven_skipped += 1
+                logger.info(f"Daily digest done. emp sent={emp_sent} skip={emp_skipped} | vendor sent={ven_sent} skip={ven_skipped} | date={ist_today}")
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.error(f"Daily digest scheduler error: {e}")
-                await asyncio.sleep(300)  # back off 5 min on unexpected error
+                await asyncio.sleep(300)
 
     asyncio.create_task(_daily_digest_scheduler())
 
@@ -2741,7 +2749,7 @@ from routers.ai_menu_photos import make_router as make_ai_menu_photos_router  # 
 from routers.notifications_prefs import make_router as make_notifications_prefs_router  # noqa: E402
 from routers.broadcasts import make_router as make_broadcasts_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
-app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
+app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_onboarding_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR), prefix="/api")
 app.include_router(make_sites_router(db, safe_objectid, get_current_user, hash_password, current_meal_period), prefix="/api")

@@ -360,6 +360,35 @@ const MenuTab = ({ siteId }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
   const [aiPhotoItem, setAiPhotoItem] = useState(null);
+  const [bulkFilling, setBulkFilling] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+
+  const runBulkFill = async () => {
+    const missing = items.filter((it) => !it.image_url).length;
+    if (missing === 0) {
+      setBulkResult({ message: '🎉 All items already have photos!' });
+      return;
+    }
+    const cap = Math.min(missing, 20);
+    if (!window.confirm(`Generate AI photos for up to ${cap} items missing images?\n\nEstimated cost: ~₹${(cap * 3.5).toFixed(0)} (charged from your Emergent LLM key balance).\n\nThis may take ~${cap * 15} seconds.`)) {
+      return;
+    }
+    setBulkFilling(true);
+    setBulkResult(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/bulk-fill`,
+        { site_id: siteId, max_items: cap, dry_run: false },
+        { withCredentials: true, timeout: cap * 30000 + 60000 }
+      );
+      setBulkResult(data);
+      load();
+    } catch (e) {
+      setBulkResult({ error: e?.response?.data?.detail || e?.message || 'Bulk-fill failed' });
+    } finally {
+      setBulkFilling(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -459,7 +488,30 @@ const MenuTab = ({ siteId }) => {
       </div>
 
       <div className="bg-card border border-border-light rounded-2xl p-6">
-        <h3 className="font-heading text-xl font-medium mb-4">Menu Items ({items.length})</h3>
+        <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+          <h3 className="font-heading text-xl font-medium">Menu Items ({items.length})</h3>
+          <button
+            data-testid="bulk-fill-ai-btn"
+            onClick={runBulkFill}
+            disabled={bulkFilling || items.length === 0}
+            className="px-3 py-2 text-sm bg-primary-light text-primary border border-primary/30 rounded-lg font-medium hover:bg-primary hover:text-white disabled:opacity-50 flex items-center gap-2"
+            title="Use AI to fill in missing menu photos"
+          >
+            {bulkFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {bulkFilling ? 'Generating…' : `Fill missing photos with AI (${items.filter(i => !i.image_url).length})`}
+          </button>
+        </div>
+        {bulkResult && (
+          <div data-testid="bulk-fill-result" className={`mb-4 p-3 rounded-lg text-sm ${bulkResult.error ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>
+            {bulkResult.error ? (
+              <>❌ {bulkResult.error}</>
+            ) : bulkResult.message ? (
+              <>{bulkResult.message}</>
+            ) : (
+              <>✅ Filled <strong>{bulkResult.filled}</strong> photo(s){bulkResult.skipped > 0 && `, skipped ${bulkResult.skipped}`}{bulkResult.estimated_cost_inr > 0 && ` • Cost: ~₹${bulkResult.estimated_cost_inr}`}</>
+            )}
+          </div>
+        )}
         {items.length === 0 && <p className="text-text-muted text-sm">No menu items yet. Upload via Excel or have vendors add them.</p>}
         <div className="overflow-x-auto">
           <table className="w-full">

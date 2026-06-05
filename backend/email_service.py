@@ -445,3 +445,66 @@ Sent by {sender}
 — Team Cravitoo
 """
     return html, text
+
+
+
+def render_vendor_daily_digest_email(name: str, date_label: str, metrics: Dict[str, Any], top_items: list) -> Tuple[str, str]:
+    """End-of-day digest for vendors — orders, revenue, top items, prep stats."""
+    safe_name = (name or "Partner").split()[0][:40]
+    orders = metrics.get("orders", 0)
+    revenue = metrics.get("revenue", 0)
+    aov = (revenue / orders) if orders else 0
+    refunds_count = metrics.get("refunds_count", 0)
+    refunds_amount = metrics.get("refunds_amount", 0)
+    new_reservations = metrics.get("new_reservations_for_tomorrow", 0)
+
+    rows = [
+        ("Orders fulfilled", str(orders)),
+        ("Revenue", f"₹{revenue:,.2f}"),
+        ("Average order value", f"₹{aov:,.2f}"),
+        ("Refunds issued", f"{refunds_count} (₹{refunds_amount:,.2f})"),
+        ("Pre-orders for tomorrow", str(new_reservations)),
+    ]
+    metrics_html = "".join([
+        f'<tr><td style="padding:8px 0;font-size:14px;color:#52443A;">{k}</td>'
+        f'<td style="padding:8px 0;font-size:15px;font-weight:700;color:#1F1410;text-align:right;">{v}</td></tr>'
+        for k, v in rows
+    ])
+
+    top_html = ""
+    if top_items:
+        top_rows = "".join([
+            f'<tr><td style="padding:6px 0;font-size:14px;color:#1F1410;">{(it.get("name") or "Item")[:60]}</td>'
+            f'<td style="padding:6px 0;font-size:13px;color:#9C8B80;text-align:right;">× {it.get("qty", 0)}</td>'
+            f'<td style="padding:6px 0;font-size:13px;color:#FF5A1F;text-align:right;font-weight:600;">₹{(it.get("revenue") or 0):,.0f}</td></tr>'
+            for it in top_items[:5]
+        ])
+        top_html = f"""
+<p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;">Top items today</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;">
+  {top_rows}
+</table>"""
+
+    body = f"""
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;margin-bottom:16px;">
+  {metrics_html}
+</table>
+{top_html}
+<p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">Open the Cravitoo Partner app for live order updates and detailed analytics.</p>
+"""
+    intro = f"Hi {safe_name}, here's your sales summary for {date_label}."
+    html = _brand_wrapper("Your sales recap", f"<p>{intro}</p>", body)
+
+    text_parts = [f"Sales recap for {date_label}", "", f"Hi {safe_name},", ""]
+    for k, v in rows:
+        text_parts.append(f"  {k}: {v}")
+    text_parts.append("")
+    if top_items:
+        text_parts.append("Top items:")
+        for it in top_items[:5]:
+            text_parts.append(f"  • {it.get('name','Item')} × {it.get('qty',0)} = ₹{(it.get('revenue') or 0):,.0f}")
+        text_parts.append("")
+    text_parts.append("Open the Cravitoo Partner app for live order updates.")
+    text_parts.append("— Team Cravitoo")
+    text = "\n".join(text_parts)
+    return html, text

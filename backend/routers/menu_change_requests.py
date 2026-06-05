@@ -18,10 +18,13 @@ Built as a make_router(...) factory to avoid circular imports.
 from __future__ import annotations
 
 import logging
+import os
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -55,8 +58,64 @@ def _request_can_auto_route_to_site_admin(request_type: str, has_price_change: b
     return False
 
 
-def make_router(db, safe_objectid, get_current_user, create_notification):
+def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR: Optional[Path] = None):
     r = APIRouter()
+
+    @r.post("/menu-change-requests/{request_id}/upload-photo")
+    async def upload_request_photo(
+        request_id: str,
+        file: UploadFile = File(...),
+        user: dict = Depends(get_current_user),
+    ):
+        """Vendor attaches a photo to their menu-change request (e.g. proposed dish photo).
+        Stored in UPLOAD_DIR with `mcr_` prefix; URL set on the request's `image_url` field."""
+        if UPLOAD_DIR is None:
+            raise HTTPException(status_code=500, detail="Upload storage is not configured.")
+        req = await db.menu_change_requests.find_one({"_id": safe_objectid(request_id, "Menu request")})
+        if not req:
+            raise HTTPException(status_code=404, detail="Menu change request not found")
+
+        # Permission: the requesting vendor OR a Cravitoo admin can attach a photo
+        is_owner = user.get("role") == "vendor" and req.get("vendor_id") == user.get("vendor_id")
+        is_admin = user.get("role") in ("master_admin", "site_admin", "city_admin")
+        if not (is_owner or is_admin):
+            raise HTTPException(status_code=403, detail="Not your request")
+
+        if req.get("status") not in ("pending", None):
+            raise HTTPException(status_code=400, detail=f"Cannot attach photo — request status is '{req.get('status')}'")
+
+        # File validation
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename")
+        ext = file.filename.rsplit(".", 1)[-1].lower()[:5]
+        if ext not in ("png", "jpg", "jpeg", "webp"):
+            raise HTTPException(status_code=400, detail="Allowed: PNG, JPG, JPEG, WEBP")
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File must be under 5 MB")
+
+        fname = f"mcr_{uuid.uuid4().hex}.{ext}"
+        fpath = UPLOAD_DIR / fname
+        try:
+            with open(fpath, "wb") as f:
+                f.write(content)
+        except Exception as e:
+            logger.error(f"Failed to save menu-request photo {fname}: {e}")
+            raise HTTPException(status_code=500, detail="Could not save uploaded photo")
+
+        base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
+        url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+
+        await db.menu_change_requests.update_one(
+            {"_id": req["_id"]},
+            {"$set": {
+                "image_url": url,
+                "image_filename": fname,
+                "image_uploaded_at": datetime.now(timezone.utc),
+                "image_uploaded_by": user["email"],
+            }},
+        )
+        return {"image_url": url, "filename": fname, "size": len(content)}
 
     @r.post("/menu-change-requests")
     async def create_menu_change_request(data: MenuChangeRequestCreate, user: dict = Depends(get_current_user)):
@@ -260,6 +319,8 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             "audit_trail": audit_trail,
             "applied": doc.get("applied"),
             "applied_item_id": doc.get("applied_item_id"),
+            "image_url": doc.get("image_url"),
+            "image_filename": doc.get("image_filename"),
             "decided_by": doc.get("decided_by"),
             "decided_by_role": doc.get("decided_by_role"),
             "created_at": _iso(doc.get("created_at")),
@@ -310,6 +371,8 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             applied_item_id = None
             if decision.auto_apply:
                 proposed = doc.get("proposed", {}) or {}
+                # Prefer the uploaded photo (root `image_url`) over the URL the vendor pasted
+                effective_image_url = doc.get("image_url") or proposed.get("image_url")
                 if rt == "add":
                     new_doc = {
                         "vendor_id": vendor_id,
@@ -317,7 +380,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                         "description": proposed.get("description"),
                         "category": proposed.get("category"),
                         "price": float(proposed.get("price") or 0),
-                        "image_url": proposed.get("image_url"),
+                        "image_url": effective_image_url,
                         "is_vegetarian": bool(proposed.get("is_vegetarian", False)),
                         "is_available": True,
                         "created_at": now,
@@ -329,9 +392,11 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                     applied = True
                 elif rt == "edit":
                     set_fields = {}
-                    for k in ("name", "description", "category", "price", "image_url", "is_vegetarian"):
+                    for k in ("name", "description", "category", "price", "is_vegetarian"):
                         if proposed.get(k) is not None:
                             set_fields[k] = proposed[k]
+                    if effective_image_url:
+                        set_fields["image_url"] = effective_image_url
                     if set_fields:
                         await db.menu_items.update_one(
                             {"_id": safe_objectid(doc["item_id"], "Menu item")},

@@ -64,6 +64,35 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 20: AI Bulk-fill + Menu Request Photo Upload + Vendor Daily Digest (Feb 2026) ✅
+
+**1. AI photo bulk-fill** (`routers/ai_menu_photos.py`):
+- `POST /api/ai/menu-photos/bulk-fill` finds all menu items missing photos and generates one via gpt-image-1 per item, in series (~30s each).
+- Cost-capped via `max_items` (default 20 = ~₹70). `dry_run=true` previews candidates + cost without spending.
+- Filterable by `site_id` (joins via `vendor_site_mappings`) or `vendor_id`.
+- Master-only. Audit-logged to `ai_image_generations` collection.
+- Web UI on `master/SiteDetail → MenuTab`: "Fill missing photos with AI (N)" button + confirm dialog showing cost estimate + result panel (filled/skipped/cost).
+- **Verified end-to-end**: 1 item bulk-filled in ~30s, 1024×1024 PNG saved + `image_url` set on the menu item.
+
+**2. Photo upload for Menu Change Requests** (`routers/menu_change_requests.py`):
+- `POST /api/menu-change-requests/{id}/upload-photo` accepts multipart/form-data (PNG/JPG/JPEG/WEBP up to 5 MB). Stored in UPLOAD_DIR with `mcr_` prefix.
+- Permissions: requesting vendor OR Cravitoo admin can attach a photo; status must be `pending`.
+- GET endpoint now returns `image_url` + `image_filename`.
+- **Apply-on-approval flow** now prefers the uploaded photo (`doc.image_url`) over the JSON `proposed.image_url` URL when admin approves an `add` or `edit` request — uploaded photo becomes the real menu item's image.
+- Web UI on `vendor/MenuRequests`: form now has "Or upload a photo (optional)" file picker with file name + remove button, alongside the existing "Photo URL" field. Upload happens after request creation as a second API call (best-effort — failure doesn't block the request).
+- **Verified end-to-end**: vendor uploads PNG, GET shows image_url, file served via `/api/uploads/...` with `image/png` content-type, .txt files rejected with clean error.
+
+**3. Vendor daily sales digest** (`email_service.py` + `routers/notifications_prefs.py`):
+- New `render_vendor_daily_digest_email()` shows: orders fulfilled, revenue, AOV, refunds, top-5 items by qty, pre-orders for tomorrow.
+- New `send_vendor_digest_to_user()` + `build_vendor_digest()` functions.
+- Scheduler in `server.py` now sends vendor digests in the same 20:30 IST batch as employee digests.
+- `POST /api/admin/digest/send-now` returns both `employees: {sent, skipped}` and `vendors: {sent, skipped}` for manual triggers.
+- Skips vendors with zero activity (no orders + no pre-orders).
+- Subject line: `"Today's sales — N order(s), ₹X,XXX"` so the recap is informative even from the inbox preview.
+- **Verified**: admin send-now → 1 vendor digest sent for demo Spice Kitchen with 9 orders today.
+
+**Lint clean. 123 regression tests pass.**
+
 ### Iteration 19: Notification Prefs + Daily Digest + Master Admin Broadcasts (Feb 2026) ✅
 
 **Email volume reduction (resolves Resend 100/day cap risk):**

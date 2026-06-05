@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Plus, X, Edit3, Trash2, Clock, CheckCircle, XCircle, Send, Image as ImageIcon, MessageSquare } from 'lucide-react';
+import { Plus, X, Edit3, Trash2, Clock, CheckCircle, XCircle, Send, Image as ImageIcon, MessageSquare, Upload } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -24,6 +24,8 @@ const VendorMenuRequests = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -102,9 +104,26 @@ const VendorMenuRequests = () => {
       } else if (requestType === 'remove') {
         payload.item_id = selectedItemId;
       }
-      await axios.post(`${API}/menu-change-requests`, payload, { withCredentials: true });
+      const { data: created } = await axios.post(`${API}/menu-change-requests`, payload, { withCredentials: true });
+      // Upload attached photo (if any) — best-effort, doesn't roll back the request on failure
+      if (photoFile && created?.id) {
+        try {
+          const fd = new FormData();
+          fd.append('file', photoFile);
+          await axios.post(`${API}/menu-change-requests/${created.id}/upload-photo`, fd, {
+            withCredentials: true,
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 60000,
+          });
+        } catch (upErr) {
+          // Note: don't block the user — request was created, photo upload can be retried later
+          console.warn('Photo upload failed:', upErr);
+        }
+      }
       setShowForm(false);
       resetForm();
+      setPhotoFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       fetchAll();
     } catch (e) {
       setSubmitError(e.response?.data?.detail || 'Failed to submit request');
@@ -371,6 +390,45 @@ const VendorMenuRequests = () => {
                       />
                     </div>
                     <p className="text-xs text-text-muted mt-1">Public image URL. Cravitoo may replace it with a professional photo on approval.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">Or upload a photo (optional)</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                        data-testid="photo-file-input"
+                        className="hidden"
+                        id="mcr-photo-input"
+                      />
+                      <label
+                        htmlFor="mcr-photo-input"
+                        className="px-3 py-2 text-sm bg-background border border-dashed border-border-light rounded-lg cursor-pointer hover:border-primary hover:text-primary flex items-center gap-2"
+                      >
+                        <Upload className="h-4 w-4" />
+                        {photoFile ? 'Change photo' : 'Choose file (PNG/JPG, ≤5MB)'}
+                      </label>
+                      {photoFile && (
+                        <span data-testid="photo-file-name" className="text-xs text-text-muted truncate max-w-[200px]">
+                          {photoFile.name} ({(photoFile.size / 1024).toFixed(0)} KB)
+                        </span>
+                      )}
+                      {photoFile && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhotoFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">Uploaded directly to Cravitoo's servers — no URL needed.</p>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input

@@ -144,6 +144,97 @@ async def send_daily_digest_to_user(db, user_doc: Dict[str, Any], ist_date) -> D
         return {"sent": False, "reason": str(e)}
 
 
+async def build_vendor_digest(db, vendor_id: str, ist_date) -> Dict[str, Any]:
+    """Build the payload for a vendor's end-of-day sales digest."""
+    day_start_utc = datetime(ist_date.year, ist_date.month, ist_date.day, 0, 0, tzinfo=IST).astimezone(timezone.utc)
+    day_end_utc = day_start_utc + timedelta(days=1)
+    tomorrow_ist = ist_date + timedelta(days=1)
+    tomorrow_start_utc = datetime(tomorrow_ist.year, tomorrow_ist.month, tomorrow_ist.day, 0, 0, tzinfo=IST).astimezone(timezone.utc)
+
+    # Orders fulfilled today
+    orders_pipe = [
+        {"$match": {"vendor_id": vendor_id, "created_at": {"$gte": day_start_utc, "$lt": day_end_utc}, "status": {"$nin": ["cancelled"]}}},
+        {"$group": {"_id": None, "orders": {"$sum": 1}, "revenue": {"$sum": "$total_amount"}}},
+    ]
+    orders, revenue = 0, 0.0
+    async for row in db.orders.aggregate(orders_pipe):
+        orders = row.get("orders", 0)
+        revenue = float(row.get("revenue", 0) or 0)
+
+    # Refunds today
+    refunds_pipe = [
+        {"$match": {"vendor_id": vendor_id, "refund_at": {"$gte": day_start_utc, "$lt": day_end_utc}}},
+        {"$group": {"_id": None, "refunds_count": {"$sum": 1}, "refunds_amount": {"$sum": "$refund_amount"}}},
+    ]
+    refunds_count, refunds_amount = 0, 0.0
+    async for row in db.refunds.aggregate(refunds_pipe):
+        refunds_count = row.get("refunds_count", 0)
+        refunds_amount = float(row.get("refunds_amount", 0) or 0)
+
+    # Top items today (by quantity)
+    top_items_pipe = [
+        {"$match": {"vendor_id": vendor_id, "created_at": {"$gte": day_start_utc, "$lt": day_end_utc}, "status": {"$nin": ["cancelled"]}}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.menu_item_id",
+            "name": {"$first": "$items.name"},
+            "qty": {"$sum": "$items.quantity"},
+            "revenue": {"$sum": {"$multiply": ["$items.price", "$items.quantity"]}},
+        }},
+        {"$sort": {"qty": -1}},
+        {"$limit": 5},
+    ]
+    top_items: List[Dict[str, Any]] = []
+    async for row in db.orders.aggregate(top_items_pipe):
+        top_items.append({"name": row.get("name", "Item"), "qty": row.get("qty", 0), "revenue": float(row.get("revenue", 0) or 0)})
+
+    # Pre-orders for tomorrow
+    new_reservations = await db.reservations.count_documents({
+        "vendor_id": vendor_id,
+        "delivery_date": tomorrow_start_utc,
+        "status": {"$in": ["reserved", "consumed"]},
+    })
+
+    return {
+        "metrics": {
+            "orders": orders,
+            "revenue": revenue,
+            "refunds_count": refunds_count,
+            "refunds_amount": refunds_amount,
+            "new_reservations_for_tomorrow": new_reservations,
+        },
+        "top_items": top_items,
+    }
+
+
+async def send_vendor_digest_to_user(db, user_doc: Dict[str, Any], ist_date) -> Dict[str, Any]:
+    """Send vendor daily sales digest. Each vendor user with role='vendor' linked to a vendor_id."""
+    prefs = _user_prefs(user_doc)
+    if not prefs["daily_digest_email"]:
+        return {"sent": False, "reason": "vendor opted out"}
+    vendor_id = user_doc.get("vendor_id")
+    if not vendor_id:
+        return {"sent": False, "reason": "no vendor_id linked"}
+    digest = await build_vendor_digest(db, vendor_id, ist_date)
+    metrics = digest["metrics"]
+    # Skip vendors with zero activity (no orders AND no reservations for tomorrow)
+    if metrics["orders"] == 0 and metrics["new_reservations_for_tomorrow"] == 0:
+        return {"sent": False, "reason": "no activity"}
+    try:
+        html, text = email_service.render_vendor_daily_digest_email(
+            name=user_doc.get("name") or user_doc.get("email", ""),
+            date_label=ist_date.strftime("%a, %d %b %Y"),
+            metrics=metrics,
+            top_items=digest["top_items"],
+        )
+        subject = f"Today's sales — {metrics['orders']} order(s), ₹{metrics['revenue']:,.0f}"
+        ok = email_service.send_email(user_doc["email"], subject, html, text)
+        return {"sent": bool(ok), "reason": "ok" if ok else "send failed"}
+    except Exception as e:
+        logger.warning(f"Vendor digest email failed for {user_doc.get('email')}: {e}")
+        return {"sent": False, "reason": str(e)}
+
+
 def make_router(db, safe_objectid, get_current_user):
     r = APIRouter()
 
@@ -172,20 +263,35 @@ def make_router(db, safe_objectid, get_current_user):
 
     @r.post("/admin/digest/send-now")
     async def admin_send_digest_now(user: dict = Depends(get_current_user)):
-        """Master Admin: fan out daily digest emails NOW (don't wait for scheduler)."""
+        """Master Admin: fan out daily digest emails NOW (don't wait for scheduler).
+        Sends both employee digests AND vendor sales digests."""
         if user.get("role") != "master_admin":
             raise HTTPException(status_code=403, detail="Master admin only")
         ist_now = datetime.now(IST)
         ist_today = ist_now.date()
+        # Employees
+        emp_sent, emp_skipped = 0, 0
         cursor = db.users.find({"role": "employee"}, {"_id": 1, "email": 1, "name": 1, "notification_preferences": 1}).limit(2000)
-        sent, skipped = 0, 0
         async for u in cursor:
             res = await send_daily_digest_to_user(db, u, ist_today)
             if res["sent"]:
-                sent += 1
+                emp_sent += 1
             else:
-                skipped += 1
-        return {"sent": sent, "skipped": skipped, "ist_date": ist_today.isoformat()}
+                emp_skipped += 1
+        # Vendors
+        ven_sent, ven_skipped = 0, 0
+        cursor = db.users.find({"role": "vendor"}, {"_id": 1, "email": 1, "name": 1, "vendor_id": 1, "notification_preferences": 1}).limit(500)
+        async for u in cursor:
+            res = await send_vendor_digest_to_user(db, u, ist_today)
+            if res["sent"]:
+                ven_sent += 1
+            else:
+                ven_skipped += 1
+        return {
+            "employees": {"sent": emp_sent, "skipped": emp_skipped},
+            "vendors": {"sent": ven_sent, "skipped": ven_skipped},
+            "ist_date": ist_today.isoformat(),
+        }
 
     @r.get("/admin/digest/preview/{user_id}")
     async def admin_preview_digest(user_id: str, user: dict = Depends(get_current_user)):
