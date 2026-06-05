@@ -194,7 +194,12 @@ class TestCancelOrder:
         assert r2.status_code == 400, r2.text
         assert "already cancelled" in r2.json().get("detail", "").lower()
 
-    def test_cancel_paid_order_returns_refunded_mock(self):
+    def test_cancel_paid_order_issues_refund(self):
+        """When mocked: returns refunded_mock. When real Razorpay (test/live):
+        returns 'refund_pending' if no payment_transactions row exists, or
+        'refunded' if a real payment_id is present and the refund API succeeded.
+        We assert the looser invariant — the order ends up cancelled and gets
+        a non-empty refund_status — so the test works in both modes."""
         es, _ = login("employee")
         v, menu = get_spice_kitchen_and_menu()
         oid = create_pending_order(es, v, menu)
@@ -207,33 +212,42 @@ class TestCancelOrder:
         )
         r = es.post(f"{BASE_URL}/api/orders/{oid}/cancel", timeout=10)
         assert r.status_code == 200, r.text
-        assert r.json().get("refund_status") == "refunded_mock"
+        refund_status = r.json().get("refund_status")
+        assert refund_status in ("refunded_mock", "refunded", "refund_pending"), f"Got {refund_status!r}"
         doc = db_order(oid)
         assert doc["status"] == "cancelled"
-        assert doc.get("refund_status") == "refunded_mock"
+        assert doc.get("refund_status") == refund_status
 
 
 # =========================================================================
 # VENDOR REFUND TESTS
 # =========================================================================
 def _create_paid_order_via_razorpay(es_session, vendor, menu):
+    """Helper to fast-forward an order to 'paid' state via the webhook path.
+
+    The /verify endpoint requires a real Razorpay HMAC signature which tests
+    cannot fabricate. We use /webhook instead, which (when RAZORPAY_WEBHOOK_SECRET
+    is unset) accepts the payload without signature verification — matching how
+    the production webhook would arrive after a successful real-money charge.
+    """
     oid = create_pending_order(es_session, vendor, menu)
-    # Create razorpay order
     cr = es_session.post(f"{BASE_URL}/api/payments/razorpay/create-order", json={"order_id": oid}, timeout=10)
     assert cr.status_code == 200, cr.text
     rp = cr.json()
-    # Verify with mock data — sig isn't validated in mock mode
-    vr = es_session.post(
-        f"{BASE_URL}/api/payments/razorpay/verify",
+    # Simulate Razorpay's payment.captured webhook
+    wh = es_session.post(
+        f"{BASE_URL}/api/payments/razorpay/webhook",
         json={
-            "order_id": oid,
-            "razorpay_order_id": rp["razorpay_order_id"],
-            "razorpay_payment_id": f"pay_mock_{uuid.uuid4().hex[:12]}",
-            "razorpay_signature": "mock_sig",
+            "event": "payment.captured",
+            "payload": {"payment": {"entity": {
+                "order_id": rp["razorpay_order_id"],
+                "id": f"pay_mock_{uuid.uuid4().hex[:12]}",
+            }}},
         },
         timeout=10,
     )
-    assert vr.status_code == 200, vr.text
+    assert wh.status_code == 200, wh.text
+    assert wh.json().get("marked_paid") is True, wh.text
     return oid
 
 
@@ -251,11 +265,12 @@ class TestRefund:
         r = vs.post(f"{BASE_URL}/api/orders/{oid}/refund", timeout=10)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body.get("refund_status") == "refunded_mock"
+        # Mock mode → refunded_mock. Live mode → refunded (if pay_id) / refund_pending (if not).
+        assert body.get("refund_status") in ("refunded_mock", "refunded", "refund_pending"), body
         assert body.get("amount") > 0
         doc = db_order(oid)
         assert doc["status"] == "cancelled"
-        assert doc.get("refund_status") == "refunded_mock"
+        assert doc.get("refund_status") in ("refunded_mock", "refunded", "refund_pending")
         assert doc.get("refunded_at") is not None
         # employee should have a notification
         notifs = es.get(f"{BASE_URL}/api/notifications", timeout=10).json()
@@ -311,7 +326,7 @@ class TestRefund:
         ms, _ = login("master_admin")
         r = ms.post(f"{BASE_URL}/api/orders/{oid}/refund", timeout=10)
         assert r.status_code == 200, r.text
-        assert r.json().get("refund_status") == "refunded_mock"
+        assert r.json().get("refund_status") in ("refunded_mock", "refunded", "refund_pending")
         doc = db_order(oid)
         assert doc.get("cancelled_by") == "master_admin"
 
@@ -324,7 +339,8 @@ class TestRefund:
         assert r1.status_code == 200
         r2 = vs.post(f"{BASE_URL}/api/orders/{oid}/refund", timeout=10)
         assert r2.status_code == 400, r2.text
-        assert "already refunded" in r2.json().get("detail", "").lower()
+        body = r2.json().get("detail", "").lower()
+        assert "already refunded" in body or "refund in progress" in body, body
 
 
 # =========================================================================

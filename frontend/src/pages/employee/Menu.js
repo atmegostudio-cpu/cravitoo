@@ -6,6 +6,37 @@ import { ShoppingCart, Leaf, Plus, Minus, Store } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// Razorpay checkout helper. Loads the script once, opens the popup, returns
+// a promise that resolves with the payment response or rejects on user cancel.
+const loadRazorpayScript = () =>
+  new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
+const openRazorpayCheckout = ({ keyId, razorpayOrderId, amount, currency, name, email, contact, description }) =>
+  new Promise((resolve, reject) => {
+    const options = {
+      key: keyId,
+      amount,          // in paise
+      currency,
+      name: 'Cravitoo',
+      description,
+      order_id: razorpayOrderId,
+      prefill: { name: name || '', email: email || '', contact: contact || '' },
+      theme: { color: '#FF5A1F' },
+      handler: (response) => resolve(response),
+      modal: { ondismiss: () => reject(new Error('Payment cancelled')) },
+    };
+    const rzp = new window.Razorpay(options);
+    rzp.on('payment.failed', (resp) => reject(new Error(resp.error?.description || 'Payment failed')));
+    rzp.open();
+  });
+
 const EmployeeMenu = () => {
   const [searchParams] = useSearchParams();
   const vendorId = searchParams.get('vendor');
@@ -118,20 +149,51 @@ const EmployeeMenu = () => {
         orderIds.push(data.id);
       }
 
-      // Create a single combined checkout session via the first order (Stripe per order)
-      // For simplicity, create checkout for first order only
-      const origin_url = window.location.origin;
-      const checkoutRes = await axios.post(
-        `${API}/payments/checkout`,
-        { order_id: orderIds[0], origin_url },
+      // Razorpay payment flow for the first order (multi-vendor combined cart
+      // creates separate Cravitoo orders but pays in one popup — Phase-2 will
+      // add multi-order pay; for now we pay the first order's amount).
+      const scriptOk = await loadRazorpayScript();
+      if (!scriptOk) {
+        alert('Could not load the payment gateway. Please check your internet and try again.');
+        return;
+      }
+      const { data: rzpOrder } = await axios.post(
+        `${API}/payments/razorpay/create-order`,
+        { order_id: orderIds[0] },
         { withCredentials: true }
       );
-      
-      // Clear cart on successful submission
+
+      // Clear cart now — even if user cancels payment, the Cravitoo order
+      // already exists in pending state and they can retry from /orders.
       setCartByVendor({});
       localStorage.removeItem('cravitoo_cart');
-      
-      window.location.href = checkoutRes.data.url;
+
+      try {
+        const payResp = await openRazorpayCheckout({
+          keyId: rzpOrder.key_id,
+          razorpayOrderId: rzpOrder.razorpay_order_id,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency,
+          description: `Cravitoo Order #${orderIds[0].slice(-8)}`,
+        });
+        // Verify signature server-side
+        await axios.post(
+          `${API}/payments/razorpay/verify`,
+          {
+            razorpay_order_id: payResp.razorpay_order_id,
+            razorpay_payment_id: payResp.razorpay_payment_id,
+            razorpay_signature: payResp.razorpay_signature,
+          },
+          { withCredentials: true }
+        );
+        window.location.href = '/employee/orders';
+      } catch (payErr) {
+        // User cancelled OR payment failed — order remains in 'pending'. They can retry.
+        alert(payErr?.message === 'Payment cancelled'
+          ? 'Payment cancelled. You can retry from your Orders page.'
+          : `Payment failed: ${payErr?.message || 'please try again'}`);
+        window.location.href = '/employee/orders';
+      }
     } catch (error) {
       console.error('Error:', error);
       alert(error.response?.data?.detail || 'Failed to place order');

@@ -366,7 +366,7 @@ class RazorpayOrderCreate(BaseModel):
 
 
 class RazorpayVerify(BaseModel):
-    order_id: str  # Cravitoo order ID
+    order_id: Optional[str] = None  # Cravitoo order ID — optional; if omitted, looked up via razorpay_order_id
     razorpay_payment_id: str
     razorpay_order_id: str
     razorpay_signature: str

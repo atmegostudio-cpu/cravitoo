@@ -1824,8 +1824,16 @@ async def razorpay_create_order(data: RazorpayOrderCreate, user: dict = Depends(
 
 @api_router.post("/payments/razorpay/verify")
 async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current_user)):
-    """Verify Razorpay payment signature and mark order as paid."""
-    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
+    """Verify Razorpay payment signature and mark order as paid.
+
+    The frontend may omit `order_id` (Cravitoo order ID) and rely on the
+    payment_transactions lookup via razorpay_order_id.
+    """
+    tx = await db.payment_transactions.find_one({"razorpay_order_id": data.razorpay_order_id, "user_id": user["id"]})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Payment session not found")
+    cravitoo_order_id = data.order_id or tx.get("order_id")
+    order = await db.orders.find_one({"_id": safe_objectid(cravitoo_order_id, "Order"), "user_id": user["id"]})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
@@ -1854,7 +1862,7 @@ async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current
         }}
     )
     await db.orders.update_one(
-        {"_id": safe_objectid(data.order_id, "Order")},
+        {"_id": safe_objectid(cravitoo_order_id, "Order")},
         {"$set": {"payment_status": "paid", "status": "confirmed"}}
     )
 
@@ -1864,25 +1872,114 @@ async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current
         await create_notification(
             str(vu["_id"]),
             "Order Paid & Confirmed",
-            f"Order #{data.order_id[-8:]} has been paid. Total ₹{order['total_amount']:.2f}",
+            f"Order #{cravitoo_order_id[-8:]} has been paid. Total ₹{order['total_amount']:.2f}",
             "order"
         )
 
     # Broadcast via WebSocket
     await manager.send_to_user(user["id"], {
         "type": "order_update",
-        "order_id": data.order_id,
+        "order_id": cravitoo_order_id,
         "status": "confirmed",
         "payment_status": "paid"
     })
     await manager.send_to_vendor(order["vendor_id"], {
         "type": "new_order",
-        "order_id": data.order_id,
+        "order_id": cravitoo_order_id,
         "status": "confirmed",
         "amount": order["total_amount"]
     })
 
     return {"verified": True, "payment_status": "paid", "order_status": "confirmed"}
+
+
+@api_router.post("/payments/razorpay/webhook")
+async def razorpay_webhook(request: Request):
+    """Async confirmation hook from Razorpay servers.
+    Idempotent — safe to call multiple times. Configure in Razorpay Dashboard
+    → Settings → Webhooks: URL = {PUBLIC_BACKEND_URL}/api/payments/razorpay/webhook
+    Events to subscribe: payment.captured, payment.failed, order.paid"""
+    raw_body = await request.body()
+    signature = request.headers.get('X-Razorpay-Signature', '')
+    webhook_secret = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '').strip()
+
+    # Verify signature (only enforced when a webhook secret is configured)
+    if webhook_secret:
+        try:
+            client_rzp = razorpay.Client(auth=(os.environ['RAZORPAY_KEY_ID'], os.environ['RAZORPAY_KEY_SECRET']))
+            client_rzp.utility.verify_webhook_signature(raw_body.decode('utf-8'), signature, webhook_secret)
+        except Exception as e:
+            logger.warning(f"Razorpay webhook signature verification failed: {e}")
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    else:
+        logger.warning("RAZORPAY_WEBHOOK_SECRET not configured — accepting webhook without signature check (test mode only)")
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    event = payload.get("event", "")
+    pay_entity = ((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+    rzp_order_id = pay_entity.get("order_id")
+    rzp_payment_id = pay_entity.get("id")
+
+    if not rzp_order_id:
+        return {"ok": True, "ignored": "missing order_id"}
+
+    tx = await db.payment_transactions.find_one({"razorpay_order_id": rzp_order_id})
+    if not tx:
+        # Webhook arrived but we have no record of this order — log and ignore (probably a different account)
+        logger.warning(f"Razorpay webhook for unknown order_id={rzp_order_id} event={event}")
+        return {"ok": True, "ignored": "unknown_order"}
+
+    if event in ("payment.captured", "order.paid"):
+        # Idempotent — only update if not already paid
+        if tx.get("payment_status") != "paid":
+            await db.payment_transactions.update_one(
+                {"_id": tx["_id"]},
+                {"$set": {
+                    "payment_status": "paid",
+                    "razorpay_payment_id": rzp_payment_id,
+                    "paid_at": datetime.now(timezone.utc),
+                    "confirmed_via": "webhook",
+                }},
+            )
+            cravitoo_order_id = tx.get("order_id")
+            if cravitoo_order_id:
+                await db.orders.update_one(
+                    {"_id": safe_objectid(cravitoo_order_id, "Order")},
+                    {"$set": {"payment_status": "paid", "status": "confirmed"}},
+                )
+                # Notify vendor
+                order_doc = await db.orders.find_one({"_id": safe_objectid(cravitoo_order_id, "Order")})
+                if order_doc:
+                    vendor_users = await db.users.find({"vendor_id": order_doc["vendor_id"], "role": "vendor"}).to_list(10)
+                    for vu in vendor_users:
+                        await create_notification(
+                            str(vu["_id"]),
+                            "Order Paid & Confirmed",
+                            f"Order #{cravitoo_order_id[-8:]} has been paid. Total ₹{order_doc.get('total_amount', 0):.2f}",
+                            "order",
+                        )
+                    await manager.send_to_vendor(order_doc["vendor_id"], {
+                        "type": "new_order", "order_id": cravitoo_order_id, "amount": order_doc.get("total_amount", 0),
+                    })
+        return {"ok": True, "marked_paid": True}
+
+    if event == "payment.failed":
+        await db.payment_transactions.update_one(
+            {"_id": tx["_id"]},
+            {"$set": {
+                "payment_status": "failed",
+                "razorpay_payment_id": rzp_payment_id,
+                "failed_at": datetime.now(timezone.utc),
+                "error_description": pay_entity.get("error_description"),
+            }},
+        )
+        return {"ok": True, "marked_failed": True}
+
+    return {"ok": True, "ignored_event": event}
 
 # ============== ORDER CANCELLATION & REFUND ==============
 
@@ -1976,8 +2073,8 @@ async def refund_order(order_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Not your order")
     if order.get("payment_status") != "paid":
         raise HTTPException(status_code=400, detail="Order is not paid — nothing to refund")
-    if order.get("refund_status") in ("refunded", "refunded_mock"):
-        raise HTTPException(status_code=400, detail="Order already refunded")
+    if order.get("refund_status") in ("refunded", "refunded_mock", "refund_pending"):
+        raise HTTPException(status_code=400, detail="Order already refunded or refund in progress")
 
     refund_status = "refunded_mock"
     if not RAZORPAY_MOCK_MODE:
