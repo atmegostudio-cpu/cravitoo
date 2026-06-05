@@ -64,6 +64,21 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 17: server.py Phase 2 Refactor — Complete (Feb 2026) ✅
+- **server.py: 4,134 → 2,725 lines** (-1,409 / -34%) in this session. Total since iter12: **5,051 → 2,725** (-2,326 / -46%).
+- **5 routers extracted** to `/app/backend/routers/`:
+  - `reservations.py` (428 lines) — pre-order meal reservations [iter16]
+  - `menu_change_requests.py` (396 lines) — vendor menu workflow [iter16]
+  - `admin_reports.py` (143 lines) — weekly admin email summary [iter16]
+  - **NEW: `onboarding.py` (565 lines)** — 14 endpoints: vendor onboarding CRUD, bulk-import, menu pre-load, checklist, documents, site-review, master-decision, audit-trail, dashboard
+  - **NEW: `sites.py` (578 lines)** — Sites CRUD, vendor-site mapping, meal schedules, site menu, Excel upload, admin (site/super/master/city) creation, master/site reports, employee/my-site
+  - **NEW: `auth.py` (478 lines)** — register, login, logout, /me, OTP request/verify, DPDP /me/data GET (export) + DELETE (erasure)
+- **Pattern**: Factory `make_router(...)` dependency injection — no circular imports. All routes prefixed `/api` via `app.include_router(..., prefix="/api")`. Pure code move, zero logic changes.
+- **Helpers hoisted to top of server.py** so they're accessible everywhere: `is_master_admin`, `is_master_or_super`, `can_access_site`, `current_meal_period` (previously defined inline mid-file).
+- **Auth refactor**: Used `integration_playbook_expert_v2` per the system prompt before extracting auth. Followed playbook guidance — Pydantic OTP models moved to module-level so FastAPI introspection works correctly. Cookie attrs (httponly, secure, samesite), JWT secret, brute-force lockout state — all preserved byte-for-byte.
+- **Verified**: 234/234 backend tests pass. End-to-end smoke: `/auth/login`, `/auth/me`, `/me/data` (DPDP), `/sites`, `/onboarding/dashboard`, `/reports/master-dashboard`, `/auth/otp/request` all return correct responses with the right shapes.
+- **Lint**: ruff + EB clean across all routers/.
+
 ### Iteration 16: Mobile Reservations UI + server.py Phase 2 Refactor (Feb 2026) ✅
 - **Mobile Reservations Screens**:
   - `/app/mobile/src/screens/ReservationsScreen.js` (Customer APK) — 4 meal cards with vendor picker, countdown timer, reserve/cancel buttons, refresh control
