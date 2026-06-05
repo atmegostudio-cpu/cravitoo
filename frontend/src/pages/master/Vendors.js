@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Edit, Save, X, Settings } from 'lucide-react';
+import { Store, Edit, Save, X, Settings, Mail } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -166,9 +166,27 @@ const MasterVendors = () => {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => openProfileEdit(v)} data-testid={`edit-profile-${v.id}`} className="text-text-secondary hover:text-primary p-1.5 rounded hover:bg-background">
-                        <Settings className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Re-send the invitation email to ${v.email || 'the vendor'}?`)) return;
+                            try {
+                              await axios.post(`${API}/vendors/${v.id}/resend-invite`, {}, { withCredentials: true });
+                              alert(`✓ Invitation re-sent to ${v.email || 'vendor'}`);
+                            } catch (e) {
+                              alert(e?.response?.data?.detail || 'Could not send invite.');
+                            }
+                          }}
+                          data-testid={`resend-vendor-invite-${v.id}`}
+                          title="Re-send the partner-login invitation email"
+                          className="text-primary hover:bg-primary-light p-1.5 rounded"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => openProfileEdit(v)} data-testid={`edit-profile-${v.id}`} className="text-text-secondary hover:text-primary p-1.5 rounded hover:bg-background">
+                          <Settings className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

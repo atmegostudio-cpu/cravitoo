@@ -499,13 +499,56 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                 "status": "active",
                 "created_at": datetime.now(timezone.utc),
             })
+            # Create vendor LOGIN user (passwordless via email OTP) if none exists yet
+            vendor_email = (o.get("email") or "").lower().strip()
+            invite_sent = False
+            if vendor_email:
+                existing_user = await db.users.find_one({"email": vendor_email})
+                if not existing_user:
+                    # No password sharing — vendor signs in via Email OTP. Set a random
+                    # password hash so the field is populated; vendor will never use it.
+                    import secrets as _secrets
+                    random_pwd = _secrets.token_urlsafe(24)
+                    try:
+                        from passlib.hash import bcrypt as _bcrypt
+                        pwd_hash = _bcrypt.hash(random_pwd)
+                    except Exception:
+                        pwd_hash = ""
+                    await db.users.insert_one({
+                        "email": vendor_email,
+                        "password_hash": pwd_hash,
+                        "name": o.get("contact_person") or o.get("vendor_name") or "Vendor",
+                        "role": "vendor",
+                        "vendor_id": vendor_id,
+                        "created_at": datetime.now(timezone.utc),
+                        "failed_attempts": 0,
+                        "created_via": "vendor_onboarding_approval",
+                    })
+                else:
+                    # Existing user — ensure they're linked to this vendor
+                    await db.users.update_one(
+                        {"_id": existing_user["_id"]},
+                        {"$set": {"vendor_id": vendor_id, "role": "vendor"}},
+                    )
+                # Fire invitation email (best-effort)
+                try:
+                    import email_service as _email_service
+                    inv_name = o.get("contact_person") or o.get("vendor_name") or "Partner"
+                    inv_html, inv_text = _email_service.render_invitation_email(
+                        name=inv_name, email=vendor_email, role="vendor",
+                    )
+                    if _email_service.send_email(vendor_email, "Welcome to Cravitoo Partner — your account is ready", inv_html, inv_text):
+                        invite_sent = True
+                except Exception as e:
+                    logger.warning(f"Vendor invitation email failed for {vendor_email}: {e}")
             set_doc["status"] = "active"
             set_doc["vendor_id"] = vendor_id
+            set_doc["vendor_user_invited"] = invite_sent
         else:
             set_doc["status"] = "rejected"
         await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
         await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id")})
-        return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id")}
+        return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False)}
 
     @r.get("/onboarding/vendors/{onb_id}/audit-trail")
     async def onboarding_audit_trail(onb_id: str, user: dict = Depends(get_current_user)):

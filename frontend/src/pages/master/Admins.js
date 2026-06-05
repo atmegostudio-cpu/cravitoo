@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog } from 'lucide-react';
+import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -67,6 +67,16 @@ const MasterAdmins = () => {
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
   };
 
+  const resendInvite = async (admin) => {
+    if (!window.confirm(`Re-send the invitation email to ${admin.email}?\n\nThey'll receive a fresh "How to log in" message with the Email Code flow instructions.`)) return;
+    try {
+      await axios.post(`${API}/admin/users/${admin.id}/resend-invite`, {}, { withCredentials: true });
+      alert(`✓ Invitation re-sent to ${admin.email}`);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Could not send invite — check Resend config.');
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -128,9 +138,19 @@ const MasterAdmins = () => {
                         {a.role === 'master_admin' && 'All sites · platform-wide'}
                       </td>
                       <td className="px-4 py-3">
-                        <button data-testid={`delete-admin-${a.id}`} onClick={() => deleteAdmin(a)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            data-testid={`resend-invite-${a.id}`}
+                            onClick={() => resendInvite(a)}
+                            title="Re-send the invitation email"
+                            className="text-primary hover:bg-primary-light p-2 rounded-lg"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </button>
+                          <button data-testid={`delete-admin-${a.id}`} onClick={() => deleteAdmin(a)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

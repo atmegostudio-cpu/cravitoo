@@ -46,6 +46,22 @@ def _can_access_site(user: dict, site_id: str) -> bool:
     return False
 
 
+def _send_invitation_safe(email: str, name: str, role: str) -> bool:
+    """Best-effort send of the invitation email. Never raises — failures are logged.
+
+    Returns True on Resend 2xx, False on any failure (transport, missing API key, etc.).
+    Used by admin-creation endpoints + the resend-invite endpoint.
+    """
+    try:
+        import email_service
+        html, text = email_service.render_invitation_email(name=name, email=email, role=role)
+        subj = "Welcome to Cravitoo — your account is ready"
+        return bool(email_service.send_email(email, subj, html, text))
+    except Exception as e:  # pragma: no cover — never let an email failure roll back a user creation
+        logger.warning(f"Invitation email failed for {email} ({role}): {e}")
+        return False
+
+
 def make_router(db, safe_objectid, get_current_user, hash_password, current_meal_period):
     # Local aliases so existing code reads naturally without re-renaming
     is_master_admin = _is_master
@@ -347,7 +363,8 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             "site_id": data.site_id,
             "created_at": datetime.now(timezone.utc),
         })
-        return {"id": str(result.inserted_id), "email": email_lower, "role": "site_admin", "site_id": data.site_id}
+        _send_invitation_safe(email_lower, data.name, "site_admin")
+        return {"id": str(result.inserted_id), "email": email_lower, "role": "site_admin", "site_id": data.site_id, "invite_sent": True}
 
     @r.post("/admin/super-admins")
     async def create_super_admin(data: SuperAdminCreate, user: dict = Depends(get_current_user)):
@@ -370,7 +387,8 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             "assigned_sites": data.assigned_sites,
             "created_at": datetime.now(timezone.utc),
         })
-        return {"id": str(result.inserted_id), "email": email_lower, "role": "super_admin", "assigned_sites": data.assigned_sites}
+        _send_invitation_safe(email_lower, data.name, "super_admin")
+        return {"id": str(result.inserted_id), "email": email_lower, "role": "super_admin", "assigned_sites": data.assigned_sites, "invite_sent": True}
 
     @r.post("/admin/master-admins")
     async def create_master_admin(data: MasterAdminCreate, user: dict = Depends(get_current_user)):
@@ -388,7 +406,34 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             "role": "master_admin",
             "created_at": datetime.now(timezone.utc),
         })
-        return {"id": str(result.inserted_id), "email": email_lower, "role": "master_admin"}
+        _send_invitation_safe(email_lower, data.name, "master_admin")
+        return {"id": str(result.inserted_id), "email": email_lower, "role": "master_admin", "invite_sent": True}
+
+    @r.post("/admin/users/{user_id}/resend-invite")
+    async def resend_invite(user_id: str, user: dict = Depends(get_current_user)):
+        """Master Admin: re-send the invitation email to any admin/vendor/employee."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can resend invites")
+        u = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        ok = _send_invitation_safe(u["email"], u.get("name", ""), u.get("role", "employee"))
+        if not ok:
+            raise HTTPException(status_code=502, detail="Could not send invite email — check email provider configuration")
+        return {"sent": True, "email": u["email"]}
+
+    @r.post("/vendors/{vendor_id}/resend-invite")
+    async def resend_vendor_invite(vendor_id: str, user: dict = Depends(get_current_user)):
+        """Master Admin: re-send the invitation email to the vendor user associated with this vendor business."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can resend invites")
+        u = await db.users.find_one({"vendor_id": vendor_id, "role": "vendor"})
+        if not u:
+            raise HTTPException(status_code=404, detail="No vendor login user is linked to this vendor yet")
+        ok = _send_invitation_safe(u["email"], u.get("name", ""), "vendor")
+        if not ok:
+            raise HTTPException(status_code=502, detail="Could not send invite email")
+        return {"sent": True, "email": u["email"]}
 
     @r.get("/admin/admins")
     async def list_admins(user: dict = Depends(get_current_user)):

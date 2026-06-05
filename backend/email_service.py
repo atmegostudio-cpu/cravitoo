@@ -261,6 +261,80 @@ Your account is ready. Sign in and start exploring delicious food from your offi
     return html, text
 
 
+_ROLE_LABEL = {
+    "site_admin": "Site Admin",
+    "super_admin": "Super Admin",
+    "master_admin": "Master Admin (Cravitoo)",
+    "city_admin": "City Admin",
+    "corporate_admin": "Corporate Admin",
+    "vendor": "Partner Vendor",
+    "employee": "Employee",
+}
+
+
+def render_invitation_email(name: str, email: str, role: str, login_url: str = "https://app.cravitoo.com/login") -> Tuple[str, str]:
+    """Invitation email for admin-created accounts (site admins, vendors, city admins, etc.).
+
+    Tells the user *how to log in via the passwordless Email Code flow* — no password sharing,
+    no manual signup. Sent automatically when an admin creates a new user, and on demand
+    via the "Resend invite" button.
+    """
+    safe_name = (name or "there").split()[0][:40]
+    role_label = _ROLE_LABEL.get(role, role.replace("_", " ").title())
+    body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  You've been added to Cravitoo as a <strong>{role_label}</strong>. Your account is ready — just sign in with the email code flow below. No password needed.
+</p>
+
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;background:#FFF7EE;border:1px solid #FFD6A8;border-radius:12px;margin:16px 0;">
+  <tr><td style="padding:16px 20px;">
+    <p style="margin:0 0 8px 0;font-size:13px;color:#9C8B80;text-transform:uppercase;letter-spacing:0.5px;">Your login email</p>
+    <p style="margin:0;font-size:16px;color:#1F1410;font-weight:600;">{email}</p>
+  </td></tr>
+</table>
+
+<p style="margin:24px 0 12px 0;font-weight:600;color:#1F1410;">How to log in (takes 30 seconds):</p>
+<ol style="padding-left:20px;margin:0;color:#52443A;line-height:1.8;">
+  <li>Open <a href="{login_url}" style="color:#FF5A1F;text-decoration:none;font-weight:600;">{login_url}</a></li>
+  <li>Click the <strong>"Login with Email Code"</strong> tab</li>
+  <li>Enter your email: <code style="background:#F3E8DD;padding:2px 6px;border-radius:4px;font-size:13px;">{email}</code></li>
+  <li>Check your inbox for a 6-digit code</li>
+  <li>Enter the code — you're in!</li>
+</ol>
+
+<p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">
+  Lost or didn't receive the code? Just request a new one — codes expire after 10 minutes.
+</p>"""
+
+    html = _brand_wrapper(
+        "You're invited to Cravitoo",
+        f"<p>Hi {safe_name},</p>",
+        body,
+    )
+    text = f"""You're invited to Cravitoo
+
+Hi {safe_name},
+
+You've been added to Cravitoo as a {role_label}. Your account is ready —
+sign in with the email code flow below. No password needed.
+
+Your login email: {email}
+
+How to log in:
+  1. Open {login_url}
+  2. Click "Login with Email Code"
+  3. Enter your email: {email}
+  4. Check your inbox for a 6-digit code
+  5. Enter the code — you're in!
+
+Lost or didn't receive the code? Just request a new one — codes expire after 10 minutes.
+
+— Team Cravitoo
+"""
+    return html, text
+
+
+
 def render_order_confirmation_email(name: str, order_id: str, vendor_name: str, items: list, total: float, pickup_time: Optional[str] = None) -> Tuple[str, str]:
     """Order placed confirmation email."""
     safe_name = (name or "there").split()[0][:40]

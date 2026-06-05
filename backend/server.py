@@ -2576,7 +2576,13 @@ async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_curr
     })
     user_id = str(res.inserted_id)
     await audit_log(user, "user", user_id, "created_city_admin", {"city_id": data.city_id, "email": email_lower})
-    return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id}
+    # Best-effort invitation email — never roll back the creation if email fails
+    try:
+        inv_html, inv_text = email_service.render_invitation_email(name=data.name, email=email_lower, role="city_admin")
+        email_service.send_email(email_lower, "Welcome to Cravitoo — your account is ready", inv_html, inv_text)
+    except Exception as e:
+        logger.warning(f"City admin invite email failed for {email_lower}: {e}")
+    return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id, "invite_sent": True}
 
 
 # ============== VENDOR ONBOARDING ==============
