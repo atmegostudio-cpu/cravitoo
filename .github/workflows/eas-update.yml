@@ -1,0 +1,123 @@
+name: EAS OTA Update
+
+# Ship JavaScript/UI-only fixes to the Cravitoo mobile apps without rebuilding
+# the native binaries. Trigger from the GitHub UI: Actions → "EAS OTA Update"
+# → "Run workflow" → fill the form → click the green button.
+#
+# Native code changes (new Expo SDK, new native module, app icon) still need
+# a full `eas build` instead — this workflow only updates JS bundles.
+#
+# Required GitHub secret: EXPO_TOKEN  (create at https://expo.dev/.../access-tokens)
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Which app to update"
+        required: true
+        type: choice
+        default: customer
+        options:
+          - customer        # → channel: production       (employee app)
+          - vendor          # → channel: production-vendor (partner app)
+          - both            # → fires both above sequentially
+          - preview         # → channel: preview          (internal customer testing)
+          - preview-vendor  # → channel: preview-vendor   (internal partner testing)
+      message:
+        description: "Release notes (visible to users in update history)"
+        required: true
+        type: string
+        default: "Bug fixes and improvements"
+
+concurrency:
+  group: eas-update-${{ inputs.variant }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Publish OTA to ${{ inputs.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "yarn"
+          cache-dependency-path: mobile/yarn.lock
+
+      - name: Setup Expo + EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          expo-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install JS dependencies
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          else
+            npm install
+          fi
+
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is missing. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          echo "EXPO_TOKEN is configured ✓"
+
+      # --- Customer app (channel: production) ---
+      - name: Publish to production channel (customer)
+        if: inputs.variant == 'customer' || inputs.variant == 'both'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          echo "::group::Publishing OTA to production (customer)"
+          eas update --branch production --message "${{ inputs.message }}" --non-interactive
+          echo "::endgroup::"
+
+      # --- Vendor / partner app (channel: production-vendor) ---
+      - name: Publish to production-vendor channel (partner)
+        if: inputs.variant == 'vendor' || inputs.variant == 'both'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_VARIANT: vendor
+        run: |
+          echo "::group::Publishing OTA to production-vendor (partner)"
+          eas update --branch production-vendor --message "${{ inputs.message }}" --non-interactive
+          echo "::endgroup::"
+
+      # --- Internal preview channels ---
+      - name: Publish to preview channel (internal testing — customer)
+        if: inputs.variant == 'preview'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas update --branch preview --message "${{ inputs.message }}" --non-interactive
+
+      - name: Publish to preview-vendor channel (internal testing — partner)
+        if: inputs.variant == 'preview-vendor'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_VARIANT: vendor
+        run: |
+          eas update --branch preview-vendor --message "${{ inputs.message }}" --non-interactive
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## OTA Update result" >> $GITHUB_STEP_SUMMARY
+          echo "- **Variant**: \`${{ inputs.variant }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Message**: ${{ inputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Users will receive this update the next time they open the app." >> $GITHUB_STEP_SUMMARY
