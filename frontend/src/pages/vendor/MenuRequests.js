@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Plus, X, Edit3, Trash2, Clock, CheckCircle, XCircle, Send, Image as ImageIcon, MessageSquare, Upload } from 'lucide-react';
+import { Plus, X, Edit3, Trash2, Clock, CheckCircle, XCircle, Send, Image as ImageIcon, MessageSquare, Upload, Camera } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -13,6 +14,8 @@ const STATUS_STYLES = {
 };
 
 const VendorMenuRequests = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +28,7 @@ const VendorMenuRequests = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [photoFile, setPhotoFile] = useState(null);
+  const [photoFocus, setPhotoFocus] = useState(false);
   const fileInputRef = useRef(null);
 
   const fetchAll = async () => {
@@ -45,11 +49,36 @@ const VendorMenuRequests = () => {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // Prefill from vendor Menu "Request photo" CTA: opens the form with the chosen item
+  useEffect(() => {
+    const pref = location.state?.prefill;
+    if (!pref) return;
+    // Wait until menuItems is populated (so the select dropdown can render correctly)
+    if (pref.request_type === 'edit' && !menuItems.length) return;
+    setRequestType(pref.request_type || 'edit');
+    setSelectedItemId(pref.target_item_id || '');
+    setFormData({
+      name: pref.name || '',
+      description: pref.description || '',
+      category: pref.category || '',
+      price: pref.price != null ? String(pref.price) : '',
+      image_url: pref.image_url || '',
+      is_vegetarian: !!pref.is_vegetarian,
+      reason: pref.reason || '',
+    });
+    setPhotoFocus(pref.focus === 'photo');
+    setShowForm(true);
+    // Clear location.state so a refresh doesn't re-trigger the prefill
+    navigate(location.pathname, { replace: true, state: {} });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, menuItems.length]);
+
   const resetForm = () => {
     setRequestType('add');
     setSelectedItemId('');
     setFormData({ name: '', description: '', category: '', price: '', image_url: '', is_vegetarian: false, reason: '' });
     setSubmitError('');
+    setPhotoFocus(false);
   };
 
   const handleTypeChange = (newType) => {
@@ -289,6 +318,19 @@ const VendorMenuRequests = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              {/* Photo focus banner — shown when the user clicked "Request photo" on the Menu page */}
+              {photoFocus && (
+                <div data-testid="photo-focus-banner" className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                  <Camera className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900">Add a photo for this dish</p>
+                    <p className="text-xs text-amber-800 mt-1">
+                      Attach your own photo below (PNG/JPG, ≤5 MB), or just submit the request and Cravitoo will generate a professional shot using AI.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Type selector */}
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">Request type</label>

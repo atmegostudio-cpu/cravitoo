@@ -1,12 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Leaf, ImageIcon, Lock, MessageSquare } from 'lucide-react';
+import { Leaf, ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+const PhotoAuditCard = ({ items, onRequestPhoto }) => {
+  const [expanded, setExpanded] = useState(false);
+  const missing = useMemo(() => items.filter((it) => !it.image_url), [items]);
+  if (items.length === 0) return null;
+  const coveragePct = Math.round(((items.length - missing.length) * 100) / items.length);
+  const allCovered = missing.length === 0;
+  return (
+    <div data-testid="photo-audit-card" className={`mb-6 p-5 rounded-2xl border ${allCovered ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'} `}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`rounded-full p-2 flex-shrink-0 ${allCovered ? 'bg-emerald-600' : 'bg-amber-500'} text-white`}>
+            {allCovered ? <Camera className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-heading text-lg font-semibold text-text-primary">Photo audit</h3>
+            <p className="text-sm text-text-secondary mt-1">
+              <strong>{items.length - missing.length} of {items.length}</strong> items have a photo
+              {' • '}
+              <strong className={allCovered ? 'text-emerald-700' : 'text-amber-700'}>{coveragePct}% coverage</strong>
+              {!allCovered && (
+                <>
+                  {' '}— <strong>{missing.length} item{missing.length > 1 ? 's' : ''}</strong> still need{missing.length === 1 ? 's' : ''} one.
+                </>
+              )}
+            </p>
+            {!allCovered && (
+              <p className="text-xs text-text-muted mt-2">
+                Items without photos get fewer orders. Request a photo and Cravitoo will add one (you can attach your own or we'll generate a professional shot).
+              </p>
+            )}
+          </div>
+        </div>
+        {!allCovered && (
+          <button
+            data-testid="audit-toggle"
+            onClick={() => setExpanded((x) => !x)}
+            className="text-sm text-amber-700 hover:text-amber-900 font-medium flex items-center gap-1 flex-shrink-0"
+          >
+            {expanded ? 'Hide list' : 'Show list'}
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        )}
+      </div>
+
+      {/* Coverage bar */}
+      <div className="mt-4">
+        <div className="h-2 w-full bg-white rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 ${allCovered ? 'bg-emerald-600' : 'bg-amber-500'}`}
+            style={{ width: `${coveragePct}%` }}
+          />
+        </div>
+      </div>
+
+      {expanded && !allCovered && (
+        <ul data-testid="audit-missing-list" className="mt-4 divide-y divide-amber-200/60 bg-white/60 rounded-lg overflow-hidden">
+          {missing.map((it) => (
+            <li key={it.id} data-testid={`audit-item-${it.id}`} className="px-4 py-3 flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-text-primary truncate">{it.name}</p>
+                <p className="text-xs text-text-muted">{it.category} • ₹{(it.price || 0).toFixed(2)}</p>
+              </div>
+              <button
+                data-testid={`request-photo-${it.id}`}
+                onClick={() => onRequestPhoto(it)}
+                className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center gap-1.5 flex-shrink-0"
+              >
+                <Camera className="h-3.5 w-3.5" /> Request photo
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const VendorMenu = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -24,6 +102,26 @@ const VendorMenu = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRequestPhoto = (item) => {
+    // Navigate to the existing Menu Change Request flow with a prefill so the
+    // vendor lands on a request pre-filled for THIS item, ready to attach a photo.
+    navigate('/vendor/menu-requests', {
+      state: {
+        prefill: {
+          request_type: 'edit',
+          target_item_id: item.id,
+          name: item.name,
+          description: item.description || '',
+          category: item.category,
+          price: item.price,
+          is_vegetarian: !!item.is_vegetarian,
+          reason: `Please add a photo for "${item.name}".`,
+          focus: 'photo',
+        },
+      },
+    });
   };
 
   const toggleAvailability = async (item) => {
@@ -94,15 +192,27 @@ const VendorMenu = () => {
             </div>
           )}
 
+          {/* Photo audit (only meaningful when there are items) */}
+          {items.length > 0 && <PhotoAuditCard items={items} onRequestPhoto={handleRequestPhoto} />}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {items.map((item) => (
               <div key={item.id} data-testid={`vendor-menu-item-${item.id}`} className="bg-card border border-border-light rounded-xl overflow-hidden hover:shadow-md transition-all duration-200">
                 {item.image_url ? (
                   <img src={item.image_url} alt={item.name} className="w-full h-40 object-cover" />
                 ) : (
-                  <div className="w-full h-40 bg-background flex items-center justify-center">
-                    <ImageIcon className="h-12 w-12 text-text-muted" />
-                  </div>
+                  <button
+                    type="button"
+                    data-testid={`card-request-photo-${item.id}`}
+                    onClick={() => handleRequestPhoto(item)}
+                    className="w-full h-40 bg-amber-50 border-b border-amber-200 flex flex-col items-center justify-center group hover:bg-amber-100 transition-colors"
+                    title="Request a photo for this item"
+                  >
+                    <ImageIcon className="h-10 w-10 text-amber-500 group-hover:scale-110 transition-transform" />
+                    <span className="mt-2 text-xs font-medium text-amber-700 flex items-center gap-1">
+                      <Camera className="h-3 w-3" /> Request photo
+                    </span>
+                  </button>
                 )}
                 <div className="p-4">
                   <div className="flex justify-between items-start mb-2">

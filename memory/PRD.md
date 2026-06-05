@@ -64,6 +64,18 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 21: Vendor-side Photo Audit Panel (Feb 2026) ✅
+- **New `PhotoAuditCard`** at the top of `/vendor/menu` (`pages/vendor/Menu.js`):
+  - Coverage stat: "**X of Y items have a photo** • XX% coverage — N items still need one"
+  - Amber-themed (or emerald when 100%) progress bar
+  - Expandable list of missing-photo items with per-item **"Request photo"** buttons
+  - Hidden when 100% coverage achieved (emerald success state)
+- **Per-card "Request photo" placeholder**: items in the menu grid that lack an image now show an amber-tinted call-to-action ("📷 Request photo") instead of a passive grey icon. One click → opens the request form pre-filled.
+- **Prefilled Menu Change Request**: clicking any of the request-photo buttons navigates to `/vendor/menu-requests` with React Router `state.prefill` carrying the dish's full metadata + `focus: "photo"`. `MenuRequests.js` reads this on mount, opens the form, prefills all fields, and shows a yellow banner: *"Add a photo for this dish — Attach your own (PNG/JPG, ≤5 MB) or Cravitoo will generate one via AI."*
+- **Self-service loop**: vendor sees missing photos → one-click request → attaches own photo via the iter20 upload UI → submits → Cravitoo admin approves → photo applied to the menu item automatically (iter20 apply flow already merges uploaded photo).
+- **Respects menu lockdown**: vendors still cannot directly edit the menu — they go through the existing menu-change-request workflow with admin approval. The audit panel is purely visibility + a faster path to file the right request.
+- **Lint clean. 45 timezone + DPDP regression tests pass.**
+
 ### Iteration 20: AI Bulk-fill + Menu Request Photo Upload + Vendor Daily Digest (Feb 2026) ✅
 
 **1. AI photo bulk-fill** (`routers/ai_menu_photos.py`):
