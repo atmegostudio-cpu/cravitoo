@@ -50,6 +50,10 @@ import CookieConsent from './components/CookieConsent';
 import VendorMenuRequests from './pages/vendor/MenuRequests';
 import AdminMenuRequests from './pages/master/MenuRequests';
 
+import EmployeeReservations from './pages/employee/Reservations';
+import VendorReservations from './pages/vendor/Reservations';
+import AdminReservations from './pages/master/Reservations';
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -258,6 +262,23 @@ function AppRoutes() {
       <Route path="/admin/menu-requests" element={
         <ProtectedRoute allowedRoles={['master_admin', 'super_admin', 'site_admin', 'city_admin']}>
           <AdminMenuRequests />
+        </ProtectedRoute>
+      } />
+
+      {/* Meal reservations (pre-orders / head-count) */}
+      <Route path="/employee/reservations" element={
+        <ProtectedRoute allowedRoles={['employee']}>
+          <EmployeeReservations />
+        </ProtectedRoute>
+      } />
+      <Route path="/vendor/reservations" element={
+        <ProtectedRoute allowedRoles={['vendor']}>
+          <VendorReservations />
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/reservations" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'super_admin', 'site_admin', 'city_admin']}>
+          <AdminReservations />
         </ProtectedRoute>
       } />
     </Routes>

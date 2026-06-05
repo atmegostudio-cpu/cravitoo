@@ -64,6 +64,46 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - Real-time order notifications via WebSocket
   - Camera permission flow for QR scanner
 
+### Iteration 15: Meal Reservations / Pre-Ordering (Feb 2026) ✅
+- **Concept**: Employees reserve **next-day** breakfast / lunch / snacks / dinner. Count-only — no payment. Vendor gets a clean head-count for kitchen prep planning.
+- **Backend** (`server.py`) — new collection `reservations` + 8 endpoints:
+  - `GET /api/reservations/availability` — employee sees 4 meals for tomorrow with cutoff timers, eligible vendors, and already-reserved state
+  - `POST /api/reservations` — create (validates: tomorrow-only, cutoff not passed, 1-per-meal-per-day, meal enabled, vendor mapped to site)
+  - `GET /api/reservations/my` — employee history with status (reserved/consumed/cancelled/no_show)
+  - `DELETE /api/reservations/{id}` — vendor or employee cancels before cutoff
+  - `POST /api/reservations/{id}/consume` — vendor marks as consumed (QR-scan equivalent)
+  - `GET /api/reservations/vendor/counts` — per-meal head-count + employee list for prep planning + CSV export
+  - `GET /api/reservations/admin/summary` — aggregated totals + per-vendor breakdown for site/master admin
+  - `GET /api/sites/{id}/reservation-settings` — read settings
+  - `PATCH /api/sites/{id}/reservation-settings` — master/site admin toggle each meal on/off + change cutoff hour
+- **Business rules enforced**:
+  - Only tomorrow can be reserved
+  - One reservation per (employee, meal, date)
+  - Cutoff is `cutoff_hour:00 IST` on the day before delivery (default 20:00 = 8 PM, admin-configurable per site, 15-23)
+  - Reservations blocked when meal is `enabled=false` at the site
+  - Vendors must be mapped to the employee's site
+  - Cancellation also blocked after cutoff
+  - Master Admin and Site Admin both can change settings; Vendor cannot
+- **Default settings** (`DEFAULT_RESERVATION_SETTINGS`): all 4 meals enabled with 20:00 IST cutoff. Per-site override stored in `sites.reservation_settings`.
+- **Pickup integration**: Each reservation generates a `pickup_qr` token, reusing the existing QR scan flow.
+- **Push + in-app notification** to employee on reservation confirmation (via `create_notification`).
+- **Web Frontend** — 3 new pages:
+  - `/employee/reservations` — 4 meal cards with vendor selector, countdown timer, in/out toggle on each; "Cutoff passed" / "Disabled by admin" / "Reserved with X" state-aware UI
+  - `/vendor/reservations` — per-meal head-count cards + customer list + CSV export button for kitchen
+  - `/admin/reservations` — aggregate counts, total banner, **Reservation Settings** panel with toggles + cutoff dropdown (site picker for master admin)
+- **Navbar links** added for all 4 roles (employee/vendor/master/site)
+- **Verified** end-to-end via direct DB injection + 13-step curl smoke test:
+  - ✅ Site admin disables breakfast → employee sees "Disabled by admin"
+  - ✅ Employee reserves lunch → 200; duplicate lunch → 409
+  - ✅ Reserve for day-after-tomorrow → 400
+  - ✅ Past cutoff → 400
+  - ✅ Vendor head-count returns aggregated + customer list
+  - ✅ Master admin summary aggregates by meal and vendor
+  - ✅ Cancel before cutoff → 200; cancel after cutoff → 400
+  - ✅ Vendor marks consumed → status flips
+  - ✅ Vendor cannot change site settings → 403
+- **Datetime fix**: MongoDB returns naive UTC datetimes — added timezone coercion in cancel/availability endpoints to prevent "offset-naive vs offset-aware" comparison errors.
+
 ### Iteration 14: Vendor Menu Change Request Workflow (Feb 2026) ✅
 - **Replaced** the mailto:partners@cravitoo.com link with a proper in-app ticketing workflow
 - **Backend** — new collection `menu_change_requests` + 5 endpoints:
