@@ -28,7 +28,6 @@ import io
 import openpyxl
 import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -169,7 +168,7 @@ from models import (  # noqa: E402
     CompanyCreate, CompanyResponse,
     VendorCreate, VendorResponse,
     MenuItemCreate, MenuItemResponse, MenuItemSiteUpdate,
-    OrderItemInput, OrderCreate, OrderResponse, OrderStatus, CheckoutRequest,
+    OrderItemInput, OrderCreate, OrderResponse, OrderStatus,
     AIRecommendationRequest,
     SiteCreate, VendorSiteMappingCreate, MealScheduleEntry, MealScheduleUpdate,
     CityCreate, CityAdminCreate,
@@ -897,93 +896,8 @@ async def verify_pickup(order_id: str, qr_code: str, user: dict = Depends(get_cu
     await db.orders.update_one({"_id": safe_objectid(order_id, "Order")}, {"$set": {"status": "completed"}})
     return {"message": "Pickup verified successfully", "order_id": order_id}
 
-# Payment Routes
-@api_router.post("/payments/checkout")
-async def create_checkout_session(data: CheckoutRequest, request: Request, user: dict = Depends(get_current_user)):
-    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order")})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    if order["user_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Not your order")
-    
-    host_url = data.origin_url
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=webhook_url)
-    
-    success_url = f"{host_url}/employee/orders?session_id={{{{CHECKOUT_SESSION_ID}}}}"
-    cancel_url = f"{host_url}/employee/orders"
-    
-    checkout_request = CheckoutSessionRequest(
-        amount=order["total_amount"],
-        currency="inr",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={"order_id": data.order_id, "user_id": user["id"]}
-    )
-    
-    session = await stripe_checkout.create_checkout_session(checkout_request)
-    
-    await db.payment_transactions.insert_one({
-        "order_id": data.order_id,
-        "user_id": user["id"],
-        "session_id": session.session_id,
-        "amount": order["total_amount"],
-        "currency": "inr",
-        "payment_status": "pending",
-        "created_at": datetime.now(timezone.utc)
-    })
-    
-    return {"url": session.url, "session_id": session.session_id}
-
-@api_router.get("/payments/status/{session_id}")
-async def get_checkout_status(session_id: str, user: dict = Depends(get_current_user)):
-    transaction = await db.payment_transactions.find_one({"session_id": session_id})
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Payment session not found")
-    
-    # Authorization scope - only owner or vendor of the order can check
-    if transaction["user_id"] != user["id"] and user["role"] != "super_admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view this payment")
-    
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
-    status = await stripe_checkout.get_checkout_status(session_id)
-    
-    if transaction["payment_status"] != "paid" and status.payment_status == "paid":
-        await db.payment_transactions.update_one(
-            {"session_id": session_id},
-            {"$set": {"payment_status": "paid"}}
-        )
-        await db.orders.update_one(
-            {"_id": ObjectId(transaction["order_id"])},
-            {"$set": {"payment_status": "paid", "status": "confirmed"}}
-        )
-    
-    return {"payment_status": status.payment_status, "amount": status.amount_total / 100}
-
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    body = await request.body()
-    signature = request.headers.get("Stripe-Signature")
-    
-    stripe_checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
-    try:
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
-        if webhook_response.payment_status == "paid":
-            transaction = await db.payment_transactions.find_one({"session_id": webhook_response.session_id})
-            if transaction and transaction["payment_status"] != "paid":
-                await db.payment_transactions.update_one(
-                    {"session_id": webhook_response.session_id},
-                    {"$set": {"payment_status": "paid"}}
-                )
-                await db.orders.update_one(
-                    {"_id": ObjectId(transaction["order_id"])},
-                    {"$set": {"payment_status": "paid", "status": "confirmed"}}
-                )
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"Webhook error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+# Stripe payment endpoints removed (iter22 cleanup) — Cravitoo uses Razorpay for INR.
+# See routers/sites.py registration and the /payments/razorpay/* endpoints below.
 
 # AI Recommendations
 @api_router.post("/ai/recommendations")
@@ -2578,8 +2492,9 @@ async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_curr
     await audit_log(user, "user", user_id, "created_city_admin", {"city_id": data.city_id, "email": email_lower})
     # Best-effort invitation email — never roll back the creation if email fails
     try:
-        inv_html, inv_text = email_service.render_invitation_email(name=data.name, email=email_lower, role="city_admin")
-        email_service.send_email(email_lower, "Welcome to Cravitoo — your account is ready", inv_html, inv_text)
+        import email_service as _email_service
+        inv_html, inv_text = _email_service.render_invitation_email(name=data.name, email=email_lower, role="city_admin")
+        _email_service.send_email(email_lower, "Welcome to Cravitoo — your account is ready", inv_html, inv_text)
     except Exception as e:
         logger.warning(f"City admin invite email failed for {email_lower}: {e}")
     return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id, "invite_sent": True}

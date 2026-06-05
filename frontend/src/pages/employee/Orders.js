@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Package, Clock, CheckCircle, QrCode, Star, XCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const EmployeeOrders = () => {
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('session_id');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [checkingPayment, setCheckingPayment] = useState(!!sessionId);
   const [showQRFor, setShowQRFor] = useState(null);
   const [reviewFor, setReviewFor] = useState(null);
   const [rating, setRating] = useState(5);
@@ -19,40 +15,8 @@ const EmployeeOrders = () => {
   const [reviewMessage, setReviewMessage] = useState('');
 
   useEffect(() => {
-    if (sessionId) {
-      checkPaymentStatus(sessionId);
-    }
     fetchOrders();
   }, []);
-
-  const checkPaymentStatus = async (sessionId) => {
-    let attempts = 0;
-    const maxAttempts = 5;
-    
-    const poll = async () => {
-      try {
-        const { data } = await axios.get(`${API}/payments/status/${sessionId}`, { withCredentials: true });
-        
-        if (data.payment_status === 'paid') {
-          setCheckingPayment(false);
-          fetchOrders();
-          return;
-        }
-        
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 2000);
-        } else {
-          setCheckingPayment(false);
-        }
-      } catch (error) {
-        console.error('Error checking payment:', error);
-        setCheckingPayment(false);
-      }
-    };
-    
-    poll();
-  };
 
   const fetchOrders = async () => {
     try {
@@ -138,13 +102,6 @@ const EmployeeOrders = () => {
           <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-8">
             My Orders
           </h1>
-
-          {checkingPayment && (
-            <div data-testid="payment-checking-banner" className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center space-x-3">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <p className="text-blue-800 font-medium">Verifying your payment...</p>
-            </div>
-          )}
 
           {reviewMessage && (
             <div data-testid="review-message" className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">

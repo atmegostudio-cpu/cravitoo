@@ -135,7 +135,8 @@ class TestAI:
 
 # --- Payments ---
 class TestPayments:
-    def test_checkout_session(self):
+    def test_razorpay_create_order(self):
+        """Replaces the old Stripe checkout test — Cravitoo migrated to Razorpay (iter21)."""
         s, _ = login("employee")
         vendors = requests.get(f"{BASE_URL}/api/vendors", timeout=10).json()
         v = next(v for v in vendors if v["name"] == "Spice Kitchen")
@@ -149,9 +150,10 @@ class TestPayments:
         if order_resp.status_code != 200:
             pytest.skip(f"Order creation failed: {order_resp.text}")
         order_id = order_resp.json()["id"]
-        r = s.post(f"{BASE_URL}/api/payments/checkout",
-                   json={"order_id": order_id, "origin_url": BASE_URL}, timeout=30)
-        assert r.status_code == 200, f"Checkout failed: {r.status_code} {r.text[:300]}"
+        r = s.post(f"{BASE_URL}/api/payments/razorpay/create-order",
+                   json={"order_id": order_id}, timeout=30)
+        assert r.status_code == 200, f"Razorpay order failed: {r.status_code} {r.text[:300]}"
         d = r.json()
-        assert "url" in d and "session_id" in d
-        assert "stripe.com" in d["url"] or "checkout" in d["url"].lower()
+        assert "razorpay_order_id" in d and "key_id" in d and "amount" in d
+        assert d["currency"] == "INR"
+        assert d["amount"] == int(menu[0]["price"] * 100)  # paise

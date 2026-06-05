@@ -152,9 +152,7 @@ class OrderStatus(str, Enum):
     cancelled = "cancelled"
 
 
-class CheckoutRequest(BaseModel):
-    order_id: str
-    origin_url: str
+# CheckoutRequest (Stripe) removed — Cravitoo uses Razorpay; see RazorpayOrderCreate below.
 
 
 # ============== AI ==============
