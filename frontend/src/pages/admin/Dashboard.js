@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import ExportButtons from '../../components/ExportButtons';
 import { TrendingUp, Users, DollarSign } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -40,9 +41,17 @@ const CorporateAdminDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-8">
-            Corporate Dashboard
-          </h1>
+          <div className="flex flex-wrap justify-between items-start gap-4 mb-8">
+            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+              Corporate Dashboard
+            </h1>
+            <div className="bg-card border border-border-light rounded-2xl p-3 space-y-2">
+              <p className="text-xs text-text-muted">Reservations (last 30 days)</p>
+              <ExportButtons endpoint="/exports/reservations" filename="cravitoo-reservations" testidPrefix="corp-reservations" />
+              <p className="text-xs text-text-muted pt-2 border-t border-border-light">Orders (last 30 days)</p>
+              <ExportButtons endpoint="/exports/orders" filename="cravitoo-orders" testidPrefix="corp-orders" />
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div data-testid="corporate-total-orders" className="bg-card border border-border-light rounded-2xl p-8">

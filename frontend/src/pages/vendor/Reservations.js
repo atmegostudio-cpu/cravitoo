@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import ExportButtons from '../../components/ExportButtons';
 import { Calendar, Users, Coffee, Sunrise, Sun, Moon, Loader2, CheckCircle2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -30,8 +31,16 @@ const VendorReservations = () => {
   const handleExport = () => {
     if (!data?.reservations?.length) return;
     const csv = [
-      ['Meal', 'Employee Name', 'Email', 'Pickup QR', 'Reserved At'].join(','),
-      ...data.reservations.map(r => [r.meal_period, r.employee_name, r.employee_email, r.pickup_qr, r.created_at].join(',')),
+      ['Meal', 'Meal Type', 'Source', 'Employee Name', 'Email', 'Pickup QR', 'Reserved At'].join(','),
+      ...data.reservations.map(r => [
+        r.meal_period,
+        r.meal_type_label || r.meal_type || '',
+        r.source || 'employee',
+        r.employee_name,
+        r.employee_email || '',
+        r.pickup_qr,
+        r.created_at,
+      ].join(',')),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -79,11 +88,18 @@ const VendorReservations = () => {
             </button>
           </div>
 
+          <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+            <span className="text-xs text-text-muted">Sales reports (last 30 days):</span>
+            <ExportButtons endpoint="/exports/vendor-sales" filename="cravitoo-vendor-sales" testidPrefix="vendor-sales" />
+          </div>
+
           {/* Head-count cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             {Object.entries(MEAL_META).map(([meal, meta]) => {
               const c = data?.counts?.[meal] || { reserved: 0, consumed: 0 };
               const Icon = meta.icon;
+              const byType = data?.by_meal_type?.[meal] || {};
+              const labels = data?.meal_type_labels || {};
               return (
                 <div key={meal} data-testid={`count-${meal}`} className="bg-card border border-border-light rounded-2xl p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -94,6 +110,16 @@ const VendorReservations = () => {
                   </div>
                   <p className="font-heading text-3xl font-semibold text-text-primary">{c.reserved}</p>
                   <p className="text-xs text-text-muted mt-1">{c.consumed} consumed</p>
+                  {Object.values(byType).some(n => n > 0) && (
+                    <div className="mt-3 pt-3 border-t border-border-light space-y-1" data-testid={`meal-type-breakdown-${meal}`}>
+                      {Object.entries(byType).map(([mt, n]) => n > 0 ? (
+                        <div key={mt} className="flex justify-between text-xs">
+                          <span className="text-text-muted">{labels[mt] || mt}</span>
+                          <span className="font-mono text-text-primary font-semibold">{n}</span>
+                        </div>
+                      ) : null)}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -124,6 +150,7 @@ const VendorReservations = () => {
                 <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
                   <tr>
                     <th className="text-left px-5 py-3">Meal</th>
+                    <th className="text-left px-5 py-3">Type</th>
                     <th className="text-left px-5 py-3">Employee</th>
                     <th className="text-left px-5 py-3 hidden sm:table-cell">Email</th>
                     <th className="text-left px-5 py-3 hidden md:table-cell">Reserved at</th>
@@ -135,8 +162,16 @@ const VendorReservations = () => {
                       <td className="px-5 py-3 text-sm">
                         <span className="capitalize">{MEAL_META[r.meal_period]?.emoji} {r.meal_period}</span>
                       </td>
+                      <td className="px-5 py-3 text-sm">
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${
+                          r.meal_type?.startsWith('veg') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                        }`}>{r.meal_type_label || '—'}</span>
+                        {r.source === 'corporate_bulk' && (
+                          <span className="ml-2 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Bulk</span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-sm text-text-primary font-medium">{r.employee_name}</td>
-                      <td className="px-5 py-3 text-sm text-text-secondary hidden sm:table-cell">{r.employee_email}</td>
+                      <td className="px-5 py-3 text-sm text-text-secondary hidden sm:table-cell">{r.employee_email || '—'}</td>
                       <td className="px-5 py-3 text-sm text-text-muted hidden md:table-cell">{new Date(r.created_at).toLocaleString()}</td>
                     </tr>
                   ))}

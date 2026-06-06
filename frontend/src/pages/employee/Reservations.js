@@ -12,6 +12,14 @@ const MEAL_META = {
   dinner:    { icon: Moon, label: 'Dinner', emoji: '🌙', color: 'indigo' },
 };
 
+const MEAL_TYPE_LABELS = {
+  veg_meal: { label: 'Veg Meal', emoji: '🟢' },
+  non_veg_meal: { label: 'Non-Veg Meal', emoji: '🔴' },
+  veg_salad: { label: 'Veg Salad', emoji: '🥗' },
+  non_veg_salad: { label: 'Non-Veg Salad', emoji: '🥗' },
+};
+const MEAL_TYPE_ORDER = ['veg_meal', 'non_veg_meal', 'veg_salad', 'non_veg_salad'];
+
 const Countdown = ({ to }) => {
   const [remaining, setRemaining] = useState(0);
   useEffect(() => {
@@ -33,6 +41,7 @@ const ReservationCard = ({ meal, onReserve, onCancel, reserving }) => {
   const isDisabled = !meal.enabled;
   const cutoffPassed = meal.cutoff_passed;
   const [selectedVendorId, setSelectedVendorId] = useState(meal.eligible_vendors?.[0]?.id || '');
+  const [mealType, setMealType] = useState('veg_meal');
 
   const canReserve = !isReserved && !isDisabled && !cutoffPassed && meal.eligible_vendors?.length > 0;
 
@@ -102,8 +111,30 @@ const ReservationCard = ({ meal, onReserve, onCancel, reserving }) => {
               >
                 {meal.eligible_vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
+              <label className="block text-xs text-text-muted mb-1.5 mt-3">Meal type</label>
+              <div className="flex flex-wrap gap-2">
+                {MEAL_TYPE_ORDER.map((mt) => {
+                  const isActive = mealType === mt;
+                  return (
+                    <button
+                      type="button"
+                      key={mt}
+                      disabled={!canReserve}
+                      onClick={() => setMealType(mt)}
+                      data-testid={`meal-type-${meal.meal_period}-${mt}`}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                        isActive
+                          ? 'bg-primary text-white border-primary'
+                          : 'bg-background text-text-secondary border-border-light hover:border-primary'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {MEAL_TYPE_LABELS[mt].emoji} {MEAL_TYPE_LABELS[mt].label}
+                    </button>
+                  );
+                })}
+              </div>
               <button
-                onClick={() => onReserve(meal.meal_period, selectedVendorId)}
+                onClick={() => onReserve(meal.meal_period, selectedVendorId, mealType)}
                 disabled={!canReserve || reserving}
                 data-testid={`reserve-btn-${meal.meal_period}`}
                 className="mt-3 w-full bg-primary hover:bg-primary-hover text-white font-medium py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -146,12 +177,12 @@ const EmployeeReservations = () => {
 
   useEffect(() => { fetchAvailability(); }, []);
 
-  const handleReserve = async (mealPeriod, vendorId) => {
+  const handleReserve = async (mealPeriod, vendorId, mealType) => {
     setReserving(true);
     setError(''); setMessage('');
     try {
-      await axios.post(`${API}/reservations`, { vendor_id: vendorId, meal_period: mealPeriod }, { withCredentials: true });
-      setMessage(`✅ ${MEAL_META[mealPeriod].label} reserved for tomorrow`);
+      await axios.post(`${API}/reservations`, { vendor_id: vendorId, meal_period: mealPeriod, meal_type: mealType }, { withCredentials: true });
+      setMessage(`✅ ${MEAL_TYPE_LABELS[mealType]?.label || ''} ${MEAL_META[mealPeriod].label} reserved for tomorrow`);
       setTimeout(() => setMessage(''), 4000);
       fetchAvailability();
     } catch (e) {

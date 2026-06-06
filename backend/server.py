@@ -365,6 +365,42 @@ async def startup_event():
 
     asyncio.create_task(_daily_digest_scheduler())
 
+    # Monthly Billing scheduler (PDF Module 15) — runs on the 1st of each month at 06:00 IST.
+    async def _monthly_billing_scheduler():
+        from routers.reservations import IST
+        await asyncio.sleep(120)  # let the server settle
+        while True:
+            try:
+                now_ist = datetime.now(IST)
+                # Compute the next run: 1st of next month at 06:00 IST
+                if now_ist.month == 12:
+                    next_year, next_month = now_ist.year + 1, 1
+                else:
+                    next_year, next_month = now_ist.year, now_ist.month + 1
+                target = now_ist.replace(year=next_year, month=next_month, day=1, hour=6, minute=0, second=0, microsecond=0)
+                sleep_seconds = max(60, (target - now_ist).total_seconds())
+                logger.info(f"Billing: next run at {target.isoformat()} (in {int(sleep_seconds)}s)")
+                await asyncio.sleep(sleep_seconds)
+                # Bill the just-ended (previous) month
+                bill_now = datetime.now(IST)
+                if bill_now.month == 1:
+                    bill_year, bill_month = bill_now.year - 1, 12
+                else:
+                    bill_year, bill_month = bill_now.year, bill_now.month - 1
+                logger.info(f"Billing: running for {bill_year}-{bill_month:02d}")
+                try:
+                    result = await run_billing_for_period(db, safe_objectid, bill_year, bill_month, triggered_by="cron")
+                    logger.info(f"Billing cron OK: {result}")
+                except Exception as e:
+                    logger.error(f"Billing cron error: {e}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Monthly billing scheduler error: {e}")
+                await asyncio.sleep(3600)
+
+    asyncio.create_task(_monthly_billing_scheduler())
+
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -2766,6 +2802,9 @@ from routers.ai_menu_photos import make_router as make_ai_menu_photos_router  # 
 from routers.notifications_prefs import make_router as make_notifications_prefs_router  # noqa: E402
 from routers.broadcasts import make_router as make_broadcasts_router  # noqa: E402
 from routers.allowed_domains import make_router as make_allowed_domains_router  # noqa: E402
+from routers.exports import make_router as make_exports_router  # noqa: E402
+from routers.corporate_clients import make_router as make_corporate_clients_router  # noqa: E402
+from routers.billing import make_router as make_billing_router, run_billing_for_period  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2783,6 +2822,9 @@ app.include_router(make_ai_menu_photos_router(db, safe_objectid, get_current_use
 app.include_router(make_notifications_prefs_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_broadcasts_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_allowed_domains_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_exports_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_corporate_clients_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_billing_router(db, safe_objectid, get_current_user), prefix="/api")
 
 
 app.add_middleware(

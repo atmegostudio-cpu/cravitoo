@@ -76,10 +76,13 @@ def verify_otp(code: str, code_hash: str) -> bool:
 
 # ─── Email sender (via Resend) ───
 
-def send_email(to: str, subject: str, html: str, text: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+def send_email(to: str, subject: str, html: str, text: Optional[str] = None, attachments: Optional[list] = None) -> Tuple[bool, Optional[str]]:
     """Send a transactional email via Resend.
 
     Returns (success, error_message). Never raises.
+
+    `attachments` (optional): list of {filename, content, content_type?} where content is bytes
+    or base64-encoded string. Per Resend SDK each item is forwarded as-is after b64 encoding bytes.
     """
     try:
         _ensure_resend_configured()
@@ -91,6 +94,18 @@ def send_email(to: str, subject: str, html: str, text: Optional[str] = None) -> 
         }
         if text:
             params["text"] = text
+        if attachments:
+            import base64
+            params["attachments"] = []
+            for att in attachments:
+                content = att.get("content")
+                if isinstance(content, bytes):
+                    content = base64.b64encode(content).decode("ascii")
+                params["attachments"].append({
+                    "filename": att["filename"],
+                    "content": content,
+                    **({"content_type": att["content_type"]} if att.get("content_type") else {}),
+                })
         result = resend.Emails.send(params)
         if isinstance(result, dict) and result.get("id"):
             return True, None

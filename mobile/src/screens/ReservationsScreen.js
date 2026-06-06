@@ -12,6 +12,14 @@ const MEAL_META = {
   dinner:    { icon: 'moon-outline', label: 'Dinner', emoji: '🌙' },
 };
 
+const MEAL_TYPE_LABELS = {
+  veg_meal: { label: 'Veg Meal', emoji: '🟢' },
+  non_veg_meal: { label: 'Non-Veg Meal', emoji: '🔴' },
+  veg_salad: { label: 'Veg Salad', emoji: '🥗' },
+  non_veg_salad: { label: 'Non-Veg Salad', emoji: '🥗' },
+};
+const MEAL_TYPE_ORDER = ['veg_meal', 'non_veg_meal', 'veg_salad', 'non_veg_salad'];
+
 function Countdown({ to }) {
   const [text, setText] = useState('');
   useEffect(() => {
@@ -35,6 +43,7 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
   const isDisabled = !meal.enabled;
   const cutoffPassed = meal.cutoff_passed;
   const [vendorId, setVendorId] = useState(meal.eligible_vendors?.[0]?.id || '');
+  const [mealType, setMealType] = useState('veg_meal');
   const [showVendorPicker, setShowVendorPicker] = useState(false);
 
   const handleReserve = () => {
@@ -42,7 +51,7 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
       Alert.alert('No vendor available', 'No vendors are mapped to your site for this meal yet.');
       return;
     }
-    onReserve(meal.meal_period, vendorId);
+    onReserve(meal.meal_period, vendorId, mealType);
   };
 
   const handleCancel = () => {
@@ -137,6 +146,26 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
                 </View>
               )}
 
+              <Text style={styles.label}>Meal type</Text>
+              <View style={styles.mealTypeRow}>
+                {MEAL_TYPE_ORDER.map(mt => {
+                  const isActive = mealType === mt;
+                  return (
+                    <TouchableOpacity
+                      key={mt}
+                      style={[styles.mealTypeChip, isActive && styles.mealTypeChipActive]}
+                      onPress={() => canReserve && setMealType(mt)}
+                      disabled={!canReserve}
+                      testID={`meal-type-${meal.meal_period}-${mt}`}
+                    >
+                      <Text style={[styles.mealTypeText, isActive && styles.mealTypeTextActive]}>
+                        {MEAL_TYPE_LABELS[mt].emoji} {MEAL_TYPE_LABELS[mt].label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
               <TouchableOpacity
                 style={[styles.reserveBtn, !canReserve && styles.reserveBtnDisabled]}
                 onPress={handleReserve}
@@ -176,11 +205,11 @@ export default function ReservationsScreen() {
 
   useEffect(() => { fetchAvailability(); }, [fetchAvailability]);
 
-  const handleReserve = async (mealPeriod, vendorId) => {
+  const handleReserve = async (mealPeriod, vendorId, mealType) => {
     setBusy(true);
     try {
-      await client.post('/reservations', { vendor_id: vendorId, meal_period: mealPeriod });
-      Alert.alert('✅ Reserved', `${MEAL_META[mealPeriod].label} confirmed for tomorrow`);
+      await client.post('/reservations', { vendor_id: vendorId, meal_period: mealPeriod, meal_type: mealType });
+      Alert.alert('✅ Reserved', `${MEAL_TYPE_LABELS[mealType]?.label || ''} ${MEAL_META[mealPeriod].label} confirmed for tomorrow`);
       fetchAvailability();
     } catch (e) {
       Alert.alert('Reservation failed', e?.response?.data?.detail || e.message);
@@ -277,6 +306,11 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: colors.error, fontSize: 13, textAlign: 'center', fontWeight: '500' },
 
   label: { fontSize: 11, color: colors.textMuted, marginBottom: 6, marginTop: 4 },
+  mealTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  mealTypeChip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.background },
+  mealTypeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  mealTypeText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  mealTypeTextActive: { color: '#fff', fontWeight: '600' },
   vendorPicker: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.background, borderWidth: 1, borderColor: colors.borderLight, borderRadius: borderRadius.sm, paddingVertical: 10, paddingHorizontal: 12 },
   vendorPickerDisabled: { opacity: 0.5 },
   vendorPickerText: { fontSize: 14, color: colors.textPrimary },

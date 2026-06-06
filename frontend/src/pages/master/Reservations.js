@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import ExportButtons from '../../components/ExportButtons';
 import { Calendar, Users, Sunrise, Sun, Coffee, Moon, Settings, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -105,13 +106,21 @@ const AdminReservations = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
-              Meal Reservations
-            </h1>
-            <p className="text-text-secondary mt-2 flex items-center gap-2">
-              <Calendar className="h-4 w-4" /> Tomorrow • {summary?.date}
-            </p>
+          <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+                Meal Reservations
+              </h1>
+              <p className="text-text-secondary mt-2 flex items-center gap-2">
+                <Calendar className="h-4 w-4" /> Tomorrow • {summary?.date}
+              </p>
+            </div>
+            <div className="bg-card border border-border-light rounded-2xl p-3 space-y-2">
+              <p className="text-xs text-text-muted">Reservations report (last 30 days)</p>
+              <ExportButtons endpoint="/exports/reservations" filename="cravitoo-reservations" testidPrefix="reservations" />
+              <p className="text-xs text-text-muted pt-2 border-t border-border-light">Meal summary by site × type</p>
+              <ExportButtons endpoint="/exports/meal-summary" filename="cravitoo-meal-summary" testidPrefix="meal-summary" />
+            </div>
           </div>
 
           {/* Aggregate counts */}

@@ -1,0 +1,40 @@
+{
+  "summary": "Cravitoo iter24 Steps 2-5 (PDF gap items #2,#3,#5,#6,#8) verified end-to-end. Backend: 40/40 pytest pass (29 existing in test_iter24_step2_to_5.py + 11 new in test_iter24_additional.py covering vendor-sales export, date-range filter, blob-field non-exposure, corp_admin invoice scoping, meal_type_label on success, bulk-window IST fields, corporate client PATCH). Frontend: all 5 UI surfaces verified — employee meal-type chips (4), Corp Admin Bulk Pre-Order page (window banner CLOSED visible at non-window time, 4 meal periods, 4 count inputs, 4 meal type labels, disabled 'Place 0 meals' button), Master Corporate Clients (Tech Corp 'Active' badge + Add/Edit/Delete), Master Billing (month picker defaults to 2026-05, Generate button, Tech Corp 2026-06 invoice ₹120.00 listed with 'Sent to contact@techcorp.com' email status and 3 action icon buttons), Master /admin/reservations Excel/CSV/PDF export buttons for Reservations + Meal Summary, Vendor sales-report Excel/CSV/PDF, Corp Dashboard Reservations+Orders exports.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Master Billing — invoice row actions", "issues": ["Excel/PDF/Resend buttons are icon-only with no visible text labels and no obvious tooltips/data-testid. Functionally present (3 icons shown in screenshot) but hard to identify without hover; consider adding aria-label/tooltip and data-testid attrs like 'invoice-download-xlsx', 'invoice-download-pdf', 'invoice-resend-email'."]},
+      {"screen": "Master /admin/reservations", "issues": ["React hydration warning: <span> cannot be child of <option> at /app/frontend/src/pages/master/Reservations.js line 182-183 (cutoff-select). Likely caused by the visual-editor instrumentation wrapping the option label in a <span>. Dev-only warning, but worth tightening the option content to a plain string."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_step2_to_5.py",
+    "/app/backend/tests/test_iter24_additional.py",
+    "/app/test_reports/pytest/pytest_iter24.xml",
+    "/app/test_reports/pytest/pytest_iter24_additional.xml"
+  ],
+  "action_items": [
+    "(Low) Add data-testid + aria-label to invoice row action buttons in Master Billing page",
+    "(Low) Resolve React hydration warning at master/Reservations.js line 182-183 (cutoff-select option content)",
+    "(Note) Cookie banner overlay appears on every page-load — consider auto-dismiss for authenticated sessions to keep tester scripts simple (does not block functionality)."
+  ],
+  "critical_code_review_comments": [
+    "Backend exports/billing properly strips Mongo _id and excludes blob fields (xlsx_blob/pdf_blob) from list responses — verified via new test_invoices_response_excludes_blobs test.",
+    "Corp admin invoice scoping is enforced server-side (verified via test_corp_admin_only_sees_own_company). No cross-tenant leakage observed.",
+    "Lifecycle transitions are strict — invalid jumps (draft→active, active→review) return 400 as designed.",
+    "Bulk endpoint correctly rejects employees AND master_admin with 403 (corp_admin only). Window enforcement returns 400 with detail containing '20:00' / 'window'.",
+    "Default per-site meal_prices fallback ({veg_meal:120, non_veg_meal:150, veg_salad:100, non_veg_salad:130}) confirmed working — Tech Corp 2026-06 invoice generated at ₹120 (1 veg_meal x ₹120). Per the review note, the absence of a site-level meal_prices editor UI is intentional and acceptable for this iteration."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_additional.py (NEW — 11 additional pytest tests covering coverage gaps)"
+  ],
+  "success_rate": {"backend": "100% (40/40)", "frontend": "100% (all UI surfaces verified)"},
+  "test_credentials": "admin@cravitoo.com/admin123 (master); demo@techcorp.com/demo123 (corp_admin, Tech Corp); employee@techcorp.com/employee123 (employee); vendor@spicekitchen.com/vendor123 (vendor)",
+  "seed_data_creation": "Tests transiently create corporate-client rows with names 'Test Client *' and 'PatchTest *' and delete them at end of class. One real employee reservation may be created during meal-type-label test if a free slot is available (will be skipped otherwise).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter24 (Steps 2-5) is complete and stable. Pytest regression suites: /app/backend/tests/test_iter24_step2_to_5.py (29) + /app/backend/tests/test_iter24_additional.py (11) = 40 tests. Frontend pages: /employee/reservations (4 meal-type chips), /admin/bulk-pre-order (corp_admin), /admin/dashboard (export buttons), /master/corporate-clients, /master/billing, /admin/reservations (master export buttons), /vendor/reservations (sales export). Note the Bulk Pre-Order window (20:00-20:45 IST) — test time-dependent; backend bulk-window endpoint returns {is_open, window_start_ist, window_end_ist, meal_types}. Default site meal_prices fallback values confirmed (₹120/₹150/₹100/₹130).",
+  "rca of the issue": "N/A — all features behaved per spec on first complete run; no functional bugs found. Only minor cosmetic items (icon-only buttons + dev-mode hydration warning) logged as low-priority action items."
+}

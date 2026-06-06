@@ -22,6 +22,7 @@ import VendorVerifyPickup from './pages/vendor/VerifyPickup';
 import VendorAIInsights from './pages/vendor/AIInsights';
 
 import CorporateAdminDashboard from './pages/admin/Dashboard';
+import CorporateBulkPreOrder from './pages/admin/BulkPreOrder';
 import CorporateAdminEmployees from './pages/admin/Employees';
 
 import SuperAdminDashboard from './pages/superadmin/Dashboard';
@@ -32,6 +33,8 @@ import MasterAdmins from './pages/master/Admins';
 import MasterVendors from './pages/master/Vendors';
 import MasterCities from './pages/master/Cities';
 import MasterAllowedDomains from './pages/master/AllowedDomains';
+import MasterCorporateClients from './pages/master/CorporateClients';
+import MasterBilling from './pages/master/Billing';
 import BulkOnboard from './pages/master/BulkOnboard';
 import SiteDetail from './pages/master/SiteDetail';
 
@@ -172,6 +175,11 @@ function AppRoutes() {
           <EventCatering />
         </ProtectedRoute>
       } />
+      <Route path="/admin/bulk-pre-order" element={
+        <ProtectedRoute allowedRoles={['corporate_admin']}>
+          <CorporateBulkPreOrder />
+        </ProtectedRoute>
+      } />
       
       {/* Super Admin Routes */}
       <Route path="/super-admin/dashboard" element={
@@ -224,6 +232,16 @@ function AppRoutes() {
       <Route path="/master/allowed-domains" element={
         <ProtectedRoute allowedRoles={['master_admin']}>
           <MasterAllowedDomains />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/corporate-clients" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterCorporateClients />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/billing" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterBilling />
         </ProtectedRoute>
       } />
 

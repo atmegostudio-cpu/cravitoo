@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase } from 'lucide-react';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
 
@@ -42,6 +42,7 @@ const Navbar = () => {
         return [
           { path: '/admin/dashboard', label: 'Dashboard', icon: BarChart3 },
           { path: '/admin/employees', label: 'Employees', icon: Users },
+          { path: '/admin/bulk-pre-order', label: 'Bulk Pre-Order', icon: ClipboardList },
           { path: '/admin/events', label: 'Events', icon: CalendarDays },
         ];
       case 'super_admin':
@@ -54,7 +55,9 @@ const Navbar = () => {
           { path: '/master/cities', label: 'Cities', icon: MapPin },
           { path: '/master/sites', label: 'Sites', icon: Building2 },
           { path: '/master/vendors', label: 'Vendors', icon: Store },
+          { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
           { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
+          { path: '/master/billing', label: 'Billing', icon: Receipt },
           { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
           { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
           { path: '/master/allowed-domains', label: 'Domains', icon: Mail },

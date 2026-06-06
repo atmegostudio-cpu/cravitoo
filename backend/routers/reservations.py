@@ -30,6 +30,18 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 MEAL_PERIODS = ["breakfast", "lunch", "snacks", "dinner"]
+MEAL_TYPES = ["veg_meal", "non_veg_meal", "veg_salad", "non_veg_salad"]
+MEAL_TYPE_LABELS = {
+    "veg_meal": "Veg Meal",
+    "non_veg_meal": "Non-Veg Meal",
+    "veg_salad": "Veg Salad",
+    "non_veg_salad": "Non-Veg Salad",
+}
+# PDF Module 7: Corporate Admin override window in IST.
+# Employee cutoff is 20:00; Corp Admin can keep ordering bulk up to 20:45.
+CORP_ADMIN_OVERRIDE_END_HOUR = 20
+CORP_ADMIN_OVERRIDE_END_MINUTE = 45
+
 DEFAULT_RESERVATION_SETTINGS: Dict[str, Any] = {
     "breakfast": {"enabled": True, "cutoff_hour": 20, "cutoff_minute": 0},
     "lunch":     {"enabled": True, "cutoff_hour": 20, "cutoff_minute": 0},
@@ -44,7 +56,22 @@ IST = timezone(timedelta(hours=5, minutes=30))
 class ReservationCreate(BaseModel):
     vendor_id: str
     meal_period: str
+    meal_type: str  # one of MEAL_TYPES
     delivery_date: Optional[str] = None
+
+
+class BulkReservationCreate(BaseModel):
+    """PDF Module 7: Corporate Admin places bulk anonymous pre-orders.
+
+    Window: 20:00–20:45 IST (after employees' 20:00 cutoff).
+    Counts are anonymous bulk slots; vendor sees them as 'Corporate' walk-ins.
+    """
+    site_id: str
+    vendor_id: str
+    meal_period: str
+    counts: Dict[str, int]  # {meal_type: int}; missing types treated as 0
+    delivery_date: Optional[str] = None
+    note: Optional[str] = None
 
 
 class ReservationSettingsUpdate(BaseModel):
@@ -169,7 +196,12 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                 "eligible_vendors": vendors_list,
             })
 
-        return {"date": _ist_date_of(delivery_date).isoformat(), "site_id": site_id, "meals": out}
+        return {
+            "date": _ist_date_of(delivery_date).isoformat(),
+            "site_id": site_id,
+            "meals": out,
+            "meal_types": [{"key": k, "label": v} for k, v in MEAL_TYPE_LABELS.items()],
+        }
 
     @r.post("/reservations")
     async def create_reservation(data: ReservationCreate, user: dict = Depends(get_current_user)):
@@ -177,6 +209,11 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             raise HTTPException(status_code=403, detail="Only employees can reserve meals")
         if data.meal_period not in MEAL_PERIODS:
             raise HTTPException(status_code=400, detail=f"meal_period must be one of {MEAL_PERIODS}")
+        if data.meal_type not in MEAL_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"meal_type must be one of {MEAL_TYPES}",
+            )
 
         site_id = user.get("site_id")
         if not site_id:
@@ -227,10 +264,12 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             "vendor_name": vendor_name,
             "site_id": site_id,
             "meal_period": data.meal_period,
+            "meal_type": data.meal_type,
             "delivery_date": delivery_date,
             "cutoff_at": cutoff_at,
             "status": "reserved",
             "pickup_qr": pickup_token,
+            "source": "employee",
             "created_at": now_utc,
         }
         result = await db.reservations.insert_one(doc)
@@ -250,12 +289,151 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         return {
             "id": reservation_id,
             "meal_period": data.meal_period,
+            "meal_type": data.meal_type,
+            "meal_type_label": MEAL_TYPE_LABELS.get(data.meal_type, data.meal_type),
             "delivery_date": _ist_date_of(delivery_date).isoformat(),
             "vendor_id": data.vendor_id,
             "vendor_name": vendor_name,
             "cutoff_at": cutoff_at.isoformat(),
             "status": "reserved",
             "pickup_qr": pickup_token,
+        }
+
+    @r.post("/reservations/bulk")
+    async def create_bulk_reservation(data: BulkReservationCreate, user: dict = Depends(get_current_user)):
+        """PDF Module 7 — Corporate Admin bulk anonymous pre-order.
+
+        Allowed window in IST: 20:00 - 20:45 (5 mins of grace after the bulk override end).
+        Body: counts = { "veg_meal": 5, "non_veg_meal": 10, ... } -> creates N anonymous reservations.
+        """
+        if user["role"] != "corporate_admin":
+            raise HTTPException(status_code=403, detail="Only Corporate Admins can place bulk pre-orders")
+        if data.meal_period not in MEAL_PERIODS:
+            raise HTTPException(status_code=400, detail=f"meal_period must be one of {MEAL_PERIODS}")
+        # Validate counts
+        sanitized_counts: Dict[str, int] = {}
+        for mt, cnt in (data.counts or {}).items():
+            if mt not in MEAL_TYPES:
+                raise HTTPException(status_code=400, detail=f"Unknown meal_type '{mt}'. Allowed: {MEAL_TYPES}")
+            if not isinstance(cnt, int) or cnt < 0:
+                raise HTTPException(status_code=400, detail=f"Count for '{mt}' must be a non-negative integer")
+            if cnt > 0:
+                sanitized_counts[mt] = cnt
+        if not sanitized_counts:
+            raise HTTPException(status_code=400, detail="No counts provided — pass at least one meal_type with count > 0")
+        total = sum(sanitized_counts.values())
+        if total > 500:
+            raise HTTPException(status_code=400, detail="Bulk pre-order capped at 500 meals per request")
+
+        # Site permissioning — corp_admin must be linked to the site (or be the company's admin)
+        site_id = data.site_id
+        site_doc = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")})
+        if not site_doc:
+            raise HTTPException(status_code=404, detail="Site not found")
+        if user.get("site_id") and user["site_id"] != site_id and user.get("company_id") != site_doc.get("company_id"):
+            raise HTTPException(status_code=403, detail="You can only bulk-order for sites linked to your company")
+
+        # IST window check: 20:00 <= now_ist <= 20:45 on the day before delivery_date
+        delivery_date = _parse_delivery_date(data.delivery_date)
+        tomorrow = _parse_delivery_date(None)
+        if delivery_date != tomorrow:
+            raise HTTPException(status_code=400, detail="Bulk pre-orders are only accepted for the next day")
+        now_ist = _now_ist()
+        # Bulk endpoint is only usable during the override window
+        window_start = now_ist.replace(hour=20, minute=0, second=0, microsecond=0)
+        window_end = now_ist.replace(hour=CORP_ADMIN_OVERRIDE_END_HOUR, minute=CORP_ADMIN_OVERRIDE_END_MINUTE, second=0, microsecond=0)
+        if not (window_start <= now_ist <= window_end):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bulk pre-orders are only accepted between 20:00 and 20:45 IST. Now: {now_ist.strftime('%H:%M IST')}",
+            )
+
+        # Vendor must be mapped to site
+        mapping = await db.vendor_site_mappings.find_one({"site_id": site_id, "vendor_id": data.vendor_id})
+        if not mapping:
+            raise HTTPException(status_code=400, detail="Selected vendor is not available at this site")
+        vendor_doc = await db.vendors.find_one({"_id": safe_objectid(data.vendor_id, "Vendor")})
+        vendor_name = (vendor_doc or {}).get("name", "Vendor")
+
+        # Cutoff_at for the meal — corp_admin override (20:45 IST instead of 20:00)
+        cutoff_at = now_ist.replace(
+            hour=CORP_ADMIN_OVERRIDE_END_HOUR,
+            minute=CORP_ADMIN_OVERRIDE_END_MINUTE,
+            second=0, microsecond=0,
+        ).astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+
+        # Insert N anonymous reservations per meal_type
+        docs_to_insert = []
+        for mt, count in sanitized_counts.items():
+            for _ in range(count):
+                docs_to_insert.append({
+                    "employee_id": None,
+                    "employee_email": None,
+                    "employee_name": "Corporate Bulk",
+                    "vendor_id": data.vendor_id,
+                    "vendor_name": vendor_name,
+                    "site_id": site_id,
+                    "meal_period": data.meal_period,
+                    "meal_type": mt,
+                    "delivery_date": delivery_date,
+                    "cutoff_at": cutoff_at,
+                    "status": "reserved",
+                    "pickup_qr": f"CRAVITOO-BULK-{secrets.token_hex(6)}",
+                    "source": "corporate_bulk",
+                    "company_id": site_doc.get("company_id"),
+                    "placed_by": user["id"],
+                    "placed_by_name": user.get("name"),
+                    "bulk_note": (data.note or "").strip(),
+                    "created_at": now_utc,
+                })
+        if docs_to_insert:
+            await db.reservations.insert_many(docs_to_insert)
+
+        # Notify vendor
+        try:
+            from bson import ObjectId  # type: ignore
+            v_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(20)
+            for vu in v_users:
+                await create_notification(
+                    user_id=str(vu.get("_id") or vu.get("id")),
+                    title=f"🍽 Bulk pre-order: +{total} {data.meal_period}",
+                    message=(
+                        f"Corporate Admin {user.get('name', 'someone')} just added "
+                        + ", ".join(f"{c} {MEAL_TYPE_LABELS[mt]}" for mt, c in sanitized_counts.items())
+                        + f" for {_ist_date_of(delivery_date).isoformat()}."
+                    ),
+                    notif_type="bulk_pre_order",
+                    push_data={"screen": "VendorReservations", "site_id": site_id},
+                )
+        except Exception as e:
+            logger.warning(f"Bulk pre-order vendor notify failed: {e}")
+
+        return {
+            "ok": True,
+            "total_reservations_created": total,
+            "by_type": sanitized_counts,
+            "meal_period": data.meal_period,
+            "delivery_date": _ist_date_of(delivery_date).isoformat(),
+            "vendor_name": vendor_name,
+            "cutoff_at": cutoff_at.isoformat(),
+        }
+
+    @r.get("/reservations/bulk-window")
+    async def get_bulk_window_status(user: dict = Depends(get_current_user)):
+        """Corp Admin UI uses this to know whether the bulk override window is currently open."""
+        if user["role"] != "corporate_admin":
+            raise HTTPException(status_code=403, detail="Only Corporate Admins can use this")
+        now_ist = _now_ist()
+        window_start = now_ist.replace(hour=20, minute=0, second=0, microsecond=0)
+        window_end = now_ist.replace(hour=CORP_ADMIN_OVERRIDE_END_HOUR, minute=CORP_ADMIN_OVERRIDE_END_MINUTE, second=0, microsecond=0)
+        is_open = window_start <= now_ist <= window_end
+        return {
+            "is_open": is_open,
+            "now_ist": now_ist.isoformat(),
+            "window_start_ist": window_start.isoformat(),
+            "window_end_ist": window_end.isoformat(),
+            "meal_types": [{"key": k, "label": v} for k, v in MEAL_TYPE_LABELS.items()],
         }
 
     @r.get("/reservations/my")
@@ -272,6 +450,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         out = []
         for d in docs:
             d["id"] = str(d.pop("_id"))
+            d["meal_type_label"] = MEAL_TYPE_LABELS.get(d.get("meal_type") or "", "")
             for k in ("delivery_date", "cutoff_at", "created_at", "consumed_at", "cancelled_at"):
                 if isinstance(d.get(k), datetime):
                     d[k] = d[k].isoformat()
@@ -328,28 +507,43 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         if not vendor_id:
             raise HTTPException(status_code=400, detail="No vendor record linked to this account")
         delivery_date = _parse_delivery_date(date)
-        pipeline = [
+        # Per-meal-period totals (reserved / consumed)
+        pipeline_period = [
             {"$match": {"vendor_id": vendor_id, "delivery_date": delivery_date, "status": {"$in": ["reserved", "consumed"]}}},
             {"$group": {"_id": "$meal_period", "count": {"$sum": 1}, "consumed": {"$sum": {"$cond": [{"$eq": ["$status", "consumed"]}, 1, 0]}}}},
         ]
         counts: Dict[str, Dict[str, int]] = {m: {"reserved": 0, "consumed": 0} for m in MEAL_PERIODS}
-        async for row in db.reservations.aggregate(pipeline):
+        async for row in db.reservations.aggregate(pipeline_period):
             meal = row["_id"]
             if meal in counts:
                 counts[meal]["reserved"] = row["count"]
                 counts[meal]["consumed"] = row["consumed"]
+        # Per-meal-type x meal-period breakdown for prep planning (PDF Module 7)
+        pipeline_type = [
+            {"$match": {"vendor_id": vendor_id, "delivery_date": delivery_date, "status": "reserved"}},
+            {"$group": {"_id": {"period": "$meal_period", "type": "$meal_type"}, "count": {"$sum": 1}}},
+        ]
+        by_meal_type: Dict[str, Dict[str, int]] = {m: {mt: 0 for mt in MEAL_TYPES} for m in MEAL_PERIODS}
+        async for row in db.reservations.aggregate(pipeline_type):
+            period = (row["_id"] or {}).get("period")
+            mt = (row["_id"] or {}).get("type") or "non_veg_meal"  # legacy reservations default
+            if period in by_meal_type and mt in by_meal_type[period]:
+                by_meal_type[period][mt] = row["count"]
         reservations_list = await db.reservations.find(
             {"vendor_id": vendor_id, "delivery_date": delivery_date, "status": "reserved"},
-            {"employee_name": 1, "employee_email": 1, "meal_period": 1, "pickup_qr": 1, "created_at": 1},
+            {"employee_name": 1, "employee_email": 1, "meal_period": 1, "meal_type": 1, "pickup_qr": 1, "source": 1, "created_at": 1},
         ).to_list(1000)
         for rec in reservations_list:
             rec["id"] = str(rec.pop("_id"))
             if isinstance(rec.get("created_at"), datetime):
                 rec["created_at"] = rec["created_at"].isoformat()
+            rec["meal_type_label"] = MEAL_TYPE_LABELS.get(rec.get("meal_type") or "", "")
         return {
             "date": _ist_date_of(delivery_date).isoformat(),
             "vendor_id": vendor_id,
             "counts": counts,
+            "by_meal_type": by_meal_type,
+            "meal_type_labels": MEAL_TYPE_LABELS,
             "total": sum(c["reserved"] for c in counts.values()),
             "reservations": reservations_list,
         }
