@@ -10,10 +10,12 @@ User uploaded the Cravitoo Master Prompt PDF. Compared against existing app, ide
 | Step | Items | Status |
 |------|-------|--------|
 | **1** | #1 Corporate domain restriction + #4 Email triggers (vendor/menu/site activation) + #7 Site lifecycle | ✅ **DONE (iter23, Feb 2026)** |
-| 2 | #2 Fixed pre-order meal types + #3 Corporate Admin 8:00–8:45 PM bulk override | ⏳ Next |
-| 3 | #5 Excel/CSV/PDF export buttons across all reports | ⏳ |
-| 4 | #6 Corporate Client lifecycle (Draft → Review → Approved → Active) | ⏳ |
-| 5 | #8 Monthly Billing Engine (Excel + PDF + auto-email) | ⏳ |
+| **2** | #2 Fixed pre-order meal types + #3 Corporate Admin 8:00–8:45 PM bulk override | ✅ **DONE (iter24, Feb 2026)** |
+| **3** | #5 Excel/CSV/PDF export buttons across all reports | ✅ **DONE (iter24, Feb 2026)** |
+| **4** | #6 Corporate Client lifecycle (Draft → Review → Approved → Active) | ✅ **DONE (iter24, Feb 2026)** |
+| **5** | #8 Monthly Billing Engine (Excel + PDF + auto-email) | ✅ **DONE (iter24, Feb 2026)** |
+
+**All 8 PDF gaps now closed.** 49+ hours of work completed in 2 iterations with 62 pytest tests passing (22 iter23 + 40 iter24).
 
 ## Architecture (Iteration 23)
 
@@ -32,6 +34,39 @@ User uploaded the Cravitoo Master Prompt PDF. Compared against existing app, ide
 - Fonts: Outfit (headings), Work Sans (body)
 
 ## Implementation Progress
+
+### Iteration 24: PDF Gap Steps 2–5 — Meal Types, Bulk Pre-Order, Exports, Client Lifecycle, Billing (Feb 2026) ✅
+
+**Step 2 — Fixed Meal Types & Corp Admin Bulk Override:**
+- `meal_type` enum on reservations: `veg_meal | non_veg_meal | veg_salad | non_veg_salad`
+- `POST /api/reservations` requires `meal_type`; `GET /api/reservations/availability` exposes the 4 fixed options
+- New `POST /api/reservations/bulk` (corp_admin only) accepts `{site_id, vendor_id, meal_period, counts: {meal_type: int}, note?}` — only between 20:00–20:45 IST
+- `GET /api/reservations/bulk-window` returns `{is_open, window_start_ist, window_end_ist, meal_types}` for the corp admin UI to show countdown
+- Vendor counts now include `by_meal_type` breakdown for prep planning
+- Web: Employee Reservations page has 4 meal-type chips; new `/admin/bulk-pre-order` page for corp admin; Vendor Reservations shows meal-type column + bulk-source badge
+- Mobile: ReservationsScreen has 4 meal-type chips
+
+**Step 3 — Excel / CSV / PDF Exports:**
+- New `/api/exports/{reservations|orders|vendor-sales|meal-summary}?format=xlsx|csv|pdf` (4 endpoints × 3 formats = 12 export combos)
+- openpyxl + reportlab installed
+- Reusable `<ExportButtons>` component (`/app/frontend/src/components/ExportButtons.js`) wired into master/Reservations, vendor/Reservations, and admin/Dashboard pages
+- Corp Admin auto-scoped to their company; vendor scoped to their vendor_id
+
+**Step 4 — Corporate Client Lifecycle:**
+- `companies` extended with `lifecycle_status` (draft → review → approved → active), `billing_contact_name/email`, `notes`, `lifecycle_history`
+- New router `/api/master/corporate-clients` (CRUD + lifecycle endpoint)
+- Welcome email fires on `approved` transition via existing `render_welcome_email`
+- Web: `/master/corporate-clients` page with stage badges, advance buttons, edit/delete
+
+**Step 5 — Monthly Billing Engine:**
+- New `/api/billing/run` (manual master trigger), `/billing/invoices` (list), `/billing/invoices/{id}/download?format=xlsx|pdf`, `/billing/invoices/{id}/resend`
+- APScheduler-style background task fires monthly on **1st of next month at 06:00 IST**
+- Per-site `meal_prices` config (defaults to ₹120/₹150/₹100/₹130) × reservation counts → Excel (line-level) + PDF (summary) generated and stored as blobs
+- `email_service.send_email()` now supports Resend attachments
+- Web: `/master/billing` page with month picker, generate button, invoice table with download/resend
+- Corp Admin sees only own company's invoices
+
+**Tests:** 40 new pytest tests (`test_iter24_step2_to_5.py` + `test_iter24_additional.py`). All pass + testing agent 100% verification.
 
 ### Iteration 23: PDF Gap Step 1 — Domain Restrict + Email Triggers + Site Lifecycle (Feb 2026) ✅
 
@@ -137,25 +172,21 @@ User uploaded the Cravitoo Master Prompt PDF. Compared against existing app, ide
 | Vendor | vendor@spicekitchen.com | vendor123 |
 | Employee | employee@techcorp.com | employee123 |
 
-## Prioritized Backlog (Remaining PDF Gap Items)
+## Prioritized Backlog (Remaining Items)
 
-### Step 2 — P1 Pre-order parity
-- [ ] **#2 Fixed pre-order meal types** — replace free-form vendor menu picker with 4 fixed options (Veg Meal / Non-Veg Meal / Veg Salad / Non-Veg Salad)
-- [ ] **#3 Corporate Admin override** 20:00–20:45 IST bulk pre-order window + bulk-order UI
+### All PDF Gap Items Closed ✅
+8/8 items from the Master Prompt PDF are now implemented.
 
-### Step 3 — P2 Exports
-- [ ] **#5 Excel / CSV / PDF export** buttons on all admin/master/vendor report dashboards
+### Optional Future Enhancements
+- [ ] **Per-site Meal Prices UI** — Master Admin UI to edit `sites.meal_prices` (currently uses defaults: ₹120/₹150/₹100/₹130). Lower priority; can be edited directly in Mongo for now.
+- [ ] **Subsidy mode toggle UI** — currently all sites assumed company-pay; add per-site `subsidy_mode: employee_pay | company_pay` toggle if employee-pay sites need to bypass billing
+- [ ] **Bulk-window auto-extend** — Corp Admin requested rolling 5-min override beyond 20:45 for VIP escalation (low-priority)
 
-### Step 4 — P2 Corporate Client lifecycle
-- [ ] **#6 Corporate Client** entity with Draft → Review → Approved → Active flow + auto Welcome Email
-
-### Step 5 — P3 Billing
-- [ ] **#8 Monthly Billing Engine** — APScheduler cron + per-corporate-client Excel + PDF invoice + auto email
-
-### Other
+### Production / Ops
 - [ ] Set `RAZORPAY_WEBHOOK_SECRET` in production env (user action)
 - [ ] iOS App Store TestFlight submission
-- [ ] FCM/APNs setup (already wired via Expo Push)
+- [ ] Server.py final extraction phase (orders + vendor logic still inline)
+- [ ] Move invoice blobs to S3/GCS (currently stored in Mongo `invoices.{xlsx_blob,pdf_blob}` — fine for low volume, but blob storage scales better)
 
 ## Known Limitations
 - WebSocket in-memory store (auto-reconnect in 5s)

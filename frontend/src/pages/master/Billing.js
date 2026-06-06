@@ -164,9 +164,9 @@ const Billing = () => {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
-                          <button data-testid={`invoice-xlsx-${inv.id}`} onClick={() => download(inv, 'xlsx')} title="Excel" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><FileSpreadsheet className="h-4 w-4" /></button>
-                          <button data-testid={`invoice-pdf-${inv.id}`} onClick={() => download(inv, 'pdf')} title="PDF" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><FileText className="h-4 w-4" /></button>
-                          <button data-testid={`invoice-resend-${inv.id}`} onClick={() => resend(inv)} title="Resend email" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><RotateCcw className="h-4 w-4" /></button>
+                          <button data-testid={`invoice-download-xlsx-${inv.id}`} aria-label={`Download ${inv.client_name} ${inv.period} Excel`} onClick={() => download(inv, 'xlsx')} title="Download Excel" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><FileSpreadsheet className="h-4 w-4" /></button>
+                          <button data-testid={`invoice-download-pdf-${inv.id}`} aria-label={`Download ${inv.client_name} ${inv.period} PDF`} onClick={() => download(inv, 'pdf')} title="Download PDF" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><FileText className="h-4 w-4" /></button>
+                          <button data-testid={`invoice-resend-email-${inv.id}`} aria-label={`Resend ${inv.client_name} ${inv.period} email`} onClick={() => resend(inv)} title="Resend email" className="p-1.5 rounded-lg hover:bg-background text-text-secondary hover:text-primary"><RotateCcw className="h-4 w-4" /></button>
                         </div>
                       </td>
                     </tr>
