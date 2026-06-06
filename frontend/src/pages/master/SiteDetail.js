@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
+import { useAuth } from '../../context/AuthContext';
 import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -10,6 +11,7 @@ const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
 
 const SiteDetail = () => {
   const { siteId } = useParams();
+  const { user: currentUser } = useAuth();
   const [site, setSite] = useState(null);
   const [tab, setTab] = useState('vendors');
   const [loading, setLoading] = useState(true);
@@ -66,7 +68,18 @@ const SiteDetail = () => {
               <Building2 className="h-8 w-8 text-primary" />
             </div>
             <div className="flex-1">
-              <h1 className="font-heading text-3xl sm:text-4xl tracking-tighter font-semibold text-text-primary">{site.name}</h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="font-heading text-3xl sm:text-4xl tracking-tighter font-semibold text-text-primary">{site.name}</h1>
+                {site.lifecycle_status && (() => {
+                  const s = site.lifecycle_status;
+                  const sty = LIFECYCLE_INFO[s] || LIFECYCLE_INFO.live;
+                  return (
+                    <span data-testid={`header-lifecycle-${s}`} className={`inline-block px-2.5 py-1 text-xs font-medium rounded-full border ${sty.bg} ${sty.text} ${sty.border}`}>
+                      {sty.label}
+                    </span>
+                  );
+                })()}
+              </div>
               <p className="text-text-secondary mt-1">{site.address}, {site.city}</p>
             </div>
           </div>
@@ -91,7 +104,12 @@ const SiteDetail = () => {
           {tab === 'vendors' && <VendorsTab siteId={siteId} />}
           {tab === 'menu' && <MenuTab siteId={siteId} />}
           {tab === 'schedule' && <ScheduleTab siteId={siteId} />}
-          {tab === 'settings' && <SettingsTab site={site} reload={reload} />}
+          {tab === 'settings' && (
+            <>
+              <SiteLifecyclePanel site={site} reload={reload} currentUser={currentUser} />
+              <SettingsTab site={site} reload={reload} />
+            </>
+          )}
         </div>
       </div>
     </>
@@ -654,6 +672,123 @@ const ScheduleTab = ({ siteId }) => {
       <button data-testid="save-schedule-btn" onClick={save} disabled={saving} className="mt-6 px-5 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">
         {saving ? 'Saving...' : 'Save Schedule'}
       </button>
+    </div>
+  );
+};
+
+const LIFECYCLE_INFO = {
+  draft: { label: 'Draft', bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', desc: 'Site is being set up. Employees cannot register yet.', next: 'configured', nextLabel: 'Mark as Configured' },
+  configured: { label: 'Configured', bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200', desc: 'Site is fully set up. Activate it to open sign-ups.', next: 'live', nextLabel: 'Activate (Go Live)' },
+  live: { label: 'Live', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', desc: 'Employees can register and start ordering.', next: null, nextLabel: null },
+};
+
+const SiteLifecyclePanel = ({ site, reload, currentUser }) => {
+  const status = site.lifecycle_status || 'live';
+  const info = LIFECYCLE_INFO[status] || LIFECYCLE_INFO.live;
+  const [busy, setBusy] = useState(false);
+  const [pocName, setPocName] = useState('');
+  const [showPocForm, setShowPocForm] = useState(false);
+
+  const isMaster = currentUser?.role === 'master_admin';
+
+  const transition = async (target, name = '') => {
+    setBusy(true);
+    try {
+      const body = { to: target };
+      if (name) body.poc_name = name;
+      const { data } = await axios.post(`${API}/sites/${site.id}/lifecycle`, body, { withCredentials: true });
+      if (target === 'live' && data?.site_activated_email_sent) {
+        alert(`Site is now Live. Activation email sent to ${site.contact_email}.`);
+      } else if (target === 'live') {
+        alert(`Site is now Live. (Note: activation email could not be sent — check contact_email.)`);
+      } else {
+        alert(`Site moved to '${target}'`);
+      }
+      setShowPocForm(false);
+      setPocName('');
+      await reload();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to change lifecycle');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 max-w-xl mb-6" data-testid="site-lifecycle-panel">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-text-muted mb-2">Site Lifecycle</p>
+          <div className="flex items-center gap-3">
+            <span data-testid={`current-lifecycle-${status}`} className={`inline-block px-3 py-1 text-sm font-medium rounded-full border ${info.bg} ${info.text} ${info.border}`}>
+              {info.label}
+            </span>
+          </div>
+          <p className="text-sm text-text-secondary mt-3 max-w-md">{info.desc}</p>
+        </div>
+        {isMaster && info.next && !showPocForm && (
+          <button
+            data-testid={`advance-lifecycle-${info.next}-btn`}
+            onClick={() => {
+              if (info.next === 'live') {
+                setShowPocForm(true);
+              } else {
+                transition(info.next);
+              }
+            }}
+            disabled={busy}
+            className="px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50 text-sm"
+          >
+            {info.nextLabel}
+          </button>
+        )}
+        {isMaster && status === 'live' && (
+          <button
+            data-testid="rollback-lifecycle-btn"
+            onClick={() => transition('configured')}
+            disabled={busy}
+            className="px-3 py-1.5 text-xs border border-border-light rounded-lg text-text-secondary hover:bg-background disabled:opacity-50"
+          >
+            ← Back to Configured
+          </button>
+        )}
+      </div>
+      {isMaster && showPocForm && (
+        <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <p className="text-sm font-medium text-emerald-900 mb-2">Activate this site</p>
+          <p className="text-xs text-emerald-800 mb-3">
+            A &quot;Site Activated&quot; email will be sent to <strong>{site.contact_email || '(no contact email)'}</strong>.
+            Employees from allowed domains can register starting now.
+          </p>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="text-xs text-emerald-900 block mb-1">POC name for greeting (optional)</label>
+              <input
+                data-testid="poc-name-input"
+                value={pocName}
+                onChange={(e) => setPocName(e.target.value)}
+                placeholder="e.g. Anjali"
+                className="w-full px-3 py-2 text-sm border border-emerald-200 rounded-lg focus:outline-none focus:border-emerald-500 bg-white"
+              />
+            </div>
+            <button
+              data-testid="confirm-go-live-btn"
+              onClick={() => transition('live', pocName)}
+              disabled={busy}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50 text-sm"
+            >
+              {busy ? 'Activating…' : 'Confirm & Go Live'}
+            </button>
+            <button
+              onClick={() => { setShowPocForm(false); setPocName(''); }}
+              disabled={busy}
+              className="px-3 py-2 text-sm border border-emerald-300 rounded-lg text-emerald-800 hover:bg-emerald-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

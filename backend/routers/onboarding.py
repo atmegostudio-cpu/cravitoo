@@ -530,7 +530,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                         {"_id": existing_user["_id"]},
                         {"$set": {"vendor_id": vendor_id, "role": "vendor"}},
                     )
-                # Fire invitation email (best-effort)
+                # Fire invitation email + branded vendor decision email (best-effort)
                 try:
                     import email_service as _email_service
                     inv_name = o.get("contact_person") or o.get("vendor_name") or "Partner"
@@ -541,11 +541,47 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                         invite_sent = True
                 except Exception as e:
                     logger.warning(f"Vendor invitation email failed for {vendor_email}: {e}")
+                # Branded "Vendor Approved" decision email (PDF Module 13)
+                try:
+                    import email_service as _email_service2
+                    v_name = o.get("contact_person") or o.get("vendor_name") or "Partner"
+                    d_html, d_text = _email_service2.render_vendor_decision_email(
+                        name=v_name,
+                        vendor_name=o.get("vendor_name") or "Your business",
+                        decision="approve",
+                        remarks=data.remarks or "",
+                    )
+                    _email_service2.send_email(
+                        vendor_email,
+                        "Your Cravitoo Partner application is approved 🎉",
+                        d_html, d_text,
+                    )
+                except Exception as e:
+                    logger.warning(f"Vendor approved-decision email failed for {vendor_email}: {e}")
             set_doc["status"] = "active"
             set_doc["vendor_id"] = vendor_id
             set_doc["vendor_user_invited"] = invite_sent
         else:
             set_doc["status"] = "rejected"
+            # Branded "Vendor Rejected" email (PDF Module 13)
+            try:
+                vendor_email_rej = (o.get("email") or "").lower().strip()
+                if vendor_email_rej:
+                    import email_service as _email_service3
+                    v_name_rej = o.get("contact_person") or o.get("vendor_name") or "Partner"
+                    rd_html, rd_text = _email_service3.render_vendor_decision_email(
+                        name=v_name_rej,
+                        vendor_name=o.get("vendor_name") or "Your business",
+                        decision="reject",
+                        remarks=data.remarks or "",
+                    )
+                    _email_service3.send_email(
+                        vendor_email_rej,
+                        "Update on your Cravitoo Partner application",
+                        rd_html, rd_text,
+                    )
+            except Exception as e:
+                logger.warning(f"Vendor rejected-decision email failed: {e}")
         await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
         await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id")})
         return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False)}

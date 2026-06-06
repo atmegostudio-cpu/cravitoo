@@ -436,6 +436,30 @@ def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD
                 notif_type="menu_request_decision",
                 push_data={"screen": "MenuChangeRequests", "request_id": str(doc["_id"])},
             )
+            # Branded "Menu Approved/Rejected" email (PDF Module 13) — best-effort
+            try:
+                submitter = await db.users.find_one({"_id": safe_objectid(submitted_by, "User")})
+                submitter_email = (submitter or {}).get("email")
+                if submitter_email:
+                    import email_service as _email_service
+                    proposed = doc.get("proposed", {}) or {}
+                    item_name = proposed.get("name") or doc.get("item_name") or vname
+                    md_html, md_text = _email_service.render_menu_decision_email(
+                        name=(submitter or {}).get("name") or "Partner",
+                        item_name=item_name,
+                        request_type=rt,
+                        decision=decision_value,
+                        remarks=decision.remarks or "",
+                    )
+                    type_label = {"add": "addition", "edit": "edit", "remove": "removal"}.get(rt, "change")
+                    subject = (
+                        f"Menu {type_label} approved: {item_name}"
+                        if decision_value == "approve"
+                        else f"Menu {type_label} update: {item_name}"
+                    )
+                    _email_service.send_email(submitter_email, subject, md_html, md_text)
+            except Exception as e:
+                logger.warning(f"Menu decision email failed: {e}")
 
         return {"ok": True, "status": "approved" if decision_value == "approve" else "rejected"}
 

@@ -1,0 +1,36 @@
+{
+  "summary": "Validated Cravitoo iter23 Step 1 (PDF gap items #1 corporate domain allowlist, #4 wired email triggers for vendor/menu/site activation, #7 site lifecycle Draft→Configured→Live). 22/22 backend pytest tests pass (14 existing + 8 new extended). End-to-end frontend UI flows validated: AllowedDomains add/remove/gmail-rejection, Sites lifecycle badges, SiteDetail Settings → Mark Configured → Activate Go Live (with POC name + 'Site is now Live' alert), and master-only Navbar Domains link gated for employees.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Allowed Domains table", "issues": ["Domain shown as '@itercheck-...com' with leading @ feels unusual since input is the bare domain — cosmetic only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_step1.py",
+    "/app/backend/tests/test_iter23_step1_extended.py",
+    "/app/test_reports/pytest/pytest_iter23.xml",
+    "/app/test_reports/pytest/pytest_iter23_extended.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Existing /app/backend/tests/test_iter23_step1.py uses class-level attribute (TestSiteLifecycle.site_id) shared across tests — works in pytest's default ordering but is fragile if test ordering changes; consider a module-level fixture for the created site_id.",
+    "OTP endpoint /api/auth/otp/request currently returns 200 for fresh corporate-domain emails even when the user doesn't exist yet — confirm this is intended (otherwise add user-must-exist gate).",
+    "AllowedDomains page does not show success toast after Add Domain — only relies on table refresh; consider a success indicator."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_step1_extended.py (NEW - 8 additional smoke tests covering OTP gate, allowed-domain register success, GET /sites lifecycle field, lifecycle-unblocks-registration, vendor master-decision smoke, menu-decision smoke)"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% (all UI flows verified)"},
+  "test_credentials": "admin@cravitoo.com/admin123 (master_admin); employee@techcorp.com/employee123 (employee). techcorp.com is in allowlist, mapped to live site.",
+  "seed_data_creation": "Tests create transient sites (LCTest_*, GateTest_*, LCFlow_*) and transient allowed-domains (itercheck-*, gatetest-*, lcflow-*). Allowed-domain rows are cleaned up by their tests; site rows are NOT cleaned and will accumulate in 'live'/'configured' state in DB — low priority cleanup task.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Step 1 PDF gap items are functioning end-to-end. Pytest files at /app/backend/tests/test_iter23_step1*.py form the regression suite for this feature set (22 tests). The frontend AllowedDomains modal has data-testid=domain-input/domain-notes-input/add-domain-btn. SiteDetail page Settings tab houses Site Lifecycle panel (text: 'Mark as Configured' / 'Activate (Go Live)' / 'Back to Configured'). Activation alert string: 'Site is now Live. Activation email sent to <email>.'",
+  "rca of the issue": "N/A — all features behaved per spec on first complete run; no bugs found."
+}

@@ -6,6 +6,26 @@ import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X } from 'lucide-re
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+const LIFECYCLE_STYLES = {
+  draft: 'bg-slate-100 text-slate-700 border-slate-200',
+  configured: 'bg-amber-100 text-amber-800 border-amber-200',
+  live: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+};
+
+const LifecycleBadge = ({ status }) => {
+  const s = status || 'live';
+  const cls = LIFECYCLE_STYLES[s] || LIFECYCLE_STYLES.live;
+  const label = s === 'live' ? 'Live' : s === 'configured' ? 'Configured' : 'Draft';
+  return (
+    <span
+      data-testid={`site-lifecycle-${s}`}
+      className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${cls}`}
+    >
+      {label}
+    </span>
+  );
+};
+
 const MasterSites = () => {
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +127,11 @@ const MasterSites = () => {
                 </div>
                 <h3 className="font-heading text-lg font-medium text-text-primary mb-1">{site.name}</h3>
                 <p className="text-text-muted text-xs mb-3">{site.city}</p>
+                {site.lifecycle_status && (
+                  <div className="mb-3">
+                    <LifecycleBadge status={site.lifecycle_status} />
+                  </div>
+                )}
                 <div className="space-y-1.5 text-xs text-text-secondary">
                   <p className="flex items-start gap-1.5"><MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" /> {site.address}</p>
                   <p className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {site.contact_email}</p>

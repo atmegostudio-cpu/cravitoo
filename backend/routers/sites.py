@@ -73,9 +73,12 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
     async def create_site(data: SiteCreate, user: dict = Depends(get_current_user)):
         if not is_master_admin(user):
             raise HTTPException(status_code=403, detail="Only master admin can create sites")
+        # Per master prompt PDF Module 3: Sites start in 'draft', advance to 'configured', then 'live'.
+        # Only 'live' sites accept new employee registrations.
         doc = {
             **data.model_dump(),
             "status": "active",
+            "lifecycle_status": "draft",
             "created_at": datetime.now(timezone.utc),
         }
         result = await db.sites.insert_one(doc)
@@ -91,7 +94,87 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             ],
             "updated_at": datetime.now(timezone.utc),
         })
-        return {"id": site_id, **data.model_dump()}
+        return {"id": site_id, "lifecycle_status": "draft", **data.model_dump()}
+
+    @r.post("/sites/{site_id}/lifecycle")
+    async def transition_site_lifecycle(
+        site_id: str,
+        payload: Dict[str, Any],
+        user: dict = Depends(get_current_user),
+    ):
+        """Advance a site through Draft → Configured → Live (PDF Module 3).
+
+        Body: { "to": "configured" | "live", "poc_name"?: str }
+
+        - Only master_admin can transition.
+        - Only 'live' sites accept new employee registrations.
+        - Going Live fires the 'Site Activated' email to the site's POC contact_email.
+        """
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can change site lifecycle")
+        target = (payload or {}).get("to", "").lower().strip()
+        if target not in ("draft", "configured", "live"):
+            raise HTTPException(status_code=400, detail="`to` must be one of: draft, configured, live")
+
+        site = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")})
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+
+        current = site.get("lifecycle_status", "draft")
+        # Valid transitions: draft → configured, configured → live, live → configured (rollback), any → draft (master reset)
+        legal = {
+            "draft": {"configured"},
+            "configured": {"draft", "live"},
+            "live": {"configured"},
+        }
+        if target == current:
+            return {"message": f"Site is already in '{current}' state", "lifecycle_status": current}
+        if target not in legal.get(current, set()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot transition from '{current}' to '{target}'. Valid next states: {sorted(legal.get(current, set()))}",
+            )
+
+        update_fields: Dict[str, Any] = {"lifecycle_status": target}
+        if target == "live":
+            update_fields["activated_at"] = datetime.now(timezone.utc)
+        await db.sites.update_one({"_id": site["_id"]}, {"$set": update_fields})
+
+        # Fire 'Site Activated' email on Live transition (best-effort)
+        email_sent = False
+        if target == "live":
+            poc_email = (site.get("contact_email") or "").strip()
+            if poc_email:
+                try:
+                    import email_service as _email_service
+                    poc_name = (payload or {}).get("poc_name") or "there"
+                    # Try to resolve company name from city/company_id if available
+                    company_name = ""
+                    if site.get("company_id"):
+                        co = await db.companies.find_one({"_id": safe_objectid(site["company_id"], "Company")})
+                        if co:
+                            company_name = co.get("name", "")
+                    html, text = _email_service.render_site_activated_email(
+                        poc_name=poc_name,
+                        site_name=site.get("name", "Your site"),
+                        company_name=company_name,
+                    )
+                    ok, err = _email_service.send_email(
+                        poc_email,
+                        f"🎉 {site.get('name', 'Your site')} is now Live on Cravitoo",
+                        html, text,
+                    )
+                    email_sent = bool(ok)
+                    if not ok:
+                        logger.warning(f"Site activation email send failed for {poc_email}: {err}")
+                except Exception as e:
+                    logger.warning(f"Site activation email exception for {poc_email}: {e}")
+
+        return {
+            "message": f"Site lifecycle moved to '{target}'",
+            "lifecycle_status": target,
+            "site_activated_email_sent": email_sent,
+        }
 
     @r.get("/sites")
     async def list_sites(user: dict = Depends(get_current_user)):
@@ -123,8 +206,13 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         sites = await db.sites.find(query).sort("name", 1).to_list(1000)
         for s in sites:
             s["id"] = str(s.pop("_id"))
+            # Default for legacy sites that don't have lifecycle_status set yet
+            if not s.get("lifecycle_status"):
+                s["lifecycle_status"] = "live"
             if isinstance(s.get("created_at"), datetime):
                 s["created_at"] = s["created_at"].isoformat()
+            if isinstance(s.get("activated_at"), datetime):
+                s["activated_at"] = s["activated_at"].isoformat()
         return sites
 
     @r.get("/sites/{site_id}")
@@ -137,8 +225,12 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             raise HTTPException(status_code=404, detail="Site not found")
         out = {**site}
         out["id"] = str(out.pop("_id"))
+        if not out.get("lifecycle_status"):
+            out["lifecycle_status"] = "live"
         if isinstance(out.get("created_at"), datetime):
             out["created_at"] = out["created_at"].isoformat()
+        if isinstance(out.get("activated_at"), datetime):
+            out["activated_at"] = out["activated_at"].isoformat()
         return out
 
     @r.patch("/sites/{site_id}")

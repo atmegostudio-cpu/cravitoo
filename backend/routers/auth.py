@@ -89,6 +89,16 @@ def make_router(
             if domain_record.get("company_id") and not data.company_id:
                 data.company_id = domain_record["company_id"]
             user_doc_extra_site = domain_record.get("site_id")
+            # Site lifecycle gating (PDF Module 3 — only 'live' sites accept employee sign-ups)
+            if user_doc_extra_site:
+                site_obj = await db.sites.find_one({"_id": safe_objectid(user_doc_extra_site, "Site")})
+                if site_obj:
+                    site_lc = site_obj.get("lifecycle_status", "live")
+                    if site_lc != "live":
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Your office site isn't open for sign-ups yet. Please contact your Cravitoo admin.",
+                        )
         else:
             user_doc_extra_site = None
 
@@ -261,6 +271,15 @@ def make_router(
                     status_code=400,
                     detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
                 )
+            # Site lifecycle gating (PDF Module 3 — only 'live' sites accept employee sign-ups)
+            site_id_from_domain = domain_record.get("site_id")
+            if site_id_from_domain:
+                site_obj = await db.sites.find_one({"_id": safe_objectid(site_id_from_domain, "Site")})
+                if site_obj and site_obj.get("lifecycle_status", "live") != "live":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Your office site isn't open for sign-ups yet. Please contact your Cravitoo admin.",
+                    )
 
         # Rate-limit: count requests in the last 1 hour for this email
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)

@@ -2765,6 +2765,7 @@ from routers.auth import make_router as make_auth_router  # noqa: E402
 from routers.ai_menu_photos import make_router as make_ai_menu_photos_router  # noqa: E402
 from routers.notifications_prefs import make_router as make_notifications_prefs_router  # noqa: E402
 from routers.broadcasts import make_router as make_broadcasts_router  # noqa: E402
+from routers.allowed_domains import make_router as make_allowed_domains_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2781,6 +2782,7 @@ app.include_router(make_auth_router(
 app.include_router(make_ai_menu_photos_router(db, safe_objectid, get_current_user, UPLOAD_DIR), prefix="/api")
 app.include_router(make_notifications_prefs_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_broadcasts_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
+app.include_router(make_allowed_domains_router(db, safe_objectid, get_current_user), prefix="/api")
 
 
 app.add_middleware(

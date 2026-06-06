@@ -31,6 +31,7 @@ import MasterSites from './pages/master/Sites';
 import MasterAdmins from './pages/master/Admins';
 import MasterVendors from './pages/master/Vendors';
 import MasterCities from './pages/master/Cities';
+import MasterAllowedDomains from './pages/master/AllowedDomains';
 import BulkOnboard from './pages/master/BulkOnboard';
 import SiteDetail from './pages/master/SiteDetail';
 
@@ -218,6 +219,11 @@ function AppRoutes() {
       <Route path="/master/broadcasts" element={
         <ProtectedRoute allowedRoles={['master_admin']}>
           <MasterBroadcasts />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/allowed-domains" element={
+        <ProtectedRoute allowedRoles={['master_admin']}>
+          <MasterAllowedDomains />
         </ProtectedRoute>
       } />
 
