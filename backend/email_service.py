@@ -582,3 +582,146 @@ def render_vendor_daily_digest_email(name: str, date_label: str, metrics: Dict[s
     text_parts.append("— Team Cravitoo")
     text = "\n".join(text_parts)
     return html, text
+
+
+
+def render_vendor_decision_email(name: str, vendor_name: str, decision: str, remarks: str = "", login_url: str = "https://app.cravitoo.com/login") -> Tuple[str, str]:
+    """Email sent when Master Admin approves/rejects a vendor onboarding."""
+    safe_name = (name or "Partner").split()[0][:40]
+    safe_vendor = (vendor_name or "Your business")[:80]
+    safe_remarks = (remarks or "")[:1000]
+    is_approved = decision == "approve"
+    if is_approved:
+        title = "Your Cravitoo Partner application is approved 🎉"
+        body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  Congratulations — your application for <strong>{safe_vendor}</strong> has been approved.
+  You're now an active Cravitoo Partner.
+</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;margin:16px 0;">
+  <tr><td style="padding:16px 20px;">
+    <p style="margin:0 0 8px 0;font-size:13px;color:#065F46;text-transform:uppercase;letter-spacing:0.5px;">Next steps</p>
+    <ol style="margin:0;padding-left:20px;color:#064E3B;font-size:14px;line-height:1.7;">
+      <li>Log in to the Partner Web Portal at <a href="{login_url}" style="color:#FF5A1F;font-weight:600;">{login_url}</a></li>
+      <li>Your menu (uploaded during onboarding) is now live</li>
+      <li>You'll start receiving orders from employees at the assigned site</li>
+      <li>Use the Mobile Partner app to accept + mark orders ready</li>
+    </ol>
+  </td></tr>
+</table>"""
+        text_body = (
+            f"Congratulations — your application for {safe_vendor} has been approved.\n"
+            f"You're now an active Cravitoo Partner.\n\n"
+            f"Next steps:\n"
+            f"  1. Log in: {login_url}\n"
+            f"  2. Your menu is now live\n"
+            f"  3. Start receiving orders from employees\n"
+            f"  4. Use the Mobile Partner app to accept + mark orders ready\n"
+        )
+    else:
+        title = "Update on your Cravitoo Partner application"
+        rem_html = f'<p style="margin:16px 0 0 0;color:#52443A;background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px;font-size:14px;"><strong>Reason:</strong> {safe_remarks}</p>' if safe_remarks else ""
+        body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  Thank you for your interest in becoming a Cravitoo Partner. After review, we're unable to onboard
+  <strong>{safe_vendor}</strong> at this time.
+</p>
+{rem_html}
+<p style="margin:24px 0 0 0;font-size:14px;color:#52443A;">
+  If you'd like to discuss this decision or re-apply with additional information, please reply to
+  <a href="mailto:support@cravitoo.com" style="color:#FF5A1F;">support@cravitoo.com</a>.
+</p>"""
+        text_body = (
+            f"Thank you for your interest in becoming a Cravitoo Partner.\n"
+            f"After review, we're unable to onboard {safe_vendor} at this time.\n\n"
+            + (f"Reason: {safe_remarks}\n\n" if safe_remarks else "")
+            + "To discuss or re-apply, write to support@cravitoo.com\n"
+        )
+    html = _brand_wrapper(title, f"<p>Hi {safe_name},</p>", body)
+    text = f"{title}\n\nHi {safe_name},\n\n{text_body}\n— Team Cravitoo\n"
+    return html, text
+
+
+def render_menu_decision_email(name: str, item_name: str, request_type: str, decision: str, remarks: str = "") -> Tuple[str, str]:
+    """Email sent when Master Admin approves/rejects a menu change request."""
+    safe_name = (name or "Partner").split()[0][:40]
+    safe_item = (item_name or "menu item")[:80]
+    safe_remarks = (remarks or "")[:1000]
+    type_label = {"add": "addition", "edit": "edit", "remove": "removal"}.get(request_type, "change")
+    is_approved = decision == "approve"
+    if is_approved:
+        title = f"Menu {type_label} approved: {safe_item}"
+        body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  Your requested menu {type_label} — <strong>{safe_item}</strong> — has been approved and is now live for employees.
+</p>"""
+        text_body = f"Your requested menu {type_label} for {safe_item} has been approved and is now live for employees."
+    else:
+        title = f"Menu {type_label} update: {safe_item}"
+        rem_html = f'<p style="margin:16px 0 0 0;color:#52443A;background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:12px;font-size:14px;"><strong>Note:</strong> {safe_remarks}</p>' if safe_remarks else ""
+        body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  Your requested menu {type_label} for <strong>{safe_item}</strong> was not approved this time.
+</p>
+{rem_html}
+<p style="margin:16px 0 0 0;font-size:14px;color:#52443A;">
+  You can submit an updated request anytime from the Partner Portal.
+</p>"""
+        text_body = (
+            f"Your requested menu {type_label} for {safe_item} was not approved this time.\n"
+            + (f"\nNote: {safe_remarks}\n" if safe_remarks else "")
+            + "\nYou can submit an updated request anytime."
+        )
+    html = _brand_wrapper(title, f"<p>Hi {safe_name},</p>", body)
+    text = f"{title}\n\nHi {safe_name},\n\n{text_body}\n\n— Team Cravitoo\n"
+    return html, text
+
+
+def render_site_activated_email(poc_name: str, site_name: str, company_name: str, signup_url: str = "https://app.cravitoo.com/login") -> Tuple[str, str]:
+    """Email sent to Corporate POC when their site goes Live."""
+    safe_name = (poc_name or "there").split()[0][:40]
+    safe_site = (site_name or "Your site")[:80]
+    safe_company = (company_name or "")[:80]
+    title = f"🎉 {safe_site} is now Live on Cravitoo"
+    body = f"""
+<p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+  Great news! <strong>{safe_site}</strong> {f'({safe_company})' if safe_company else ''} is now Live on Cravitoo.
+  Your employees can register and start ordering meals today.
+</p>
+<table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;margin:16px 0;">
+  <tr><td style="padding:16px 20px;">
+    <p style="margin:0 0 8px 0;font-size:13px;color:#065F46;text-transform:uppercase;letter-spacing:0.5px;">Employee sign-up link</p>
+    <p style="margin:0;font-size:15px;color:#1F1410;"><a href="{signup_url}" style="color:#FF5A1F;font-weight:600;text-decoration:none;">{signup_url}</a></p>
+  </td></tr>
+</table>
+<p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;">What to tell your employees:</p>
+<ol style="padding-left:20px;margin:0;color:#52443A;line-height:1.8;">
+  <li>Open the link above</li>
+  <li>Click "Login with Email Code"</li>
+  <li>Enter your <strong>work email</strong> (only corporate emails are accepted)</li>
+  <li>Receive a 6-digit code → enter it → start ordering!</li>
+</ol>
+<p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">
+  Need help? Reply to this email or write to support@cravitoo.com.
+</p>"""
+    html = _brand_wrapper(title, f"<p>Hi {safe_name},</p>", body)
+    text = f"""{title}
+
+Hi {safe_name},
+
+Great news! {safe_site} {f'({safe_company})' if safe_company else ''} is now Live on Cravitoo.
+Your employees can register and start ordering meals today.
+
+Employee sign-up link: {signup_url}
+
+What to tell your employees:
+  1. Open the link above
+  2. Click "Login with Email Code"
+  3. Enter their work email (only corporate emails are accepted)
+  4. Receive a 6-digit code → enter it → start ordering!
+
+Need help? Write to support@cravitoo.com.
+
+— Team Cravitoo
+"""
+    return html, text

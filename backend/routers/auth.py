@@ -74,7 +74,24 @@ def make_router(
         existing = await db.users.find_one({"email": email_lower})
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
-    
+
+        # Domain allowlist check (employees + corporate_admin only — masters/vendors/site admins
+        # are created by admins, not via this self-register endpoint, so they're allowed)
+        if data.role in ("employee", "corporate_admin"):
+            from routers.allowed_domains import find_allowed_domain
+            domain_record = await find_allowed_domain(db, email_lower)
+            if not domain_record:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
+                )
+            # Auto-link to the company + (optionally) the default site for that domain
+            if domain_record.get("company_id") and not data.company_id:
+                data.company_id = domain_record["company_id"]
+            user_doc_extra_site = domain_record.get("site_id")
+        else:
+            user_doc_extra_site = None
+
         user_doc = {
             "email": email_lower,
             "password_hash": hash_password(data.password),
@@ -85,6 +102,8 @@ def make_router(
     
         if data.company_id:
             user_doc["company_id"] = data.company_id
+        if user_doc_extra_site:
+            user_doc["site_id"] = user_doc_extra_site
     
         result = await db.users.insert_one(user_doc)
         user_id = str(result.inserted_id)
@@ -230,6 +249,18 @@ def make_router(
             raise HTTPException(status_code=400, detail="Invalid channel")
         if channel in ("sms", "whatsapp"):
             raise HTTPException(status_code=501, detail=f"{channel.upper()} OTP is not yet configured. Please use email.")
+
+        # Domain allowlist check — for users who don't exist yet, ensure they're signing up
+        # with a corporate email. Existing users (any domain) are always allowed to receive OTPs.
+        existing_user = await db.users.find_one({"email": email_lower})
+        if not existing_user:
+            from routers.allowed_domains import find_allowed_domain
+            domain_record = await find_allowed_domain(db, email_lower)
+            if not domain_record:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
+                )
 
         # Rate-limit: count requests in the last 1 hour for this email
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
