@@ -2871,6 +2871,7 @@ from routers.allowed_domains import make_router as make_allowed_domains_router  
 from routers.exports import make_router as make_exports_router  # noqa: E402
 from routers.corporate_clients import make_router as make_corporate_clients_router  # noqa: E402
 from routers.billing import make_router as make_billing_router, run_billing_for_period  # noqa: E402
+from routers.demo import make_router as make_demo_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2891,6 +2892,7 @@ app.include_router(make_allowed_domains_router(db, safe_objectid, get_current_us
 app.include_router(make_exports_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_corporate_clients_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_billing_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_demo_router(db, safe_objectid, get_current_user, hash_password), prefix="/api")
 
 
 app.add_middleware(
