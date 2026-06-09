@@ -35,6 +35,14 @@ User uploaded the Cravitoo Master Prompt PDF. Compared against existing app, ide
 
 ## Implementation Progress
 
+### Iteration 25: Spec Alignment — Master Admin City Management (Feb 2026) ✅
+
+User shared a new "Master Admin Workflow" spec mandating strict hierarchy and full CRUD + Archive/Restore + Region field on Cities.
+
+- **Backend**: Added `region` field to City model. New endpoints: `POST /api/cities/{id}/archive`, `POST /api/cities/{id}/restore`, `DELETE /api/cities/{id}` (blocked when linked Sites or City Admins exist). `GET /api/cities?include_archived=true` toggle.
+- **Frontend**: Cities page now has Edit / Archive / Restore / Delete per card, "Show archived" toggle, Region dropdown in form, archived-state visual treatment.
+- Hierarchy enforcement: City delete is hard-blocked if any Sites or City Admins reference it — must archive instead. This protects the platform hierarchy contract.
+
 ### Iteration 24: PDF Gap Steps 2–5 — Meal Types, Bulk Pre-Order, Exports, Client Lifecycle, Billing (Feb 2026) ✅
 
 **Step 2 — Fixed Meal Types & Corp Admin Bulk Override:**

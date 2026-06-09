@@ -2444,6 +2444,7 @@ async def create_city(data: CityCreate, user: dict = Depends(get_current_user)):
     doc = {
         "name": data.name,
         "state": data.state,
+        "region": data.region,
         "country": data.country,
         "status": "active",
         "created_at": datetime.now(timezone.utc),
@@ -2454,10 +2455,14 @@ async def create_city(data: CityCreate, user: dict = Depends(get_current_user)):
     return {"id": city_id, **data.model_dump()}
 
 @api_router.get("/cities")
-async def list_cities(user: dict = Depends(get_current_user)):
-    """Master sees all, City Admin sees only their city, others see all active cities (for site selection)."""
+async def list_cities(
+    include_archived: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    """Master sees all (optionally including archived); City Admin sees only their city;
+    others see only active cities (used for site selection dropdowns)."""
     if is_master_admin(user):
-        cursor = db.cities.find({})
+        cursor = db.cities.find({}) if include_archived else db.cities.find({"status": {"$ne": "archived"}})
     elif is_city_admin(user):
         cid = user.get("city_id")
         cursor = db.cities.find({"_id": safe_objectid(cid, "City")}) if cid else db.cities.find({"_id": None})
@@ -2469,6 +2474,7 @@ async def list_cities(user: dict = Depends(get_current_user)):
             "id": str(c["_id"]),
             "name": c.get("name"),
             "state": c.get("state"),
+            "region": c.get("region"),
             "country": c.get("country", "India"),
             "status": c.get("status", "active"),
         })
@@ -2489,6 +2495,7 @@ async def get_city(city_id: str, user: dict = Depends(get_current_user)):
         "id": str(city["_id"]),
         "name": city.get("name"),
         "state": city.get("state"),
+        "region": city.get("region"),
         "country": city.get("country", "India"),
         "status": city.get("status", "active"),
     }
@@ -2497,13 +2504,72 @@ async def get_city(city_id: str, user: dict = Depends(get_current_user)):
 async def update_city(city_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
     if not is_master_admin(user):
         raise HTTPException(status_code=403, detail="Only master admin")
-    allowed = {"name", "state", "country", "status"}
+    allowed = {"name", "state", "region", "country", "status"}
     cleaned = {k: v for k, v in payload.items() if k in allowed}
     if not cleaned:
         raise HTTPException(status_code=400, detail="No valid fields")
     await db.cities.update_one({"_id": safe_objectid(city_id, "City")}, {"$set": cleaned})
     await audit_log(user, "city", city_id, "updated", cleaned)
     return {"message": "City updated"}
+
+
+@api_router.post("/cities/{city_id}/archive")
+async def archive_city(city_id: str, user: dict = Depends(get_current_user)):
+    """Soft-archive a city. Hides it from sign-up flows but preserves history."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    city = await db.cities.find_one({"_id": safe_objectid(city_id, "City")})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    await db.cities.update_one(
+        {"_id": city["_id"]},
+        {"$set": {"status": "archived", "archived_at": datetime.now(timezone.utc)}},
+    )
+    await audit_log(user, "city", city_id, "archived", {})
+    return {"message": "City archived", "status": "archived"}
+
+
+@api_router.post("/cities/{city_id}/restore")
+async def restore_city(city_id: str, user: dict = Depends(get_current_user)):
+    """Restore an archived city back to active."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    city = await db.cities.find_one({"_id": safe_objectid(city_id, "City")})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    await db.cities.update_one(
+        {"_id": city["_id"]},
+        {"$set": {"status": "active"}, "$unset": {"archived_at": ""}},
+    )
+    await audit_log(user, "city", city_id, "restored", {})
+    return {"message": "City restored", "status": "active"}
+
+
+@api_router.delete("/cities/{city_id}")
+async def delete_city(city_id: str, user: dict = Depends(get_current_user)):
+    """Hard delete a city. Blocked if any Sites are still linked (per platform hierarchy spec)."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    city = await db.cities.find_one({"_id": safe_objectid(city_id, "City")})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    # Hierarchy safety: a City with Sites cannot be deleted (must archive instead)
+    linked_sites = await db.sites.count_documents({"city_id": city_id})
+    if linked_sites > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete: {linked_sites} site(s) are linked. Move or archive sites first, or archive this city instead.",
+        )
+    # Block if a City Admin user is bound to this city
+    linked_users = await db.users.count_documents({"city_id": city_id})
+    if linked_users > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete: {linked_users} City Admin(s) are linked. Move them first.",
+        )
+    await db.cities.delete_one({"_id": city["_id"]})
+    await audit_log(user, "city", city_id, "deleted", {"name": city.get("name")})
+    return {"message": "City deleted"}
 
 @api_router.post("/admin/city-admins")
 async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_current_user)):

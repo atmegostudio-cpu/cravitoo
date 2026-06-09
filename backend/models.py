@@ -200,6 +200,7 @@ class MealScheduleUpdate(BaseModel):
 class CityCreate(BaseModel):
     name: str  # e.g. "Bangalore", "Mumbai"
     state: str  # e.g. "Karnataka"
+    region: Optional[str] = None  # e.g. "South", "West", "North", "East"
     country: str = "India"
 
 
