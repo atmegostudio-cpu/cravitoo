@@ -121,6 +121,7 @@ const VendorsTab = ({ siteId }) => {
   const [allVendors, setAllVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [swapping, setSwapping] = useState(null); // vendor being swapped
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +155,14 @@ const VendorsTab = ({ siteId }) => {
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
   };
 
+  const swapVendor = async (oldVendorId, newVendorId) => {
+    try {
+      await axios.put(`${API}/sites/${siteId}/vendors/swap`, { old_vendor_id: oldVendorId, new_vendor_id: newVendorId }, { withCredentials: true });
+      setSwapping(null);
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Swap failed'); }
+  };
+
   if (loading) return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />;
 
   const mappedIds = new Set(mapped.map((v) => v.id));
@@ -166,14 +175,57 @@ const VendorsTab = ({ siteId }) => {
         {mapped.length === 0 && <p className="text-text-muted text-sm">No vendors mapped to this site yet.</p>}
         <div className="space-y-2">
           {mapped.map((v) => (
-            <div key={v.id} data-testid={`mapped-vendor-${v.id}`} className="flex items-center justify-between p-3 bg-background rounded-lg">
-              <div>
-                <p className="font-medium text-text-primary text-sm">{v.name}</p>
-                <p className="text-text-muted text-xs">{v.cuisine_type}</p>
+            <div key={v.id} data-testid={`mapped-vendor-${v.id}`} className="p-3 bg-background rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-text-primary text-sm">{v.name}</p>
+                  <p className="text-text-muted text-xs">{v.cuisine_type}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    data-testid={`swap-vendor-${v.id}`}
+                    onClick={() => setSwapping(swapping?.id === v.id ? null : v)}
+                    title="Change vendor"
+                    className="text-amber-700 hover:bg-amber-50 px-2.5 py-1 rounded-lg text-xs font-medium"
+                  >
+                    Change
+                  </button>
+                  <button
+                    data-testid={`unmap-vendor-${v.id}`}
+                    onClick={() => removeVendor(v.id)}
+                    title="Remove vendor"
+                    className="text-red-600 hover:bg-red-50 p-2 rounded-lg"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <button data-testid={`unmap-vendor-${v.id}`} onClick={() => removeVendor(v.id)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg">
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {swapping?.id === v.id && (
+                <div className="mt-3 pt-3 border-t border-border-light" data-testid={`swap-panel-${v.id}`}>
+                  <p className="text-xs text-text-muted mb-2">Replace <strong>{v.name}</strong> with:</p>
+                  {unmapped.length === 0 ? (
+                    <p className="text-xs text-amber-700">No other vendors available — onboard a vendor first.</p>
+                  ) : (
+                    <select
+                      data-testid={`swap-select-${v.id}`}
+                      defaultValue=""
+                      onChange={(e) => { if (e.target.value) swapVendor(v.id, e.target.value); }}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg text-sm bg-card"
+                    >
+                      <option value="">— Pick replacement vendor —</option>
+                      {unmapped.map((u) => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.cuisine_type})</option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    onClick={() => setSwapping(null)}
+                    className="text-xs text-text-muted hover:text-text-primary mt-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

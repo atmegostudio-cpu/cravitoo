@@ -289,6 +289,49 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         await db.vendor_site_mappings.delete_one({"vendor_id": vendor_id, "site_id": site_id})
         return {"message": "Vendor unmapped"}
 
+    @r.put("/sites/{site_id}/vendors/swap")
+    async def swap_vendor(site_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+        """Replace one mapped vendor with another in a single atomic call.
+
+        Body: { old_vendor_id, new_vendor_id }
+        Master Admin / City Admin / Site Admin only.
+        """
+        if not can_access_site(user, site_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+        old_vendor_id = (payload or {}).get("old_vendor_id")
+        new_vendor_id = (payload or {}).get("new_vendor_id")
+        if not old_vendor_id or not new_vendor_id:
+            raise HTTPException(status_code=400, detail="old_vendor_id and new_vendor_id are required")
+        if old_vendor_id == new_vendor_id:
+            raise HTTPException(status_code=400, detail="old and new vendor are the same")
+
+        # The new vendor must exist and be active
+        new_vendor = await db.vendors.find_one({"_id": safe_objectid(new_vendor_id, "Vendor"), "status": "active"})
+        if not new_vendor:
+            raise HTTPException(status_code=404, detail="New vendor not found or not active")
+        # Block if new vendor is already mapped to this site
+        already = await db.vendor_site_mappings.find_one({"vendor_id": new_vendor_id, "site_id": site_id})
+        if already:
+            raise HTTPException(status_code=400, detail="New vendor is already mapped to this site")
+
+        now = datetime.now(timezone.utc)
+        # Atomic-ish: remove old, insert new
+        await db.vendor_site_mappings.delete_one({"vendor_id": old_vendor_id, "site_id": site_id})
+        await db.vendor_site_mappings.insert_one({
+            "vendor_id": new_vendor_id,
+            "site_id": site_id,
+            "status": "active",
+            "created_at": now,
+            "swapped_from": old_vendor_id,
+            "swapped_by": user.get("id"),
+        })
+        return {
+            "message": "Vendor swapped",
+            "old_vendor_id": old_vendor_id,
+            "new_vendor_id": new_vendor_id,
+            "new_vendor_name": new_vendor.get("name"),
+        }
+
     # Meal Schedules per Site
     @r.get("/sites/{site_id}/schedule")
     async def get_site_schedule(site_id: str, user: dict = Depends(get_current_user)):
