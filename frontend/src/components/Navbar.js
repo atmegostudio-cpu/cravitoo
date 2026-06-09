@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, Wand2 } from 'lucide-react';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
 
@@ -61,6 +61,7 @@ const Navbar = () => {
           { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
           { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
           { path: '/master/allowed-domains', label: 'Domains', icon: Mail },
+          { path: '/master/demo', label: 'Demo', icon: Wand2 },
           { path: '/master/broadcasts', label: 'Announce', icon: Megaphone },
           { path: '/master/admins', label: 'Admins', icon: ShieldCheck },
         ];

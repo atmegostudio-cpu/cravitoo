@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 DEMO_TAG = "cravitoo_pune_demo"
 
 DEMO_CREDENTIALS = {
-    "corporate_admin": {"email": "demo@cravitoo.com", "password": "Demo@123", "name": "Demo Corporate Admin"},
-    "employee":        {"email": "info@cravitoo.com", "password": "Demo@123", "name": "Demo Employee"},
-    "vendor":          {"email": "vendor@atmego.com", "password": "Demo@123", "name": "ATMEGO Operations"},
+    "corporate_admin": {"email": "finance@cravitoo.com", "password": "Demo@123", "name": "Demo Finance / Corp Admin"},
+    "employee":        {"email": "info@cravitoo.com",    "password": "Demo@123", "name": "Demo Employee"},
+    "vendor":          {"email": "vendor@atmego.com",    "password": "Demo@123", "name": "ATMEGO Operations"},
 }
 
 
@@ -65,10 +65,10 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
             res = await db.companies.insert_one({
                 "name": "Cravitoo",
                 "address": "Pune Tech Park, Maharashtra",
-                "contact_email": "info@cravitoo.com",
+                "contact_email": "finance@cravitoo.com",
                 "contact_phone": "+91-9999900000",
                 "billing_contact_name": "Demo Finance",
-                "billing_contact_email": "demo@cravitoo.com",
+                "billing_contact_email": "finance@cravitoo.com",
                 "status": "active",
                 "lifecycle_status": "active",
                 "demo_tag": DEMO_TAG,
@@ -89,7 +89,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
                 "city_id": city_id,
                 "address": "Pune Tech Park, MG Road",
                 "city": "Pune",
-                "contact_email": "demo@cravitoo.com",
+                "contact_email": "finance@cravitoo.com",
                 "contact_phone": "+91-9999900001",
                 "allow_pre_order": True,
                 "allow_cash_carry": False,
