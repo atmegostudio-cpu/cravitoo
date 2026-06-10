@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cravitoo · Mobile Demo Screens</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0a0a0a;
+    color: #fafafa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: 40px 20px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .sub { color: #888; margin-bottom: 32px; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #161616;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid #2a2a2a;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .card:hover { transform: translateY(-4px); border-color: #FF5A1F; }
+  .frame {
+    background: #000;
+    padding: 12px 12px 0;
+    aspect-ratio: 1170 / 2532;
+    overflow: hidden;
+  }
+  .frame img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px 14px 0 0; }
+  .meta {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .title { font-weight: 600; font-size: 14px; }
+  .dl {
+    background: #FF5A1F;
+    color: #fff;
+    border: none;
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .dl:hover { background: #ff7036; }
+  .download-all {
+    display: inline-block;
+    margin: 0 0 24px;
+    background: #FF5A1F;
+    color: #fff;
+    text-decoration: none;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-weight: 500;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <h1>Cravitoo Mobile Demo Screens</h1>
+  <p class="sub">iPhone 13 Pro · 1170 × 2532 px · Tap any card to download the full-resolution PNG.</p>
+
+  <div class="grid">
+    <a class="card" href="/demo-screens/01-login.png" download>
+      <div class="frame"><img src="/demo-screens/01-login.png" alt="Login" /></div>
+      <div class="meta"><span class="title">1. Login</span><span class="dl">Download</span></div>
+    </a>
+    <a class="card" href="/demo-screens/02-otp-request.png" download>
+      <div class="frame"><img src="/demo-screens/02-otp-request.png" alt="OTP request" /></div>
+      <div class="meta"><span class="title">2. OTP — Send Code</span><span class="dl">Download</span></div>
+    </a>
+    <a class="card" href="/demo-screens/03-otp-verify.png" download>
+      <div class="frame"><img src="/demo-screens/03-otp-verify.png" alt="OTP verify" /></div>
+      <div class="meta"><span class="title">3. OTP — Enter Code</span><span class="dl">Download</span></div>
+    </a>
+    <a class="card" href="/demo-screens/04-register.png" download>
+      <div class="frame"><img src="/demo-screens/04-register.png" alt="Register" /></div>
+      <div class="meta"><span class="title">4. Register</span><span class="dl">Download</span></div>
+    </a>
+    <a class="card" href="/demo-screens/05-pre-booking.png" download>
+      <div class="frame"><img src="/demo-screens/05-pre-booking.png" alt="Pre-booking" /></div>
+      <div class="meta"><span class="title">5. Pre-booking</span><span class="dl">Download</span></div>
+    </a>
+    <a class="card" href="/demo-screens/06-menu.png" download>
+      <div class="frame"><img src="/demo-screens/06-menu.png" alt="Menu" /></div>
+      <div class="meta"><span class="title">6. Menu</span><span class="dl">Download</span></div>
+    </a>
+  </div>
+</body>
+</html>
