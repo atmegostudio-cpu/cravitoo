@@ -40,17 +40,19 @@ const ReservationCard = ({ meal, onReserve, onCancel, reserving }) => {
   const isReserved = !!meal.already_reserved;
   const isDisabled = !meal.enabled;
   const cutoffPassed = meal.cutoff_passed;
+  const lockedByOther = !!meal.locked_by_other;
+  const lockedByMeal = meal.locked_by_meal;
   const [selectedVendorId, setSelectedVendorId] = useState(meal.eligible_vendors?.[0]?.id || '');
   const [mealType, setMealType] = useState('veg_meal');
 
-  const canReserve = !isReserved && !isDisabled && !cutoffPassed && meal.eligible_vendors?.length > 0;
+  const canReserve = !isReserved && !isDisabled && !cutoffPassed && !lockedByOther && meal.eligible_vendors?.length > 0;
 
   return (
     <div
       data-testid={`reservation-card-${meal.meal_period}`}
       className={`bg-card border rounded-2xl p-5 transition-all ${
         isReserved ? 'border-green-300 bg-green-50/30' :
-        isDisabled || cutoffPassed ? 'border-border-light opacity-60' :
+        isDisabled || cutoffPassed || lockedByOther ? 'border-border-light opacity-60' :
         'border-border-light hover:shadow-md'
       }`}
     >
@@ -79,76 +81,90 @@ const ReservationCard = ({ meal, onReserve, onCancel, reserving }) => {
             <Clock className="h-3 w-3" /> Cutoff passed
           </span>
         )}
+        {!isDisabled && !isReserved && !cutoffPassed && lockedByOther && (
+          <span data-testid={`status-locked-${meal.meal_period}`} className="bg-amber-50 text-amber-700 text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1">
+            🔒 {lockedByMeal} already booked
+          </span>
+        )}
       </div>
 
-      {isReserved ? (
+      {lockedByOther && !isReserved && (
+        <p className="text-xs text-text-muted bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid={`locked-msg-${meal.meal_period}`}>
+          You can book only <strong>one meal per day</strong>. Cancel your <strong>{lockedByMeal}</strong> reservation to switch to {meta.label.toLowerCase()}.
+        </p>
+      )}
+      {!lockedByOther && (
         <>
-          <div className="bg-white border border-green-200 rounded-lg p-3 text-sm">
-            <p className="text-xs text-text-muted">Reserved with</p>
-            <p className="font-medium text-text-primary flex items-center gap-1.5 mt-1">
-              <Store className="h-4 w-4" /> {meal.already_reserved.vendor_name || 'Vendor'}
-            </p>
-          </div>
-          <button
-            onClick={() => onCancel(meal.already_reserved.id)}
-            data-testid={`cancel-reservation-${meal.meal_period}`}
-            className="mt-3 w-full text-sm text-red-600 hover:bg-red-50 py-2 rounded-lg border border-red-200 transition-colors"
-          >
-            Cancel reservation
-          </button>
-        </>
-      ) : (
-        <>
-          {meal.eligible_vendors?.length > 0 ? (
+          {isReserved ? (
             <>
-              <label className="block text-xs text-text-muted mb-1.5">Vendor</label>
-              <select
-                value={selectedVendorId}
-                onChange={(e) => setSelectedVendorId(e.target.value)}
-                disabled={!canReserve}
-                data-testid={`vendor-select-${meal.meal_period}`}
-                className="w-full px-3 py-2 border border-border-light rounded-lg bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              >
-                {meal.eligible_vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-              <label className="block text-xs text-text-muted mb-1.5 mt-3">Meal type</label>
-              <div className="flex flex-wrap gap-2">
-                {MEAL_TYPE_ORDER.map((mt) => {
-                  const isActive = mealType === mt;
-                  return (
-                    <button
-                      type="button"
-                      key={mt}
-                      disabled={!canReserve}
-                      onClick={() => setMealType(mt)}
-                      data-testid={`meal-type-${meal.meal_period}-${mt}`}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
-                        isActive
-                          ? 'bg-primary text-white border-primary'
-                          : 'bg-background text-text-secondary border-border-light hover:border-primary'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {MEAL_TYPE_LABELS[mt].emoji} {MEAL_TYPE_LABELS[mt].label}
-                    </button>
-                  );
-                })}
+              <div className="bg-white border border-green-200 rounded-lg p-3 text-sm">
+                <p className="text-xs text-text-muted">Reserved with</p>
+                <p className="font-medium text-text-primary flex items-center gap-1.5 mt-1">
+                  <Store className="h-4 w-4" /> {meal.already_reserved.vendor_name || 'Vendor'}
+                </p>
               </div>
               <button
-                onClick={() => onReserve(meal.meal_period, selectedVendorId, mealType)}
-                disabled={!canReserve || reserving}
-                data-testid={`reserve-btn-${meal.meal_period}`}
-                className="mt-3 w-full bg-primary hover:bg-primary-hover text-white font-medium py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                onClick={() => onCancel(meal.already_reserved.id)}
+                data-testid={`cancel-reservation-${meal.meal_period}`}
+                className="mt-3 w-full text-sm text-red-600 hover:bg-red-50 py-2 rounded-lg border border-red-200 transition-colors"
               >
-                {reserving ? 'Reserving...' : 'Reserve'}
+                Cancel reservation
               </button>
             </>
           ) : (
-            <p className="text-sm text-text-muted py-2">No vendors available for this meal yet.</p>
-          )}
-          {!cutoffPassed && !isDisabled && (
-            <p className="text-xs text-text-muted mt-2 text-center">
-              <Clock className="h-3 w-3 inline mr-1" /><Countdown to={meal.cutoff_at} />
-            </p>
+            <>
+              {meal.eligible_vendors?.length > 0 ? (
+                <>
+                  <label className="block text-xs text-text-muted mb-1.5">Vendor</label>
+                  <select
+                    value={selectedVendorId}
+                    onChange={(e) => setSelectedVendorId(e.target.value)}
+                    disabled={!canReserve}
+                    data-testid={`vendor-select-${meal.meal_period}`}
+                    className="w-full px-3 py-2 border border-border-light rounded-lg bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  >
+                    {meal.eligible_vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                  <label className="block text-xs text-text-muted mb-1.5 mt-3">Meal type</label>
+                  <div className="flex flex-wrap gap-2">
+                    {MEAL_TYPE_ORDER.map((mt) => {
+                      const isActive = mealType === mt;
+                      return (
+                        <button
+                          type="button"
+                          key={mt}
+                          disabled={!canReserve}
+                          onClick={() => setMealType(mt)}
+                          data-testid={`meal-type-${meal.meal_period}-${mt}`}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                            isActive
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-background text-text-secondary border-border-light hover:border-primary'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {MEAL_TYPE_LABELS[mt].emoji} {MEAL_TYPE_LABELS[mt].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => onReserve(meal.meal_period, selectedVendorId, mealType)}
+                    disabled={!canReserve || reserving}
+                    data-testid={`reserve-btn-${meal.meal_period}`}
+                    className="mt-3 w-full bg-primary hover:bg-primary-hover text-white font-medium py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {reserving ? 'Reserving...' : 'Reserve'}
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-text-muted py-2">No vendors available for this meal yet.</p>
+              )}
+              {!cutoffPassed && !isDisabled && (
+                <p className="text-xs text-text-muted mt-2 text-center">
+                  <Clock className="h-3 w-3 inline mr-1" /><Countdown to={meal.cutoff_at} />
+                </p>
+              )}
+            </>
           )}
         </>
       )}

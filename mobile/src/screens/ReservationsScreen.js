@@ -42,6 +42,8 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
   const isReserved = !!meal.already_reserved;
   const isDisabled = !meal.enabled;
   const cutoffPassed = meal.cutoff_passed;
+  const lockedByOther = !!meal.locked_by_other;
+  const lockedByMeal = meal.locked_by_meal;
   const [vendorId, setVendorId] = useState(meal.eligible_vendors?.[0]?.id || '');
   const [mealType, setMealType] = useState('veg_meal');
   const [showVendorPicker, setShowVendorPicker] = useState(false);
@@ -65,7 +67,7 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
     );
   };
 
-  const canReserve = !isReserved && !isDisabled && !cutoffPassed && (meal.eligible_vendors?.length > 0);
+  const canReserve = !isReserved && !isDisabled && !cutoffPassed && !lockedByOther && (meal.eligible_vendors?.length > 0);
   const selectedVendor = meal.eligible_vendors?.find(v => v.id === vendorId);
 
   return (
@@ -104,9 +106,21 @@ function MealCard({ meal, onReserve, onCancel, busy }) {
             <Text style={styles.badgeExpiredText}> Cutoff passed</Text>
           </View>
         )}
+        {!isDisabled && !isReserved && !cutoffPassed && lockedByOther && (
+          <View style={styles.badgeLocked} testID={`status-locked-${meal.meal_period}`}>
+            <Ionicons name="lock-closed" size={12} color={colors.warning || '#B45309'} />
+            <Text style={styles.badgeLockedText}> {lockedByMeal} booked</Text>
+          </View>
+        )}
       </View>
 
-      {isReserved ? (
+      {lockedByOther && !isReserved ? (
+        <View style={styles.lockedBox} testID={`locked-msg-${meal.meal_period}`}>
+          <Text style={styles.lockedText}>
+            You can book only one meal per day. Cancel your {lockedByMeal} reservation to switch to {meta.label.toLowerCase()}.
+          </Text>
+        </View>
+      ) : isReserved ? (
         <>
           <View style={styles.reservedBox}>
             <Text style={styles.reservedLabel}>Reserved with</Text>
@@ -307,6 +321,10 @@ const styles = StyleSheet.create({
 
   label: { fontSize: 11, color: colors.textMuted, marginBottom: 6, marginTop: 4 },
   mealTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  badgeLocked: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  badgeLockedText: { fontSize: 11, color: '#B45309', fontWeight: '500' },
+  lockedBox: { backgroundColor: '#FEF3C7', borderColor: '#FCD34D', borderWidth: 1, padding: 12, borderRadius: 12, marginTop: 8 },
+  lockedText: { fontSize: 12, color: '#92400E', lineHeight: 18 },
   mealTypeChip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.background },
   mealTypeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   mealTypeText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },

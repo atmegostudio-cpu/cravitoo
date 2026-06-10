@@ -179,6 +179,9 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                 "vendor_id": rec.get("vendor_id"),
                 "vendor_name": next((v["name"] for v in vendors_list if v["id"] == rec.get("vendor_id")), ""),
             }
+        # PDF Module 7: one reservation per employee per day. If any slot is reserved,
+        # the others are locked.
+        any_reservation = next(iter(existing_by_meal.items()), None)
 
         out = []
         for meal in MEAL_PERIODS:
@@ -186,6 +189,11 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             cutoff_at = _cutoff_for_delivery_date(delivery_date, cfg)
             if cutoff_at.tzinfo is None:
                 cutoff_at = cutoff_at.replace(tzinfo=timezone.utc)
+            locked_by_other = False
+            locked_by_meal = None
+            if any_reservation and any_reservation[0] != meal:
+                locked_by_other = True
+                locked_by_meal = any_reservation[0]
             out.append({
                 "meal_period": meal,
                 "enabled": bool(cfg.get("enabled", True)),
@@ -193,6 +201,8 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
                 "cutoff_passed": now_utc >= cutoff_at,
                 "delivery_date": _ist_date_of(delivery_date).isoformat(),
                 "already_reserved": existing_by_meal.get(meal),
+                "locked_by_other": locked_by_other,
+                "locked_by_meal": locked_by_meal,
                 "eligible_vendors": vendors_list,
             })
 
@@ -200,6 +210,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
             "date": _ist_date_of(delivery_date).isoformat(),
             "site_id": site_id,
             "meals": out,
+            "one_per_day": True,
             "meal_types": [{"key": k, "label": v} for k, v in MEAL_TYPE_LABELS.items()],
         }
 
@@ -238,14 +249,23 @@ def make_router(db, safe_objectid, get_current_user, create_notification):
         if now_utc >= cutoff_at:
             raise HTTPException(status_code=400, detail=f"Cutoff for {data.meal_period} has passed (was {cutoff_at.isoformat()})")
 
+        # PDF Module 7: an employee may have ONE reservation per delivery_date
+        # (either Lunch OR Dinner, not both). Block if ANY active reservation exists
+        # for that day.
         existing = await db.reservations.find_one({
             "employee_id": user["id"],
             "delivery_date": delivery_date,
-            "meal_period": data.meal_period,
             "status": "reserved",
         })
         if existing:
-            raise HTTPException(status_code=409, detail=f"You already have a {data.meal_period} reservation for {_ist_date_of(delivery_date).isoformat()}")
+            existing_period = existing.get("meal_period", "another")
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"You already have a {existing_period} reservation for {_ist_date_of(delivery_date).isoformat()}. "
+                    f"Each employee can book only one meal per day. Cancel the existing one to switch."
+                ),
+            )
 
         mapping = await db.vendor_site_mappings.find_one({"site_id": site_id, "vendor_id": data.vendor_id})
         if not mapping:
