@@ -1,0 +1,110 @@
+name: EAS Build APK (Demo)
+
+# Build a real Android APK on Expo's cloud servers so you can install on any
+# Android phone for live demos — no local Android SDK / Java needed.
+#
+# How to use:
+#   1. Push this file to GitHub (already done if you ran "Save to GitHub")
+#   2. GitHub → Actions tab → "EAS Build APK (Demo)" → Run workflow
+#   3. Pick the variant (customer or vendor) and profile (preview = APK, dev = APK with dev client)
+#   4. Wait ~10–15 min. The build link will appear in the job summary.
+#   5. Open the link on the Android phone → tap "Install" → demo ready.
+#
+# Required GitHub secret: EXPO_TOKEN
+#   Get one at: https://expo.dev → Account settings → Access tokens → Create
+#   In your repo: Settings → Secrets and variables → Actions → New secret
+#                 Name: EXPO_TOKEN, Value: <the token from expo.dev>
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Which app to build"
+        required: true
+        type: choice
+        default: customer
+        options:
+          - customer        # com.cravitoo.app   (Employee + Corp Admin)
+          - vendor          # com.cravitoo.partner (Vendor app)
+      profile:
+        description: "Build profile (preview = standalone APK, development = APK with dev client)"
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - preview-vendor
+          - development
+      release_notes:
+        description: "Release notes (shows in Expo dashboard)"
+        required: false
+        type: string
+        default: "Demo build"
+
+jobs:
+  build-apk:
+    name: Build APK on EAS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: yarn
+          cache-dependency-path: mobile/yarn.lock
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Pick app variant + profile
+        id: pick
+        run: |
+          if [[ "${{ inputs.variant }}" == "vendor" ]]; then
+            echo "APP_VARIANT=vendor" >> $GITHUB_ENV
+            echo "profile=${{ inputs.profile == 'preview' && 'preview-vendor' || inputs.profile }}" >> $GITHUB_OUTPUT
+          else
+            echo "APP_VARIANT=" >> $GITHUB_ENV
+            echo "profile=${{ inputs.profile }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger EAS Build (Android APK)
+        id: eas
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ steps.pick.outputs.profile }} \
+            --non-interactive \
+            --no-wait \
+            --message "${{ inputs.release_notes }}" \
+            --json 2>&1 | tee build.json
+          # Extract the build URL
+          BUILD_URL=$(python3 -c "import json,re,sys; t=open('build.json').read(); m=re.search(r'https://expo.dev/[^\"\\s]+', t); print(m.group(0) if m else '')")
+          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+          echo "BUILD_URL=$BUILD_URL" >> $GITHUB_ENV
+
+      - name: Summary
+        run: |
+          echo "## ✅ Build queued on EAS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Variant:** ${{ inputs.variant }}  •  **Profile:** ${{ steps.pick.outputs.profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ -n "$BUILD_URL" ]]; then
+            echo "**Track progress:** $BUILD_URL" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Track progress:** Open https://expo.dev → Builds tab" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Once the build finishes (~10–15 min), open the link on your Android phone, tap **Install**, and you're ready to demo." >> $GITHUB_STEP_SUMMARY
