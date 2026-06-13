@@ -67,7 +67,7 @@ const PrivacyPolicy = () => {
               <li>To enable authentication and prevent unauthorised access — brute-force lockout, JWT tokens, secure sessions.</li>
               <li>To process payments via Razorpay and issue refunds.</li>
               <li>To send transactional notifications (order confirmed, ready for pickup, refund processed) via push notifications and in-app alerts.</li>
-              <li>To generate AI-powered food recommendations, demand forecasts, and wastage analyses for vendors. These features use the GPT-5.2 model via the Emergent LLM service; only aggregated, non-identifying signals are sent — never your name, email, or phone.</li>
+              <li>To generate AI-powered food recommendations, demand forecasts, and wastage analyses for vendors. These features use a managed GPT-5.2 LLM service; only aggregated, non-identifying signals are sent — never your name, email, or phone.</li>
               <li>To comply with legal obligations, including India&apos;s DPDP Act, GST returns, and FSSAI record-keeping requirements.</li>
             </ul>
           </section>
@@ -85,7 +85,7 @@ const PrivacyPolicy = () => {
               <p><strong className="text-text-primary">Vendor partners</strong>: Your name, order items, and pickup QR are shared with the vendor fulfilling your order. They do not see your email, phone, or payment details.</p>
               <p><strong className="text-text-primary">Corporate / Site Admins</strong>: Your aggregated order activity (count, spend, sponsorship eligibility) is visible to your employer&apos;s admins for reporting. Individual order items are not exposed in admin dashboards.</p>
               <p><strong className="text-text-primary">Payment processor (Razorpay)</strong>: Required transaction metadata only.</p>
-              <p><strong className="text-text-primary">Cloud / infrastructure providers</strong>: MongoDB Atlas (India region), Expo (push delivery), Resend (transactional email), and Emergent LLM (AI features). All providers are bound by data-processing agreements.</p>
+              <p><strong className="text-text-primary">Cloud / infrastructure providers</strong>: MongoDB Atlas (India region), Expo (push delivery), Resend (transactional email), and a managed AI LLM service. All providers are bound by data-processing agreements.</p>
               <p><strong className="text-text-primary">We never sell your personal data</strong> to third parties for advertising or any other purpose.</p>
             </div>
           </section>

@@ -136,7 +136,7 @@ class TestAI:
 # --- Payments ---
 class TestPayments:
     def test_razorpay_create_order(self):
-        """Replaces the old Stripe checkout test — Cravitoo migrated to Razorpay (iter21)."""
+        """Replaces the old Stripe checkout test — Cravitoo migrated to Razorpay."""
         s, _ = login("employee")
         vendors = requests.get(f"{BASE_URL}/api/vendors", timeout=10).json()
         v = next(v for v in vendors if v["name"] == "Spice Kitchen")

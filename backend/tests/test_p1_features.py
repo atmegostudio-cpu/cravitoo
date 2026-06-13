@@ -80,7 +80,7 @@ def vendor_id(tokens):
 # ===================== PATCH /api/admin/vendors/{id} =====================
 class TestVendorEdit:
     def test_master_update_success(self, tokens, vendor_id):
-        payload = {"description": "TEST_iter8 desc " + str(int(time.time())), "phone": "+919999999999"}
+        payload = {"description": "TEST_ desc " + str(int(time.time())), "phone": "+919999999999"}
         r = requests.patch(f"{BASE}/api/admin/vendors/{vendor_id}", json=payload, headers=_hdr(tokens["master"]))
         assert r.status_code == 200, r.text
         # Verify via GET
@@ -197,9 +197,9 @@ def _make_onboarding_xlsx(include_bad_row=True):
     ws = wb.active
     ws.append(["vendor_name", "company_name", "contact_person", "mobile_number", "email", "business_address", "cuisine_type"])
     nonce = int(time.time())
-    ws.append([f"TEST_iter8_vendor_A_{nonce}", "TEST_co", "Alice", "9000000001", f"a_{nonce}@t.com", "Addr A", "Indian"])
-    ws.append([f"TEST_iter8_vendor_B_{nonce}", "TEST_co", "Bob",   "9000000002", f"b_{nonce}@t.com", "Addr B", "Chinese"])
-    ws.append([f"TEST_iter8_vendor_C_{nonce}", "TEST_co", "Carl",  "9000000003", f"c_{nonce}@t.com", "Addr C", "Italian"])
+    ws.append([f"TEST__vendor_A_{nonce}", "TEST_co", "Alice", "9000000001", f"a_{nonce}@t.com", "Addr A", "Indian"])
+    ws.append([f"TEST__vendor_B_{nonce}", "TEST_co", "Bob",   "9000000002", f"b_{nonce}@t.com", "Addr B", "Chinese"])
+    ws.append([f"TEST__vendor_C_{nonce}", "TEST_co", "Carl",  "9000000003", f"c_{nonce}@t.com", "Addr C", "Italian"])
     if include_bad_row:
         ws.append(["",                            "TEST_co", "Dave",  "9000000004", f"d_{nonce}@t.com", "Addr D", "Multi"])
     buf = io.BytesIO()
@@ -291,7 +291,7 @@ def draft_onboarding_id(tokens, first_site_id):
     """Create one in-progress onboarding to upload menu against."""
     nonce = int(time.time())
     payload = {
-        "vendor_name": f"TEST_iter8_menuvendor_{nonce}",
+        "vendor_name": f"TEST__menuvendor_{nonce}",
         "company_name": "TEST_co",
         "contact_person": "TestPerson",
         "mobile_number": "9112233445",
@@ -448,7 +448,7 @@ class TestLowStockAlert:
             "vendor_id": vendor_id,
             "items": [{"menu_item_id": item_id, "quantity": 1, "price": item.get("price", 0)}],
             "delivery_type": "pickup",
-            "special_instructions": "TEST_iter8 low stock",
+            "special_instructions": "TEST_ low stock",
         }
         o = requests.post(f"{BASE}/api/orders", json=order_payload, headers=_hdr(tokens["employee"]))
         assert o.status_code in (200, 201), o.text

@@ -1,5 +1,5 @@
 """
-Iteration 12 backend tests:
+Feature backend tests:
 - DPDP data export / erasure endpoints (GET/DELETE /api/me/data)
 - Vendor menu lock-down (vendors read-only on /api/menu)
 - Expo push notification endpoints
@@ -125,7 +125,7 @@ def test_me_data_delete_happy_path():
 # ====== Vendor menu lock-down ======
 def test_post_menu_vendor_forbidden(tokens):
     payload = {
-        "name": "TEST_iter12_item", "description": "x", "category": "Main",
+        "name": "TEST__item", "description": "x", "category": "Main",
         "price": 99.0, "is_vegetarian": True, "vendor_id": "doesntmatter",
     }
     r = requests.post(f"{API}/menu", headers=tokens["vendor"], json=payload, timeout=15)
@@ -172,7 +172,7 @@ def test_post_menu_master_admin_success(tokens):
     assert vendors
     vendor_id = vendors[0]["id"]
     payload = {
-        "name": f"TEST_iter12_admin_item_{int(time.time())}",
+        "name": f"TEST__admin_item_{int(time.time())}",
         "description": "Created by master admin in tests",
         "category": "Test",
         "price": 49.0,
@@ -189,7 +189,7 @@ def test_post_menu_master_admin_success(tokens):
 
 # ====== Push notifications ======
 def test_push_token_register_valid(tokens):
-    payload = {"token": "ExponentPushToken[iter12-test-xxxxxxxxxxxxx]", "platform": "ios", "variant": "customer"}
+    payload = {"token": "ExponentPushToken[-test-xxxxxxxxxxxxx]", "platform": "ios", "variant": "customer"}
     r = requests.post(f"{API}/notifications/push-token", headers=tokens["employee"], json=payload, timeout=15)
     assert r.status_code == 200, r.text
     assert r.json().get("ok") is True
@@ -214,7 +214,7 @@ def test_test_push(tokens):
 
 
 def test_push_token_delete(tokens):
-    tok = "ExponentPushToken[iter12-test-xxxxxxxxxxxxx]"
+    tok = "ExponentPushToken[-test-xxxxxxxxxxxxx]"
     r = requests.delete(
         f"{API}/notifications/push-token?token={tok}",
         headers=tokens["employee"], timeout=15,

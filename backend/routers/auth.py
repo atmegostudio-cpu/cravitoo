@@ -1,6 +1,6 @@
 """
 Auth (register/login/logout/me), Email OTP (Resend), and DPDP /me/data endpoints
-extracted from server.py (iter17 phase 2 refactor — pure code move, no logic change).
+extracted from server.py.
 
 Built as a make_router(...) factory to avoid circular imports.
 Per integration_playbook_expert_v2 guidance: dependencies passed via factory params.

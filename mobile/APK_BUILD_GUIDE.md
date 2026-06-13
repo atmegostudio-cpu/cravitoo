@@ -32,7 +32,7 @@ Best for **internal/personal demos**. You install Expo Go from the Play Store on
 Builds a real `.apk` file on Expo's cloud. Anyone on Android can install it directly without Expo Go.
 
 ### Setup (only once)
-1. **Push the repo to GitHub** — click **Save to GitHub** in the Emergent chat
+1. **Push the repo to GitHub** — push your local repo to a fresh GitHub repository
 2. Get an Expo access token:
    - Go to [https://expo.dev](https://expo.dev) → log in (your Cravitoo account)
    - Top-right avatar → **Settings** → **Access tokens** → **Create token**

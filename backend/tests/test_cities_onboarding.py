@@ -1,5 +1,5 @@
 """
-Iteration 7 tests: Cities CRUD, City Admin role, Vendor Onboarding workflow.
+Feature tests: Cities CRUD, City Admin role, Vendor Onboarding workflow.
 Covers ~30 cases from review_request.
 """
 import os
@@ -11,7 +11,7 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv("/app/backend/.env")
-BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "https://corporate-feast.preview.emergentagent.com"
+BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "http://localhost:8001"
 API = f"{BASE_URL}/api"
 
 MASTER = {"email": "admin@cravitoo.com", "password": "admin123"}

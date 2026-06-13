@@ -1,5 +1,5 @@
 """
-Tests for iter24 — Steps 2-5 from PDF gap analysis:
+Tests for  — Steps 2-5 from PDF gap analysis:
   2. Meal types on reservations
   3. Corp Admin 20:00-20:45 IST bulk override window
   5. Excel/CSV/PDF exports
@@ -14,7 +14,7 @@ import io
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 API = f"{BASE_URL}/api"
 
 

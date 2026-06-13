@@ -1,5 +1,5 @@
 """
-Additional iter24 coverage gaps not covered by test_iter24_step2_to_5.py:
+Additional  coverage gaps not covered by test__step2_to_5.py:
 - /api/exports/vendor-sales endpoint
 - date range filters
 - corporate admin scoping on exports
@@ -15,7 +15,7 @@ import uuid
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 API = f"{BASE_URL}/api"
 
 

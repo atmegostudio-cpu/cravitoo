@@ -1,5 +1,5 @@
 """
-Meal Reservation routes (iter15).
+Meal Reservation routes.
 
 Endpoints:
   GET    /api/reservations/availability        — employee sees 4 meal slots for tomorrow

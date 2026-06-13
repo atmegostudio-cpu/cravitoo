@@ -440,7 +440,7 @@ const MenuTab = ({ siteId }) => {
       return;
     }
     const cap = Math.min(missing, 20);
-    if (!window.confirm(`Generate AI photos for up to ${cap} items missing images?\n\nEstimated cost: ~₹${(cap * 3.5).toFixed(0)} (charged from your Emergent LLM key balance).\n\nThis may take ~${cap * 15} seconds.`)) {
+    if (!window.confirm(`Generate AI photos for up to ${cap} items missing images?\n\nEstimated cost: ~₹${(cap * 3.5).toFixed(0)} (charged from your AI provider balance).\n\nThis may take ~${cap * 15} seconds.`)) {
       return;
     }
     setBulkFilling(true);

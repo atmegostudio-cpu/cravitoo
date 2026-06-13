@@ -1,5 +1,5 @@
 """
-Notification Preferences & Daily Digest (iter19).
+Notification Preferences & Daily Digest.
 
 Lets users opt in/out of per-event emails (DPDP compliance) and provides
 a single daily-digest email instead of per-order emails — reduces Resend

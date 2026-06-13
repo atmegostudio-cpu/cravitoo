@@ -1,7 +1,7 @@
 """
-Vendor → Cravitoo Menu Change Request routes (iter14).
+Vendor → Cravitoo Menu Change Request routes.
 
-Vendors are read-only on menus (iter10 lock-down). They submit change requests
+Vendors are read-only on menus. They submit change requests
 that Master Admin (and optionally Site Admin for "remove"+"edit_description")
 review and approve. On approval, the menu is auto-updated.
 

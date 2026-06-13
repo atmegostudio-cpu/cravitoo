@@ -1,5 +1,5 @@
 """
-Vendor Onboarding routes (extracted from server.py — iter17 phase 2 refactor).
+Vendor Onboarding routes (extracted from server.py.
 
 Endpoints:
   POST   /api/onboarding/vendors/bulk-import

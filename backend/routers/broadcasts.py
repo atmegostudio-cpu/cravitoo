@@ -1,5 +1,5 @@
 """
-Master Admin Broadcast Announcements (iter19).
+Master Admin Broadcast Announcements.
 
 Sends a single message to many users at once via Expo Push Notifications
 (free, unlimited) and optionally email. Used for platform-wide outages,

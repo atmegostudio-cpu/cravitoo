@@ -99,11 +99,11 @@ The mobile app connects to the same FastAPI backend as the web. The URL is confi
 
 ```json
 "extra": {
-  "apiUrl": "https://corporate-feast.preview.emergentagent.com"
+  "apiUrl": "http://localhost:8001"
 }
 ```
 
-To point to production, change to `https://corporate-feast.emergent.host`.
+To point to production, change to `https://app.cravitoo.com`.
 
 The backend was updated to return JWT tokens in the response body (for mobile) in addition to httpOnly cookies (for web).
 
@@ -142,7 +142,7 @@ cd android && ./gradlew assembleRelease
 |------|-------|----------|
 | Employee | employee@techcorp.com | employee123 |
 
-(Vendor/Admin/Super Admin must use the web app at https://corporate-feast.emergent.host)
+(Vendor/Admin/Super Admin must use the web app at https://app.cravitoo.com)
 
 ## Troubleshooting
 

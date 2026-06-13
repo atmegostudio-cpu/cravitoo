@@ -1,5 +1,5 @@
 """
-Allowed corporate domains (iter23 — Item 1 from master prompt).
+Allowed corporate domains.
 
 Restricts employee signup to corporate emails only. Master Admin manages
 the allowlist; signup endpoints check the domain before creating accounts.

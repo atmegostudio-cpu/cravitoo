@@ -1,4 +1,4 @@
-"""Iteration 6 tests:
+"""Feature tests:
 - Vendor settings (auto_confirm, low_stock_threshold)
 - Vendor today-earnings, settlement w/ commission
 - Quick menu availability toggle
@@ -24,7 +24,7 @@ try:
 except Exception:
     pass
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "cravitoo_db")
 
@@ -265,7 +265,7 @@ class TestUpload:
     uploaded_filename = None
 
     def test_master_admin_uploads_png(self):
-        # NOTE (iter12): vendor menu lock-down. Only master/site_admin can upload menu images.
+        # NOTE: vendor menu lock-down. Only master/site_admin can upload menu images.
         ms, _ = login("master_admin")
         png = _png_bytes()
         files = {"file": ("test.png", png, "image/png")}
@@ -277,7 +277,7 @@ class TestUpload:
         TestUpload.uploaded_filename = d["filename"]
 
     def test_vendor_upload_403(self):
-        # iter12: vendors can no longer upload menu images
+        #  vendors can no longer upload menu images
         vs, _ = login("vendor")
         files = {"file": ("x.png", _png_bytes(), "image/png")}
         r = vs.post(f"{BASE_URL}/api/upload/menu-image", files=files, timeout=15)

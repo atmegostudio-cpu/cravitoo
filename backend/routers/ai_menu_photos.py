@@ -1,7 +1,7 @@
 """
-AI Photo Suggestions for menu items (iter18).
+AI Photo Suggestions for menu items.
 
-Master Admin generates food photos via OpenAI gpt-image-1 (Emergent LLM Key)
+Master Admin generates food photos via OpenAI gpt-image-1
 when vendors haven't supplied their own photos.
 
 Endpoints:

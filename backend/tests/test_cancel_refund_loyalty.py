@@ -1,4 +1,4 @@
-"""Cravitoo Iteration 5 - Order Cancellation, Vendor Refund, Loyalty Redemption
+"""Cravitoo Feature tests: Order Cancellation, Vendor Refund, Loyalty Redemption
 Covers: /api/orders/{id}/cancel, /api/orders/{id}/refund, /api/loyalty/redeem
 Uses direct MongoDB writes for setup of unusual states (expired window, prepaid order,
 cross-vendor order, loyalty point top-up).

@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from playwright.async_api import async_playwright
 
-BASE = os.environ.get("BASE_URL", "https://corporate-feast.preview.emergentagent.com")
+BASE = os.environ.get("BASE_URL", "http://localhost:8001")
 OUT_DIR = Path("/app/frontend/public/demo-screens")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -1,7 +1,7 @@
 """
 Sites, Vendor-Site mapping, Meal Schedules, Site Menu, Excel upload,
 Admin (site/super/master/city_admin) creation/list/delete, Master/Site reports,
-and Employee /my-site — extracted from server.py (iter17 phase 2 refactor).
+and Employee /my-site — extracted from server.py.
 
 Built as a make_router(...) factory to avoid circular imports.
 """

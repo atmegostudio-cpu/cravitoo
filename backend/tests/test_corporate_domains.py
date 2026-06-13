@@ -1,5 +1,5 @@
 """
-Tests for iter23 — Step 1 from PDF gap analysis:
+Tests for  — Step 1 from PDF gap analysis:
   1. Corporate domain allowlist (sign-up restriction)
   4. Email triggers (vendor decision, menu decision, site activated) — wiring verified
   7. Site lifecycle Draft → Configured → Live
@@ -14,7 +14,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 API = f"{BASE_URL}/api"
 
 

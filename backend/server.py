@@ -620,10 +620,10 @@ async def seed_demo_data():
         logger.debug(f"Skipped writing test_credentials.md: {e}")
 
 # Auth Routes
-# Auth (register/login/logout/me) + OTP + DPDP /me/data extracted to /app/backend/routers/auth.py (iter17 phase 2 refactor)
+# Auth (register/login/logout/me) + OTP + DPDP /me/data extracted to /app/backend/routers/auth.py
 
 
-# Menu change request routes extracted to /app/backend/routers/menu_change_requests.py (iter16 phase 2 refactor)
+# Menu change request routes extracted to /app/backend/routers/menu_change_requests.py
 
 
 # Company Routes
@@ -932,7 +932,7 @@ async def verify_pickup(order_id: str, qr_code: str, user: dict = Depends(get_cu
     await db.orders.update_one({"_id": safe_objectid(order_id, "Order")}, {"$set": {"status": "completed"}})
     return {"message": "Pickup verified successfully", "order_id": order_id}
 
-# Stripe payment endpoints removed (iter22 cleanup) — Cravitoo uses Razorpay for INR.
+# Stripe payment endpoints removed — Cravitoo uses Razorpay for INR.
 # See routers/sites.py registration and the /payments/razorpay/* endpoints below.
 
 # AI Recommendations
@@ -2380,7 +2380,7 @@ async def get_last_order(user: dict = Depends(get_current_user)):
     }
 
 
-# Onboarding bulk-import + menu pre-load extracted to /app/backend/routers/onboarding.py (iter17 phase 2 refactor)
+# Onboarding bulk-import + menu pre-load extracted to /app/backend/routers/onboarding.py
 
 
 # ============== EMPLOYEE: CURRENT MEAL PERIOD ==============
@@ -2634,7 +2634,7 @@ def onboarding_to_dict(o):
         "updated_at": o.get("updated_at").isoformat() if o.get("updated_at") else None,
     }
 
-# Onboarding endpoints (create/list/get/patch/checklist/docs/site-review/master-decision/dashboard) extracted to /app/backend/routers/onboarding.py (iter17 phase 2 refactor)
+# Onboarding endpoints (create/list/get/patch/checklist/docs/site-review/master-decision/dashboard) extracted to /app/backend/routers/onboarding.py
 
 
 # ============== CITY PERFORMANCE LEADERBOARD ==============
@@ -2795,7 +2795,7 @@ async def bulk_employee_csv(
 
 
 # Sites, vendor-site mapping, meal schedules, site menu, admin CRUD, master/site reports, employee/my-site
-# extracted to /app/backend/routers/sites.py (iter17 phase 2 refactor)
+# extracted to /app/backend/routers/sites.py
 
 # ============== WEBSOCKETS ==============
 
@@ -2849,15 +2849,15 @@ async def websocket_vendor(websocket: WebSocket, token: str = Query(...)):
         logger.error(f"WS error for vendor {vendor_id}: {e}")
         manager.disconnect_vendor(vendor_id, websocket)
 
-# Pre-order reservation routes extracted to /app/backend/routers/reservations.py (iter15 phase 2 refactor)
+# Pre-order reservation routes extracted to /app/backend/routers/reservations.py
 # Router wired below near app.include_router
 
-# Weekly admin reports extracted to /app/backend/routers/admin_reports.py (iter16 phase 2 refactor)
+# Weekly admin reports extracted to /app/backend/routers/admin_reports.py
 
 
 app.include_router(api_router)
 
-# Modular routers (iter15+ phase 2 refactor)
+# Modular routers
 from routers.reservations import make_router as make_reservations_router  # noqa: E402
 from routers.menu_change_requests import make_router as make_menu_change_router  # noqa: E402
 from routers.admin_reports import make_router as make_admin_reports_router  # noqa: E402

@@ -1,4 +1,4 @@
-"""Regression tests for the IST timezone bug in reservations (iter18 fix).
+"""Regression tests for the IST timezone bug in reservations.
 
 Bug: At Indian afternoon/evening (when UTC is still the previous calendar day
 relative to IST midnight), the reservation system was computing the wrong

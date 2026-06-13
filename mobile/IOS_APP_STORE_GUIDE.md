@@ -90,7 +90,7 @@ Inside App Store Connect → **Apps** → **+** (New App):
 
 ## 4. Build production iOS binaries via EAS
 
-From `/app/mobile/` (run locally — **not** in the Emergent container; the iOS build is cloud-built but must be triggered from a machine with a clean network):
+From `/app/mobile/` (the iOS build is cloud-built but must be triggered from a machine with a clean network):
 
 ```bash
 # Customer App

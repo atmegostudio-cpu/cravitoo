@@ -1,5 +1,5 @@
 """
-Weekly admin email reports (iter13).
+Weekly admin email reports.
 
 Endpoint:
   POST /api/admin/reports/weekly/send

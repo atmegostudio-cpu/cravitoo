@@ -1,4 +1,4 @@
-"""Cravitoo Iteration 3 - New feature tests:
+"""Cravitoo Feature tests: New feature tests:
 Menu CRUD, Employees, Bulk Orders, Events, Notifications, AI Forecast/Wastage, Loyalty
 """
 import os
@@ -6,7 +6,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 
 CREDS = {
     "super_admin": ("admin@cravitoo.com", "admin123"),
@@ -43,7 +43,7 @@ class TestMenuCRUD:
         assert len(items) >= 1
 
     def test_create_update_delete_menu_item(self):
-        # NOTE (iter12): vendor menu CRUD is now master_admin-only. Vendors get 403.
+        # NOTE: vendor menu CRUD is now master_admin-only. Vendors get 403.
         # We test (a) vendor is blocked, (b) master_admin happy path with vendor_id.
         vs, _ = login("vendor")
         vendor_id = vs.get(f"{BASE_URL}/api/auth/me", timeout=10).json().get("vendor_id")
