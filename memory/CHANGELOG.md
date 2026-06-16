@@ -1,3 +1,8 @@
+## Feb 2026 — Developer Handover Audit PDF
+- Generated branded PDF of `/app/CRAVITOO_APP_AUDIT_REPORT.md` at `/app/frontend/public/cravitoo-app-audit-report.pdf` (downloadable at `{REACT_APP_BACKEND_URL}/cravitoo-app-audit-report.pdf`)
+- Build script: `/app/backend/scripts/build_audit_pdf.py` (uses `markdown_pdf` already in requirements)
+
+
 # Cravitoo - Iteration Changelog
 
 _Detailed iteration-by-iteration history. Latest 5 are in PRD.md._
