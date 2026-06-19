@@ -288,24 +288,7 @@ const LoginPage = () => {
             </form>
           )}
 
-          {/* Demo accounts always visible */}
-          {mode === 'password' && (
-            <div className="mt-6 pt-6 border-t border-border-light">
-              <p className="text-xs text-text-muted text-center mb-4">Demo Accounts:</p>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="bg-background p-3 rounded-lg">
-                  <p className="font-medium text-text-primary mb-1">Employee</p>
-                  <p className="text-text-muted">employee@techcorp.com</p>
-                  <p className="text-text-muted">employee123</p>
-                </div>
-                <div className="bg-background p-3 rounded-lg">
-                  <p className="font-medium text-text-primary mb-1">Vendor</p>
-                  <p className="text-text-muted">vendor@spicekitchen.com</p>
-                  <p className="text-text-muted">vendor123</p>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Demo credentials are intentionally not shown on the public login page. */}
         </div>
       </div>
     </div>

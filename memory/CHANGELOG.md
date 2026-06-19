@@ -1,3 +1,12 @@
+## Feb 2026 — Phase 1 Critical Fix Pass
+- Added `CRAVITOO_ENV` env var (fail-secure default = production). Demo endpoints + seed return 404 in production.
+- Hardened `/auth/register`: server-side blocks any role except employee + writes `audit_log` entry on attempted privilege escalation.
+- Added order lifecycle state machine (`backend/order_lifecycle.py`) + `order_status_history` audit collection. PATCH /orders/{id} validates transitions, blocks stale orders (>48h non-terminal), and uses atomic conditional update.
+- Removed demo credentials from public LoginPage and the role dropdown from RegisterPage. Frontend axios interceptor no longer redirects to `/login?expired=1` from public routes (`/`, `/login`, `/register`, `/privacy`, `/terms`).
+- 21 new automated tests in `backend/tests/test_phase1_critical_fixes.py`. 327 prior tests still passing (2 pre-existing failures documented, both unrelated to Phase 1).
+- Report: `/app/PHASE1_REPORT.md` (also PDF at `/cravitoo-phase1-report.pdf`).
+
+
 ## Feb 2026 — Developer Handover Audit PDF
 - Generated branded PDF of `/app/CRAVITOO_APP_AUDIT_REPORT.md` at `/app/frontend/public/cravitoo-app-audit-report.pdf` (downloadable at `{REACT_APP_BACKEND_URL}/cravitoo-app-audit-report.pdf`)
 - Build script: `/app/backend/scripts/build_audit_pdf.py` (uses `markdown_pdf` already in requirements)

@@ -39,7 +39,12 @@ const RegisterPage = () => {
     name: '',
     email: '',
     password: '',
-    role: 'employee'
+    // Public self-sign-up is hard-locked to employee. Vendor / Corporate Admin
+    // / Site Admin / Super Admin / Master Admin accounts are provisioned via
+    // an admin-controlled invitation flow. The backend enforces this too —
+    // see backend/routers/auth.py::register and the role-escalation test
+    // suite (tests/test_auth_role_escalation.py).
+    role: 'employee',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,17 +57,12 @@ const RegisterPage = () => {
     setLoading(true);
 
     try {
-      const user = await register(formData.email, formData.password, formData.name, formData.role);
+      // Always send role=employee — the server will reject anything else.
+      const user = await register(formData.email, formData.password, formData.name, 'employee');
       
       switch (user.role) {
         case 'employee':
           navigate('/employee/dashboard');
-          break;
-        case 'vendor':
-          navigate('/vendor/dashboard');
-          break;
-        case 'corporate_admin':
-          navigate('/admin/dashboard');
           break;
         default:
           navigate('/');
@@ -137,20 +137,15 @@ const RegisterPage = () => {
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-text-primary mb-2" htmlFor="role">
-                I am a
-              </label>
-              <select
-                id="role"
-                data-testid="register-role-select"
-                value={formData.role}
-                onChange={(e) => setFormData({...formData, role: e.target.value})}
-                className="w-full px-4 py-3 border border-border-light rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 bg-background"
+              <p
+                data-testid="register-role-note"
+                className="text-xs text-text-muted bg-background border border-border-light rounded-lg p-3"
               >
-                <option value="employee">Employee</option>
-                <option value="vendor">Vendor</option>
-                <option value="corporate_admin">Corporate Admin</option>
-              </select>
+                Sign-ups on this page create an <strong>Employee</strong> account
+                for your company. Vendor and Admin accounts are issued by
+                Cravitoo via a secure invitation — please contact your account
+                manager.
+              </p>
             </div>
 
             {error && (

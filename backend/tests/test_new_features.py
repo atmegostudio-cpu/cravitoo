@@ -99,6 +99,9 @@ class TestOrderStatusEnum:
     def test_valid_status_accepted(self):
         order = self._create_order()
         vs, _ = login("vendor")
+        # Walk through valid lifecycle: pending → confirmed → preparing
+        r1 = vs.patch(f"{BASE_URL}/api/orders/{order['id']}", params={"status": "confirmed"}, timeout=10)
+        assert r1.status_code == 200, r1.text
         r = vs.patch(f"{BASE_URL}/api/orders/{order['id']}", params={"status": "preparing"}, timeout=10)
         assert r.status_code == 200, r.text
         assert r.json().get("status") == "preparing"
@@ -129,6 +132,13 @@ class TestPaymentScope:
 
 # ---- QR Pickup verify ----
 class TestQRPickup:
+    @staticmethod
+    def _walk_to_ready(vs, order_id):
+        """Move an order through pending → confirmed → preparing → ready."""
+        for nxt in ("confirmed", "preparing", "ready"):
+            r = vs.patch(f"{BASE_URL}/api/orders/{order_id}", params={"status": nxt}, timeout=10)
+            assert r.status_code == 200, f"transition to {nxt} failed: {r.text}"
+
     def test_valid_qr_marks_completed(self):
         es, _ = login("employee")
         v, menu = get_spice_kitchen_and_menu()
@@ -141,9 +151,9 @@ class TestQRPickup:
         order = order_resp.json()
         order_id = order["id"]
         qr = order["pickup_qr"]
-        # vendor marks ready first
+        # vendor walks the order to "ready" first
         vs, _ = login("vendor")
-        vs.patch(f"{BASE_URL}/api/orders/{order_id}", params={"status": "ready"}, timeout=10)
+        self._walk_to_ready(vs, order_id)
         # verify-pickup with valid QR
         r = vs.post(f"{BASE_URL}/api/orders/{order_id}/verify-pickup",
                     params={"qr_code": qr}, timeout=10)
@@ -211,7 +221,10 @@ class TestReviews:
         order_id = order_resp.json()["id"]
         qr = order_resp.json()["pickup_qr"]
         vs, _ = login("vendor")
-        vs.patch(f"{BASE_URL}/api/orders/{order_id}", params={"status": "ready"}, timeout=10)
+        # Walk the lifecycle (state machine: pending → confirmed → preparing → ready)
+        for nxt in ("confirmed", "preparing", "ready"):
+            r = vs.patch(f"{BASE_URL}/api/orders/{order_id}", params={"status": nxt}, timeout=10)
+            assert r.status_code == 200, f"transition to {nxt} failed: {r.text}"
         vs.post(f"{BASE_URL}/api/orders/{order_id}/verify-pickup", params={"qr_code": qr}, timeout=10)
         return es, v["id"], order_id
 

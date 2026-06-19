@@ -6,6 +6,7 @@ import { Sparkles, Play, Trash2, CheckCircle2, AlertCircle, Loader2, Copy, Chevr
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const DemoControl = () => {
+  const [enabled, setEnabled] = useState(null); // null=loading, false=production, true=demo allowed
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
@@ -15,6 +16,13 @@ const DemoControl = () => {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
+      const flag = await axios.get(`${API}/admin/demo/enabled`, { withCredentials: true });
+      const isEnabled = !!flag.data?.demo_enabled;
+      setEnabled(isEnabled);
+      if (!isEnabled) {
+        setLoading(false);
+        return;
+      }
       const { data } = await axios.get(`${API}/admin/demo/status`, { withCredentials: true });
       setStatus(data);
     } catch (e) {
@@ -62,6 +70,25 @@ const DemoControl = () => {
 
   if (loading) {
     return (<><Navbar /><div className="min-h-screen bg-background flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" /></div></>);
+  }
+
+  if (enabled === false) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div data-testid="demo-disabled-banner" className="max-w-lg bg-card border border-border-light rounded-2xl p-8 text-center">
+            <AlertCircle className="h-10 w-10 text-amber-500 mx-auto mb-4" />
+            <h1 className="font-heading text-2xl font-semibold mb-2">Demo Control disabled</h1>
+            <p className="text-text-secondary text-sm">
+              This environment is running in <strong>production</strong> mode. Demo
+              setup and teardown endpoints are unavailable here to protect real
+              customer data. Use a preview or staging environment for demos.
+            </p>
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (

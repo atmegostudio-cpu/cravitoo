@@ -5,7 +5,7 @@ Creates a self-contained demo (Company → Site → Vendor → Corp Admin → Em
 with the new meal_type pre-order flow (Veg Meal / Non-Veg Meal / Veg Salad / Non-Veg Salad).
 Lunch & Dinner only, 8 PM IST cutoff.
 
-Endpoints (master_admin only):
+Endpoints (master_admin only; ALL return 404 when CRAVITOO_ENV=production):
   POST /api/admin/demo/setup     — create all demo records (idempotent)
   POST /api/admin/demo/teardown  — delete all demo records (safe — only deletes _demo_tagged ones)
   GET  /api/admin/demo/status    — returns whether demo is currently active
@@ -20,14 +20,38 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from env_config import is_production
+
 logger = logging.getLogger(__name__)
 
 DEMO_TAG = "cravitoo_pune_demo"
 
-DEMO_CREDENTIALS = {
-    "corporate_admin": {"email": "finance@cravitoo.com", "password": "Demo@123", "name": "Demo Finance / Corp Admin"},
-    "employee":        {"email": "info@cravitoo.com",    "password": "Demo@123", "name": "Demo Employee"},
-    "vendor":          {"email": "vendor@atmego.com",    "password": "Demo@123", "name": "ATMEGO Operations"},
+
+def _guard_non_production() -> None:
+    """Fail-secure: demo endpoints behave as if they don't exist in production.
+
+    Returning 404 (instead of 403) intentionally hides the very existence of
+    these routes from production probes / scanners.
+    """
+    if is_production():
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+# NOTE: demo credentials are NEVER exposed in production responses.
+# In preview/staging we still scrub passwords from the public JSON payload —
+# the demo seeder logs them once at INFO and they are documented in
+# /app/memory/test_credentials.md for QA only.
+DEMO_CREDENTIALS_PUBLIC = {
+    "corporate_admin": {"email": "finance@cravitoo.com", "name": "Demo Finance / Corp Admin"},
+    "employee":        {"email": "info@cravitoo.com",    "name": "Demo Employee"},
+    "vendor":          {"email": "vendor@atmego.com",    "name": "ATMEGO Operations"},
+}
+
+# Internal-only — used by the seeder, never sent over the wire.
+_DEMO_PASSWORDS = {
+    "corporate_admin": "Demo@123",
+    "employee":        "Demo@123",
+    "vendor":          "Demo@123",
 }
 
 
@@ -40,11 +64,12 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
 
     @r.post("/admin/demo/setup")
     async def setup_demo(user: dict = Depends(get_current_user)):
+        _guard_non_production()
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can run demo setup")
 
         now = datetime.now(timezone.utc)
-        out: Dict[str, Any] = {"created": {}, "existed": {}, "credentials": DEMO_CREDENTIALS}
+        out: Dict[str, Any] = {"created": {}, "existed": {}, "credentials": DEMO_CREDENTIALS_PUBLIC}
 
         # 1) CITY: Pune
         city = await db.cities.find_one({"name": "Pune", "demo_tag": DEMO_TAG})
@@ -179,7 +204,8 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
 
         # 7) USERS (Corp Admin, Employee, Vendor user)
         async def _ensure_user(role: str, extras: Dict[str, Any]):
-            creds = DEMO_CREDENTIALS[role]
+            creds = DEMO_CREDENTIALS_PUBLIC[role]
+            password = _DEMO_PASSWORDS[role]
             email = creds["email"]
             existing = await db.users.find_one({"email": email})
             if existing:
@@ -187,7 +213,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
                 return str(existing["_id"])
             res = await db.users.insert_one({
                 "email": email,
-                "password_hash": hash_password(creds["password"]),
+                "password_hash": hash_password(password),
                 "name": creds["name"],
                 "role": role,
                 "demo_tag": DEMO_TAG,
@@ -208,6 +234,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
 
     @r.post("/admin/demo/teardown")
     async def teardown_demo(user: dict = Depends(get_current_user)):
+        _guard_non_production()
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can run demo teardown")
         removed: Dict[str, int] = {}
@@ -256,8 +283,19 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
             "demo_user_emails": demo_user_emails,
         }
 
+    @r.get("/admin/demo/enabled")
+    async def demo_enabled():
+        """Public probe used by the frontend to decide whether to render the
+        Master → Demo Control page.  Always reachable; never leaks any data
+        beyond a boolean and the env label.
+        """
+        from env_config import get_env
+        env = get_env()
+        return {"demo_enabled": env != "production", "environment": env}
+
     @r.get("/admin/demo/status")
     async def status(user: dict = Depends(get_current_user)):
+        _guard_non_production()
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can view demo status")
         active = {
@@ -271,7 +309,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password):
         return {
             "demo_active": any(v > 0 for v in active.values()),
             "counts": active,
-            "credentials": DEMO_CREDENTIALS,
+            "credentials": DEMO_CREDENTIALS_PUBLIC,  # never includes passwords
             "demo_tag": DEMO_TAG,
         }
 

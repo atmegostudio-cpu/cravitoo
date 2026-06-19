@@ -18,6 +18,16 @@ const API_BASE = process.env.REACT_APP_BACKEND_URL;
 
 let refreshPromise = null;            // shared promise so only ONE refresh is in flight at a time
 
+// Routes that must NEVER trigger a "session expired" redirect — they are public
+// and an anonymous user is the expected case here.
+const PUBLIC_PATHS = ["/", "/login", "/register", "/privacy", "/terms"];
+const isOnPublicPath = () => {
+  const p = window.location.pathname || "/";
+  return PUBLIC_PATHS.some(
+    (root) => p === root || p.startsWith(`${root}/`)
+  );
+};
+
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -29,9 +39,16 @@ axios.interceptors.response.use(
       original.url?.includes("/auth/login") ||
       original.url?.includes("/auth/register") ||
       original.url?.includes("/auth/refresh") ||
-      original.url?.includes("/auth/logout");
+      original.url?.includes("/auth/logout") ||
+      // /auth/me is a soft probe — never trigger refresh or redirect from it
+      original.url?.includes("/auth/me");
 
     if (status !== 401 || original._retried || isAuthEndpoint) {
+      return Promise.reject(error);
+    }
+
+    // Caller opted out of the redirect-to-login behaviour (silent probes).
+    if (original.skipAuthRedirect) {
       return Promise.reject(error);
     }
 
@@ -50,8 +67,10 @@ axios.interceptors.response.use(
       // Retry the original request — the new cookie is now set in the browser
       return axios({ ...original, withCredentials: true });
     } catch (refreshErr) {
-      // Refresh failed too (refresh_token expired or invalid) — bounce to login
-      if (!window.location.pathname.startsWith("/login")) {
+      // Refresh failed too (refresh_token expired or invalid).
+      // ONLY redirect to /login if the user is currently on a protected page;
+      // never bounce them off the public landing, register, privacy or terms.
+      if (!isOnPublicPath()) {
         window.location.href = "/login?expired=1";
       }
       return Promise.reject(refreshErr);

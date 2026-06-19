@@ -23,7 +23,11 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      const { data } = await axios.get(`${API}/auth/me`, { withCredentials: true });
+      const { data } = await axios.get(`${API}/auth/me`, {
+        withCredentials: true,
+        // Silent probe — never redirect or trigger an auto-refresh from this call.
+        skipAuthRedirect: true,
+      });
       setUser(data);
     } catch (error) {
       setUser(false);

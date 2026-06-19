@@ -313,7 +313,11 @@ async def startup_event():
         except Exception as e:
             logger.error(f"seed_admin failed: {e}")
         try:
-            await seed_demo_data()
+            from env_config import is_production
+            if is_production():
+                logger.info("seed_demo_data skipped (CRAVITOO_ENV=production)")
+            else:
+                await seed_demo_data()
         except Exception as e:
             logger.error(f"seed_demo_data failed: {e}")
         logger.info("Background startup tasks complete")
@@ -880,17 +884,42 @@ async def get_orders(user: dict = Depends(get_current_user)):
 
 @api_router.patch("/orders/{order_id}")
 async def update_order_status(order_id: str, status: OrderStatus, user: dict = Depends(get_current_user)):
-    if user["role"] != "vendor":
-        raise HTTPException(status_code=403, detail="Only vendors can update order status")
-    
-    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")})
+    """Vendor / admin endpoint to change an order's status.
+
+    Server-side state machine in routers/order_lifecycle.py enforces:
+      - only valid transitions for the actor's role
+      - no double / out-of-order updates (atomic conditional update)
+      - terminal states are immutable
+      - stale orders (older than 48h, non-terminal) are read-only
+    """
+    from order_lifecycle import assert_transition_allowed, apply_transition
+
+    if user["role"] not in ("vendor", "master_admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only vendors or master admins can update order status")
+
+    order_oid = safe_objectid(order_id, "Order")
+    # Vendors can only modify their own vendor's orders.
+    query: dict = {"_id": order_oid}
+    if user["role"] == "vendor":
+        query["vendor_id"] = user.get("vendor_id")
+
+    order = await db.orders.find_one(query)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found or not yours")
-    
-    await db.orders.update_one(
-        {"_id": safe_objectid(order_id, "Order")},
-        {"$set": {"status": status.value}}
-    )
+
+    target_status = status.value
+    current_status = order.get("status") or "pending"
+
+    # Validate transition (raises HTTPException on invalid)
+    assert_transition_allowed(order, target_status, user["role"])
+
+    # Atomic update — fails if a concurrent request beat us.
+    ok = await apply_transition(db, order_oid, current_status, target_status, user)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Order status changed concurrently. Reload and try again.",
+        )
 
     # Notify employee with push + ws
     status_messages = {
@@ -898,9 +927,12 @@ async def update_order_status(order_id: str, status: OrderStatus, user: dict = D
         "preparing": "Your food is being prepared",
         "ready": "Your order is ready for pickup!",
         "completed": "Order completed. Enjoy your meal!",
-        "cancelled": "Your order was cancelled"
+        "cancelled": "Your order was cancelled",
+        "rejected": "Your order was rejected by the vendor",
+        "no_show": "Your order was marked as no-show",
+        "expired": "Your order expired before confirmation",
     }
-    msg = status_messages.get(status.value, f"Order status: {status.value}")
+    msg = status_messages.get(target_status, f"Order status: {target_status}")
     await create_notification(
         order["user_id"],
         f"Order #{order_id[-8:]}",
@@ -912,24 +944,39 @@ async def update_order_status(order_id: str, status: OrderStatus, user: dict = D
     await manager.send_to_user(order["user_id"], {
         "type": "order_update",
         "order_id": order_id,
-        "status": status.value
+        "status": target_status
     })
 
-    return {"message": "Order status updated", "status": status.value}
+    return {"message": "Order status updated", "status": target_status}
 
 @api_router.post("/orders/{order_id}/verify-pickup")
 async def verify_pickup(order_id: str, qr_code: str, user: dict = Depends(get_current_user)):
+    """Vendor scans the employee QR to mark the order as picked up.
+
+    Only valid for orders currently in 'ready' state. State transition is
+    routed through the same lifecycle helper so concurrent updates are safe.
+    """
+    from order_lifecycle import assert_transition_allowed, apply_transition
+
     if user["role"] != "vendor":
         raise HTTPException(status_code=403, detail="Only vendors can verify pickup")
-    
-    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order"), "vendor_id": user.get("vendor_id")})
+
+    order_oid = safe_objectid(order_id, "Order")
+    order = await db.orders.find_one({"_id": order_oid, "vendor_id": user.get("vendor_id")})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     if not verify_pickup_qr(qr_code, order_id):
         raise HTTPException(status_code=400, detail="Invalid QR code")
-    
-    await db.orders.update_one({"_id": safe_objectid(order_id, "Order")}, {"$set": {"status": "completed"}})
+
+    current_status = order.get("status") or "pending"
+    assert_transition_allowed(order, "completed", user["role"])
+    ok = await apply_transition(db, order_oid, current_status, "completed", user)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Order status changed concurrently. Reload and try again.",
+        )
     return {"message": "Pickup verified successfully", "order_id": order_id}
 
 # Stripe payment endpoints removed — Cravitoo uses Razorpay for INR.
@@ -1982,11 +2029,24 @@ async def cancel_order(order_id: str, user: dict = Depends(get_current_user)):
         {"_id": safe_objectid(order_id, "Order")},
         {"$set": {
             "status": "cancelled",
+            "status_updated_at": datetime.now(timezone.utc),
             "cancelled_at": datetime.now(timezone.utc),
             "cancelled_by": "customer",
             **({"refund_status": refund_status} if refund_status else {}),
         }}
     )
+
+    # Order-status audit trail (mirrors order_lifecycle.apply_transition)
+    await db.order_status_history.insert_one({
+        "order_id": order_id,
+        "from_status": order.get("status") or "pending",
+        "to_status": "cancelled",
+        "actor_id": user.get("id"),
+        "actor_email": user.get("email"),
+        "actor_role": user.get("role"),
+        "created_at": datetime.now(timezone.utc),
+        "details": {"cancelled_by": "customer", "refund_status": refund_status},
+    })
 
     # Notify vendor
     vendor_users = await db.users.find({"vendor_id": order["vendor_id"], "role": "vendor"}).to_list(10)

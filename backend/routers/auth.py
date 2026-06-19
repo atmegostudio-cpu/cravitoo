@@ -71,36 +71,68 @@ def make_router(
     @r.post("/auth/register")
     async def register(data: RegisterRequest, request: Request, response: Response):
         email_lower = data.email.lower()
+
+        # =====================================================================
+        # CRITICAL: server-side role lock.
+        # Public self-registration is ONLY allowed for the 'employee' role.
+        # Vendor / corporate_admin / site_admin / super_admin / master_admin
+        # must be provisioned via admin-controlled invitation/onboarding flows.
+        # =====================================================================
+        submitted_role = (data.role or "employee").strip().lower()
+        if submitted_role != "employee":
+            # Audit the attempt before refusing — helps detect abuse.
+            try:
+                await db.audit_log.insert_one({
+                    "user_id": None,
+                    "user_email": email_lower,
+                    "user_role": "anonymous",
+                    "entity_type": "auth",
+                    "entity_id": email_lower,
+                    "action": "register_privileged_role_blocked",
+                    "details": {
+                        "attempted_role": submitted_role,
+                        "client_ip": request.client.host if request.client else None,
+                        "user_agent": request.headers.get("user-agent"),
+                    },
+                    "created_at": datetime.now(timezone.utc),
+                })
+            except Exception as audit_exc:  # pragma: no cover - logging is best-effort
+                logger.warning(f"audit_log write failed during role-block: {audit_exc}")
+            raise HTTPException(
+                status_code=403,
+                detail="This role cannot self-register. Privileged accounts are created by invitation only.",
+            )
+        # Force-overwrite the role even if the client tried something cute later
+        # in the request lifecycle (defence in depth).
+        data.role = "employee"
+
         existing = await db.users.find_one({"email": email_lower})
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        # Domain allowlist check (employees + corporate_admin only — masters/vendors/site admins
-        # are created by admins, not via this self-register endpoint, so they're allowed)
-        if data.role in ("employee", "corporate_admin"):
-            from routers.allowed_domains import find_allowed_domain
-            domain_record = await find_allowed_domain(db, email_lower)
-            if not domain_record:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
-                )
-            # Auto-link to the company + (optionally) the default site for that domain
-            if domain_record.get("company_id") and not data.company_id:
-                data.company_id = domain_record["company_id"]
-            user_doc_extra_site = domain_record.get("site_id")
-            # Site lifecycle gating (PDF Module 3 — only 'live' sites accept employee sign-ups)
-            if user_doc_extra_site:
-                site_obj = await db.sites.find_one({"_id": safe_objectid(user_doc_extra_site, "Site")})
-                if site_obj:
-                    site_lc = site_obj.get("lifecycle_status", "live")
-                    if site_lc != "live":
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Your office site isn't open for sign-ups yet. Please contact your Cravitoo admin.",
-                        )
-        else:
-            user_doc_extra_site = None
+        # Domain allowlist check (employees only on this public endpoint —
+        # privileged roles are blocked above).
+        from routers.allowed_domains import find_allowed_domain
+        domain_record = await find_allowed_domain(db, email_lower)
+        if not domain_record:
+            raise HTTPException(
+                status_code=400,
+                detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
+            )
+        # Auto-link to the company + (optionally) the default site for that domain
+        if domain_record.get("company_id") and not data.company_id:
+            data.company_id = domain_record["company_id"]
+        user_doc_extra_site = domain_record.get("site_id")
+        # Site lifecycle gating (PDF Module 3 — only 'live' sites accept employee sign-ups)
+        if user_doc_extra_site:
+            site_obj = await db.sites.find_one({"_id": safe_objectid(user_doc_extra_site, "Site")})
+            if site_obj:
+                site_lc = site_obj.get("lifecycle_status", "live")
+                if site_lc != "live":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Your office site isn't open for sign-ups yet. Please contact your Cravitoo admin.",
+                    )
 
         user_doc = {
             "email": email_lower,

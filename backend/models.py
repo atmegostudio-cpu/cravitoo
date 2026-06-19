@@ -18,6 +18,12 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: str
+    # NOTE: This field is accepted only for backward compatibility with the
+    # public web form, but the server FORCES `role = "employee"` regardless of
+    # what the client submits.  Privileged roles (vendor, corporate_admin,
+    # site_admin, super_admin, master_admin) must go through the invitation /
+    # admin-creation endpoints — never public self-registration.
+    # See routers/auth.py::register and tests/test_auth_role_escalation.py.
     role: str = "employee"
     company_id: Optional[str] = None
 
@@ -144,12 +150,28 @@ class OrderResponse(BaseModel):
 
 
 class OrderStatus(str, Enum):
+    """Order lifecycle states.
+
+    Transition graph (enforced server-side in routers/order_lifecycle.py):
+        pending     → confirmed | cancelled | expired
+        confirmed   → preparing | cancelled
+        preparing   → ready     | cancelled
+        ready       → completed | no_show
+        completed   → (terminal — no further changes)
+        cancelled   → (terminal)
+        expired     → (terminal — auto-set when older than ORDER_EXPIRY_HOURS in pending)
+        no_show     → (terminal — set when employee didn't pick up after ready)
+        rejected    → (terminal — vendor refuses to fulfil)
+    """
     pending = "pending"
     confirmed = "confirmed"
     preparing = "preparing"
     ready = "ready"
     completed = "completed"
     cancelled = "cancelled"
+    expired = "expired"
+    no_show = "no_show"
+    rejected = "rejected"
 
 
 # CheckoutRequest (Stripe) removed — Cravitoo uses Razorpay; see RazorpayOrderCreate below.
