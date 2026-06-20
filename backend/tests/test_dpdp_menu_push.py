@@ -100,7 +100,13 @@ def _register(email, password, role="employee"):
 
 
 def test_me_data_delete_happy_path():
-    email = f"test_dpdp_{int(time.time()*1000)}@example.com"
+    # Use cravitoo.com — it's whitelisted in allowed_domains for this preview
+    # environment. The original test used @example.com which never matched the
+    # corporate-domain allowlist (introduced after the PDF Module 1 work) and
+    # therefore failed at the very first `/auth/register` step. Switching the
+    # domain restores the test's intent — exercising the DPDP /me/data delete
+    # endpoint, not the domain allowlist itself.
+    email = f"test_dpdp_{int(time.time()*1000)}@cravitoo.com"
     pw = "TestDpdp123!"
     reg = _register(email, pw)
     assert reg.status_code in (200, 201), f"register failed: {reg.status_code} {reg.text}"

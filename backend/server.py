@@ -308,6 +308,23 @@ async def startup_event():
         except Exception as e:
             logger.warning(f"meal_schedules index skipped: {e}")
 
+        # Phase 1: order_status_history audit collection — fast lookups by order
+        # and time-bounded queries (for analytics / forensic search).  These
+        # indexes are critical now that we write a row on every transition.
+        try:
+            await db.order_status_history.create_index([("order_id", 1), ("created_at", -1)])
+            await db.order_status_history.create_index("actor_id")
+            await db.order_status_history.create_index("created_at")
+        except Exception as e:
+            logger.warning(f"order_status_history indexes skipped: {e}")
+
+        # Phase 1: audit_log — frequent queries by entity_type + created_at.
+        try:
+            await db.audit_log.create_index([("entity_type", 1), ("created_at", -1)])
+            await db.audit_log.create_index([("user_email", 1), ("created_at", -1)])
+        except Exception as e:
+            logger.warning(f"audit_log indexes skipped: {e}")
+
         try:
             await seed_admin()
         except Exception as e:

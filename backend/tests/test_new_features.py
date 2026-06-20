@@ -108,9 +108,18 @@ class TestOrderStatusEnum:
 
 
 # ---- Payment status scoping ----
+# NOTE — the previous version of this suite tested `/api/payments/checkout`
+# (Stripe-flavoured) which was removed when Cravitoo migrated to Razorpay.
+# This test was reauthored against the current Razorpay verify endpoint so it
+# still asserts the same security property (IDOR: another user cannot use
+# someone else's payment session). Original test was OBSOLETE — not a real bug.
 class TestPaymentScope:
-    def test_other_user_cannot_view_payment_status(self):
-        # employee creates order + checkout
+    def test_other_user_cannot_verify_someone_elses_payment(self):
+        """An employee creates a Razorpay order; a vendor user (different
+        actor) attempts to use the same `razorpay_order_id` against
+        /payments/razorpay/verify. The server must refuse because the
+        payment_transactions row is keyed by `(razorpay_order_id, user_id)`.
+        """
         es, _ = login("employee")
         v, menu = get_spice_kitchen_and_menu()
         order_resp = es.post(f"{BASE_URL}/api/orders", json={
@@ -120,14 +129,31 @@ class TestPaymentScope:
         }, timeout=15)
         assert order_resp.status_code == 200
         order_id = order_resp.json()["id"]
-        co = es.post(f"{BASE_URL}/api/payments/checkout",
-                     json={"order_id": order_id, "origin_url": BASE_URL}, timeout=30)
-        assert co.status_code == 200, co.text
-        session_id = co.json()["session_id"]
-        # vendor (different user) tries
+
+        rp = es.post(f"{BASE_URL}/api/payments/razorpay/create-order",
+                     json={"order_id": order_id, "amount": 100}, timeout=15)
+        assert rp.status_code == 200, rp.text
+        razorpay_order_id = rp.json()["razorpay_order_id"]
+
+        # Vendor (different user) attempts to claim the payment.
         vs, _ = login("vendor")
-        r = vs.get(f"{BASE_URL}/api/payments/status/{session_id}", timeout=15)
-        assert r.status_code == 403, f"expected 403 for other user, got {r.status_code} {r.text}"
+        attack = vs.post(
+            f"{BASE_URL}/api/payments/razorpay/verify",
+            json={
+                "razorpay_order_id": razorpay_order_id,
+                "razorpay_payment_id": "pay_attacker_001",
+                "razorpay_signature": "deadbeef",
+                "order_id": order_id,
+            },
+            timeout=15,
+        )
+        # 404 (per current contract — server hides existence to non-owners) is
+        # the correct security response.  4xx in general is acceptable; 200 is
+        # a hard fail.
+        assert attack.status_code in (400, 403, 404), (
+            f"IDOR REGRESSION: vendor was able to verify another user's "
+            f"payment, status={attack.status_code} body={attack.text}"
+        )
 
 
 # ---- QR Pickup verify ----

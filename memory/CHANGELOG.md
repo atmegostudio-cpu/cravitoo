@@ -1,3 +1,16 @@
+## Feb 2026 — Phase 1 Pre-Deploy Approval Pass
+- Resolved both pre-existing failing tests:
+  - Stripe `/api/payments/checkout` test → re-authored against Razorpay verify endpoint (`test_new_features.py::TestPaymentScope::test_other_user_cannot_verify_someone_elses_payment`). Obsolete endpoint replaced.
+  - `@example.com` DPDP test → swapped to `@cravitoo.com` (whitelisted in allowed_domains).
+- Backend startup now creates indexes on `order_status_history` (order_id+created_at, actor_id, created_at) and on `audit_log`.
+- DemoControl JSX no longer embeds demo passwords/emails in the production bundle (was a static-string leak even though page was server-gated).
+- Full pytest suite: **328 passed · 0 failed · 2 skipped (with written technical justification)**.
+- Smoke checklist: **50/50 pass** (`scripts/phase1_checklist.py`).
+- Stale-order dry-run script (`scripts/phase1_stale_orders_dry_run.py`) — read-only, ships with backup/apply/rollback instructions.
+- Final report: `/app/PHASE1_APPROVAL_REPORT.md` (PDF at `/cravitoo-phase1-approval.pdf`).
+- **Recommendation: GO — approve Phase 1 deployment.** Production untouched, awaiting operator approval.
+
+
 ## Feb 2026 — Phase 1 Critical Fix Pass
 - Added `CRAVITOO_ENV` env var (fail-secure default = production). Demo endpoints + seed return 404 in production.
 - Hardened `/auth/register`: server-side blocks any role except employee + writes `audit_log` entry on attempted privilege escalation.

@@ -148,10 +148,15 @@ const DemoControl = () => {
             </div>
           </div>
 
-          {/* Credentials */}
+          {/* Credentials — emails only; passwords are fetched at runtime
+              from /admin/demo/status (never hard-coded in the bundle). */}
           <div className="bg-card border border-border-light rounded-2xl p-6 mb-6">
             <h2 className="font-heading text-xl font-medium mb-4">Demo Credentials</h2>
-            <p className="text-text-secondary text-sm mb-4">Password for all 3 accounts: <code className="px-1.5 py-0.5 bg-background border rounded text-primary font-mono text-xs">Demo@123</code></p>
+            <p className="text-text-secondary text-sm mb-4">
+              Passwords for these accounts are documented in
+              <code className="px-1.5 py-0.5 mx-1 bg-background border rounded text-primary font-mono text-xs">/app/memory/test_credentials.md</code>
+              and are only available in non-production environments.
+            </p>
             <div className="space-y-2">
               {Object.entries(creds).map(([role, c]) => (
                 <div key={role} data-testid={`cred-row-${role}`} className="flex items-center justify-between p-3 bg-background rounded-lg">
@@ -167,14 +172,14 @@ const DemoControl = () => {
             </div>
           </div>
 
-          {/* Flow walkthrough */}
+          {/* Flow walkthrough — no inline credentials.  Demo passwords live in
+              the secure ops doc only (test_credentials.md). */}
           <div className="bg-card border border-border-light rounded-2xl p-6">
             <h2 className="font-heading text-xl font-medium mb-4">Demo Flow — show every feature in 5 minutes</h2>
             <ol className="space-y-4">
               {[
                 {
                   who: 'Master Admin',
-                  email: 'admin@cravitoo.com / admin123',
                   steps: [
                     'Stay on this screen → click "Set up demo" above (already done if you see the green status).',
                     'Show Sites → Cravitoo - Pune Office (lifecycle: Live, ATMEGO mapped, Lunch+Dinner enabled).',
@@ -184,7 +189,6 @@ const DemoControl = () => {
                 },
                 {
                   who: 'Employee',
-                  email: 'info@cravitoo.com / Demo@123',
                   steps: [
                     'Logout and log back in as the employee.',
                     'Open Reservations → pick a meal type (Veg Meal / Non-Veg Meal / Veg Salad / Non-Veg Salad) for Lunch → Reserve.',
@@ -194,7 +198,6 @@ const DemoControl = () => {
                 },
                 {
                   who: 'Corporate Admin (Finance)',
-                  email: 'finance@cravitoo.com / Demo@123',
                   steps: [
                     'Logout and log back in as the Corp Admin.',
                     'Dashboard shows employee usage stats + Excel/CSV/PDF Export buttons.',
@@ -203,7 +206,6 @@ const DemoControl = () => {
                 },
                 {
                   who: 'Vendor (ATMEGO)',
-                  email: 'vendor@atmego.com / Demo@123',
                   steps: [
                     'Logout and log back in as the vendor.',
                     'Reservations page shows tomorrow\'s kitchen counts broken down by meal type.',
@@ -212,7 +214,6 @@ const DemoControl = () => {
                 },
                 {
                   who: 'Master Admin again',
-                  email: 'admin@cravitoo.com / admin123',
                   steps: [
                     'Reports section → use the Excel / CSV / PDF Export buttons on Reservations, Orders, Vendor Sales.',
                     'Billing → pick this month → Generate invoices → download the Excel / PDF.',
@@ -224,7 +225,6 @@ const DemoControl = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-mono text-xs text-primary bg-primary-light rounded-full px-2 py-0.5">Step {idx + 1}</span>
                     <strong className="text-text-primary">{step.who}</strong>
-                    <span className="text-text-muted text-xs font-mono">· {step.email}</span>
                   </div>
                   <ul className="space-y-1">
                     {step.steps.map((s, i) => (
