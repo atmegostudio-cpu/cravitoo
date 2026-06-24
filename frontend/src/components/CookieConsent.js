@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const STORAGE_KEY = 'cravitoo_cookie_consent_v1';
 
 const CookieConsent = () => {
   const [visible, setVisible] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
+    // Auto-suppress for authenticated users — by reaching a logged-in page they
+    // already accepted essential cookies (they HAVE an access_token). Showing
+    // the banner here is redundant noise and overlays the dashboard.
+    if (user) {
+      setVisible(false);
+      return undefined;
+    }
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) {
@@ -19,7 +28,7 @@ const CookieConsent = () => {
       // localStorage may be unavailable (incognito etc.) — just don't show banner
     }
     return undefined;
-  }, []);
+  }, [user]);
 
   const acknowledge = (choice) => {
     try {

@@ -140,10 +140,13 @@ const Navbar = () => {
           </div>
           <button
             onClick={handleLogout}
-            data-testid="logout-btn"
+            data-testid="logout-button"
+            aria-label="Logout"
+            title="Logout"
             className="flex items-center space-x-2 px-3 py-2 text-text-secondary hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            <span className="sr-only">Logout</span>
           </button>
         </div>
       </div>
