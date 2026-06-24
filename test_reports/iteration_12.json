@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 1 full audit on the preview environment (corporate-feast.preview.emergentagent.com). All five Phase 1 security fixes verified end-to-end: (1) public-page navigation no longer triggers /login?expired=1 loop, (2) demo credentials scrubbed from served HTML/JS bundles, (3) demo endpoints correctly gated to preview env, (4) public /auth/register blocks all privileged roles (vendor / corporate_admin / site_admin / super_admin / master_admin) with 403 + audit_log entry, (5) order lifecycle state machine enforces transition graph, terminal-state immutability, stale-order read-only, and writes order_status_history. Backend: 48 / 48 pytest pass (21 in test_phase1_critical_fixes.py + 27 in NEW test_phase1_full_audit.py, 1 reservation test skipped because the daily lunch cutoff window had already closed at the test moment — non-blocking). Frontend: login / register / privacy / terms / landing all serve HTML 200, register page confirms role-select dropdown is REMOVED and disclosure text is present, master admin login flow works and lands on /master/dashboard, /master/demo page loads with NO demo password fragments in the rendered HTML. OTP free-provider rejection (gmail.com / yahoo.com) → 400/403 with 'corporate' / 'domain' / 'personal' detail. OTP corporate-domain requests accepted (or 502 if Resend rate-limited — gracefully skipped per dispatch instructions). Razorpay create-order endpoint reachable + auth-gated (no real payment triggered). All API datetime fields are ISO UTC.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Logout button", "issues": ["No data-testid='logout-button' present on the icon-only logout button in the master/site/vendor/employee top-bar. The button is visually a right-arrow icon at the far right of the nav. Automation has to fall back to icon-position or aria-label which is brittle. Recommend adding data-testid='logout-button' + aria-label='Logout' to the icon button used in the role-shells (already mentioned as low-priority in iter11)."]},
+      {"screen": "Cookie banner overlay", "issues": ["The 'Cookies on Cravitoo' banner appears on every fresh page-load (including after silent /auth/me 401). Once a user is already authenticated it could auto-dismiss or move to a corner toast to keep automation scripts simple. Functional impact: none; testability impact: minor."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_critical_fixes.py",
+    "/app/backend/tests/test_phase1_full_audit.py",
+    "/app/test_reports/pytest/phase1.xml",
+    "/app/test_reports/pytest/phase1_audit.xml"
+  ],
+  "action_items": [
+    "(Optional/Low) Add data-testid='logout-button' + aria-label='Logout' to the icon-only logout button used in all role shells — improves test stability.",
+    "(Optional/Low) Consider auto-dismissing the 'Cookies on Cravitoo' banner for already-authenticated sessions or making it a small corner toast — currently it overlays the bottom-centre of every dashboard on first load.",
+    "(Note) The 4 console errors observed are all '401 from /auth/me' — these are the intentional Phase 1 silent-probe pattern (PUBLIC_PATHS allow-list + AuthContext silent probe). Not a regression; documenting for clarity."
+  ],
+  "critical_code_review_comments": [
+    "Phase 1 server-side role-lock in /app/backend/routers/auth.py is solid: it normalises whitespace + case before comparing to 'employee', writes an audit_log row BEFORE returning 403, and the error message never echoes the submitted role back to the attacker.",
+    "Order state machine in /app/backend/order_lifecycle.py is correctly implemented: invalid transitions return 400 with 'Invalid transition'; terminal state returns 409 with 'terminal'; stale orders (>48h) return 409 with 'older than'/'read-only'; idempotent repeat of same target returns 409; full pending→confirmed→preparing→ready→completed chain works; status_history is written on every transition with actor identity.",
+    "/api/admin/demo/enabled is correctly anonymous and returns {demo_enabled:true, environment:'preview'} on preview. Master-only setup/status/teardown reject employees with 403/401. Demo passwords (Demo@123, admin123, employee123, vendor123) are NOT present in the served /login HTML or main JS bundle.",
+    "Razorpay create-order endpoint exists and refuses unauthenticated calls (401/403). We did NOT trigger an actual payment per dispatch.",
+    "Audit-log writes use 'user_email' + 'entity_id' as the email key (not 'target_email'); the existing audit_log indexes (entity_type+created_at, user_email+created_at) cover the look-up pattern well.",
+    "ISO-UTC timestamps observed on the /orders payload — sample order created_at ends in 'Z' or '+00:00'; frontend is responsible for IST rendering (Phase 1 spec)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_full_audit.py (NEW — 28 audit tests across 10 pillars: 5-role auth, OTP gating, register-audit-log, demo preview gating, demo-bundle scrub, reservation uniqueness, per-role dashboard reachability, ISO-UTC timestamp check, Razorpay endpoint reachability, public-paths anonymity)"
+  ],
+  "success_rate": {
+    "backend": "100% (48 / 48 pytest pass, 1 skipped due to closed cutoff window — non-blocking)",
+    "frontend": "100% (all 5 Phase 1 frontend invariants verified: no demo creds in HTML/JS, register role dropdown removed, public pages don't trigger expired loop, master/demo accessible for master_admin with no password leakage, dashboard loads after login)"
+  },
+  "test_credentials": "All 5 seeded roles in /app/memory/test_credentials.md verified working: admin@cravitoo.com/admin123, demo@techcorp.com/demo123, siteadmin@techcorp.com/site123, vendor@spicekitchen.com/vendor123, employee@techcorp.com/employee123",
+  "seed_data_creation": "Tests create transient escalate+<role>+<hex>@cravitoo.com email rows in audit_log (no user is actually created since registration is rejected at 403). Order-lifecycle tests create throwaway order documents directly in MongoDB and run them through the state machine — these remain in the orders + order_status_history collections with no user-visible side-effect. No production-style data created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 security audit on preview is COMPLETE and GREEN. 48 backend tests pass. The regression suite is split: /app/backend/tests/test_phase1_critical_fixes.py (21 tests — the original Phase 1 fix verification) + /app/backend/tests/test_phase1_full_audit.py (27 passing, 1 skip — the broader audit). For the reservation uniqueness test, re-run it during a window where the daily lunch cutoff (20:00 IST) for the NEXT day is still open — otherwise the first POST /api/reservations returns 400 and the test self-skips. The login form expects input[type=email] and input[type=password] — there is no email-form data-testid. The logout button is an icon (→) with no data-testid; this is the single notable testability gap. Phase 1 frontend already has a strong silent /auth/me probe + PUBLIC_PATHS allow-list, which is why anonymous visits to /, /login, /register, /privacy, /terms work without bouncing to /login?expired=1 (verified). All datetime fields returned by the API are ISO UTC, frontend is responsible for IST rendering. Production deployment is still off-limits per dispatch — only test the preview URL.",
+  "rca of the issue": "N/A — no functional bugs found. All five Phase 1 security fixes (logout/session-redirect loop, demo-credential scrub, demo-env gating, role-escalation block, order-lifecycle state machine) verified working end-to-end on preview. The only items raised are two low-priority testability/UX recommendations (logout button needs data-testid; cookie banner could auto-dismiss for authenticated users) — neither is a regression and both are inherited from iter11."
+}
