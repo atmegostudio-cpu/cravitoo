@@ -1,3 +1,12 @@
+## Feb 2026 — Deployment Readiness Certified
+- Final regression: **111 passed · 1 skipped · 0 failed** across Phase 1 critical, audit, corporate-domains-extended, master-admin-sites, new-features suites
+- Smoke checklist: **50 / 50 pass**
+- Frontend production bundle re-built, credential scan clean
+- Deployment agent static check: **PASS — no blockers**
+- Source commit: `19a1946` · Bundle hash: `7f1fcbdb9dd3`
+- Cert: `/app/DEPLOYMENT_READINESS_CERTIFICATE.md` · PDF at `/cravitoo-deployment-ready.pdf`
+
+
 ## Feb 2026 — Resend Paid Plan Activated
 - Added `resend_health_check()` in `email_service.py` (read-only probe, no email sent). Recognises send-only API keys as healthy (least-privilege best practice).
 - Added `GET /api/health/email` public endpoint — operator-visible Resend status (no API key leaked).
