@@ -93,20 +93,15 @@ class TestOtpRequest:
             json={"email": f"otp-{uuid.uuid4().hex[:6]}@{techcorp_seeded}"},
             timeout=15,
         )
-        # Should not be 400 for free-provider reason; 200/202/400 with different reason acceptable.
-        # Per spec it should allow; some implementations also 200 for unknown user (signup OTP).
+        # Corporate domain MUST be accepted. We previously tolerated 502 here
+        # while Resend was on a free-tier plan that was easily rate-limited;
+        # that's no longer the case (paid plan active), so a 502 is now a real
+        # failure signal and the test will surface it directly.
         if r.status_code == 400:
             detail = (r.json().get("detail") or "").lower()
             assert "corporate" not in detail and "free" not in detail, (
                 f"OTP wrongly rejected allowed domain: {detail}"
             )
-        elif r.status_code == 502:
-            # Outbound provider (Resend free tier) is rate-limited / not configured.
-            # The thing we're testing — domain allow-list — has already passed
-            # if we got this far (a corporate-domain rejection would be a 400
-            # before the email send is attempted).  Don't fail the suite on
-            # an infrastructure flake.
-            pytest.skip("Resend outbound email provider unavailable (502) — not a domain-allowlist bug")
         else:
             assert r.status_code in (200, 201, 202), r.text
 

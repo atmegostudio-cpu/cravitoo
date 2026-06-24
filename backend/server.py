@@ -47,6 +47,22 @@ api_router = APIRouter(prefix="/api")
 async def health_check():
     return {"status": "ok"}
 
+
+@api_router.get("/health/email")
+async def health_email():
+    """Read-only Resend health probe.
+
+    Returns whether RESEND_API_KEY is configured and whether the FROM domain
+    is verified on the Resend account.  Does NOT send a test email.
+
+    Public (no auth) so an external uptime monitor can poll it, BUT it never
+    echoes the API key — only the public-safe fields: from_email, from_name,
+    domain, domain_verified, all_domains (names + statuses).
+    """
+    from email_service import resend_health_check
+    return resend_health_check()
+
+
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "cravitoo-api"}
@@ -337,6 +353,39 @@ async def startup_event():
                 await seed_demo_data()
         except Exception as e:
             logger.error(f"seed_demo_data failed: {e}")
+
+        # Resend health check at startup — single source of truth for whether
+        # the configured FROM domain is verified. Mis-configured DNS is the
+        # most common production email failure; surface it loudly here.
+        try:
+            from email_service import resend_health_check
+            health = resend_health_check()
+            if health.get("error"):
+                logger.warning(f"Resend health: ERROR — {health['error']}")
+            elif not health.get("configured"):
+                logger.warning("Resend health: RESEND_API_KEY not set — emails disabled")
+            elif health.get("key_scope") == "send_only":
+                logger.info(
+                    f"Resend health: OK · from={health.get('from_email')} · "
+                    f"key_scope=send_only (least-privilege — domain status not introspectable)"
+                )
+            elif health.get("domain_verified") is True:
+                logger.info(
+                    f"Resend health: OK · from={health.get('from_email')} · "
+                    f"domain={health.get('domain')} (verified) · "
+                    f"total_domains={len(health.get('all_domains') or [])}"
+                )
+            elif health.get("domain_verified") is False:
+                logger.warning(
+                    f"Resend health: domain '{health.get('domain')}' is NOT verified on this "
+                    f"Resend account. Emails from this address will likely bounce or land in spam. "
+                    f"Verify the DNS records in the Resend dashboard."
+                )
+            else:
+                logger.info(f"Resend health: configured but verification status unknown — {health}")
+        except Exception as e:
+            logger.warning(f"Resend health probe failed: {e}")
+
         logger.info("Background startup tasks complete")
 
     # Fire-and-forget — does NOT block startup probe

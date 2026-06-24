@@ -1,3 +1,12 @@
+## Feb 2026 — Resend Paid Plan Activated
+- Added `resend_health_check()` in `email_service.py` (read-only probe, no email sent). Recognises send-only API keys as healthy (least-privilege best practice).
+- Added `GET /api/health/email` public endpoint — operator-visible Resend status (no API key leaked).
+- Added boot-time Resend health log so domain mis-config is loud.
+- Removed `pytest.skip(502)` fallback in OTP test — Resend rate-limiting is no longer an expected failure mode.
+- Verified live: OTP corporate-domain request returns 200 + email accepted by Resend. 56/56 Phase 1 tests pass.
+- Ops runbook: `/app/PHASE1_RESEND_PAID_PLAN_NOTES.md`
+
+
 ## Feb 2026 — Full E2E Audit (Preview Only)
 - Backend pytest: **48/48 pass** in Phase 1 audit suites (21 in test_phase1_critical_fixes.py + 27 new in test_phase1_full_audit.py, 1 reservation test self-skip due to cutoff timing).
 - All 5 stakeholder logins verified end-to-end: master_admin, corporate_admin, site_admin, vendor, employee.

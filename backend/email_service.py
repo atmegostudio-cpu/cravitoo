@@ -42,6 +42,69 @@ def _ensure_resend_configured():
     _RESEND_INITIALIZED = True
 
 
+def resend_health_check() -> Dict[str, Any]:
+    """Read-only health probe — does NOT send an email.
+
+    Lists the verified sending domains on the configured Resend account and
+    reports whether RESEND_FROM_EMAIL's domain is verified.  Used by:
+      * the /api/health/email endpoint (operator-visible)
+      * the startup hook (logs at server boot so domain mis-config is loud)
+
+    Notes on key permissions:
+      Production deployments commonly use a SEND-ONLY API key (Resend's
+      recommended least-privilege).  Such a key returns:
+          ResendError: This API key is restricted to only send emails
+      when we try to enumerate domains.  This is a healthy state — we surface
+      it as `key_scope: "send_only"`, NOT as an error.
+
+    Resend errors are caught and surfaced in the response body — they do NOT
+    raise, so the backend keeps booting even if Resend is briefly unreachable.
+    """
+    result: Dict[str, Any] = {
+        "configured": False,
+        "from_email": os.environ.get("RESEND_FROM_EMAIL"),
+        "from_name": os.environ.get("RESEND_FROM_NAME"),
+        "domain": None,
+        "domain_verified": None,
+        "all_domains": [],
+        "key_scope": None,
+        "healthy": False,
+        "error": None,
+    }
+    try:
+        _ensure_resend_configured()
+        result["configured"] = True
+        from_email = result["from_email"] or ""
+        if "@" in from_email:
+            result["domain"] = from_email.split("@", 1)[1].lower()
+        # resend.Domains.list() returns {"data": [{name, status, ...}, ...]}
+        listing = resend.Domains.list()
+        domains = (listing or {}).get("data", []) if isinstance(listing, dict) else []
+        result["key_scope"] = "full"
+        result["all_domains"] = [
+            {"name": d.get("name"), "status": d.get("status"), "region": d.get("region")}
+            for d in domains
+        ]
+        if result["domain"]:
+            match = next((d for d in domains if (d.get("name") or "").lower() == result["domain"]), None)
+            if match:
+                result["domain_verified"] = (match.get("status") == "verified")
+            else:
+                result["domain_verified"] = False
+        result["healthy"] = bool(result["domain_verified"])
+    except Exception as exc:  # pragma: no cover - network failure path
+        msg = f"{type(exc).__name__}: {exc}"
+        # Recognise the SEND-ONLY-key signal — that's actually a *healthy* state.
+        if "restricted" in str(exc).lower() and "send" in str(exc).lower():
+            result["key_scope"] = "send_only"
+            result["domain_verified"] = "unknown_send_only_key"
+            result["healthy"] = True   # send-only key is the recommended prod pattern
+            result["error"] = None
+        else:
+            result["error"] = msg
+    return result
+
+
 def _from_address() -> str:
     """Returns the configured sender. Falls back to Resend's free sandbox."""
     email = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
