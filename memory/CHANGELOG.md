@@ -1,3 +1,14 @@
+## Feb 2026 — Vendor Feature Fixes (4 bugs)
+- **Bug 1 (email/phone not visible)**: `POST /vendors` already saved data, but `GET /vendors` projection hid the fields. Rewrote both endpoints to return `email`, `phone`, `contact_email`, `contact_phone`, `mapped_sites_count`, `has_login_user`. Frontend Vendors.js now shows Contact + Sites + Login columns.
+- **Bug 2 (invitation email not sent)**: `POST /vendors` now auto-creates a linked vendor user (role=`vendor`, password=None) and calls `_send_invitation_safe()` to send the Resend invitation email. Response includes `invitation_status` (`sent` / `user_linked` / `send_failed` / `skipped`) and `invitation_reason` for transparency.
+- **Bug 3 (multi-vendor per site)**: Already worked at API level — verified with curl (site now has 2 mapped vendors). UI already supported via Site Detail → Vendors tab.
+- **Bug 4 (multi-site per vendor)**: Already worked at API level — Spice Kitchen mapped to 7 sites. UI now visible in Vendors list ("7 sites" badge per row). `GET /vendors/{id}` returns the full `mapped_sites` array with site name + lifecycle.
+- Field naming unified: `email`/`phone` (canonical) mirrored to `contact_email`/`contact_phone` (legacy) on every write so older order/report code paths keep working.
+- PATCH /admin/vendors/{id} updated to mirror writes to both field names.
+- VendorCreate model: Pydantic `Field(alias=...)` accepts either field name style.
+- Regression: 69 / 70 tests pass (1 unrelated skip).
+
+
 ## Feb 2026 — Deployment Readiness Certified
 - Final regression: **111 passed · 1 skipped · 0 failed** across Phase 1 critical, audit, corporate-domains-extended, master-admin-sites, new-features suites
 - Smoke checklist: **50 / 50 pass**

@@ -723,24 +723,168 @@ async def get_companies(user: dict = Depends(get_current_user)):
 # Vendor Routes
 @api_router.post("/vendors")
 async def create_vendor(data: VendorCreate, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["super_admin", "corporate_admin"]:
+    """Create a vendor business record AND its login user, then send invitation email.
+
+    Authorised: super_admin, master_admin, corporate_admin.
+
+    Always writes BOTH `email`/`phone` and `contact_email`/`contact_phone` so
+    legacy readers (reports, order receipts) and new readers (frontend lists,
+    PATCH endpoint) all see consistent data.
+
+    If a user with the same email already exists with role != 'vendor', the
+    request is rejected (we don't silently demote an admin into a vendor).
+    """
+    if user["role"] not in ("super_admin", "corporate_admin", "master_admin"):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
+    canonical = data.model_dump(by_alias=False)
+    # Persist BOTH name variants so neither reader path breaks.
+    email_lower = canonical["contact_email"].lower()
+    phone_value = canonical["contact_phone"]
+    name_value = canonical["name"]
+    login_name = canonical.pop("login_user_name", None) or f"{name_value} - Ops"
+
+    now = datetime.now(timezone.utc)
     vendor_doc = {
-        **data.model_dump(),
+        **canonical,
+        "email": email_lower,
+        "phone": phone_value,
         "rating": 0.0,
         "status": "active",
-        "created_at": datetime.now(timezone.utc)
+        "created_at": now,
     }
     result = await db.vendors.insert_one(vendor_doc)
-    return {"id": str(result.inserted_id), **data.model_dump(), "rating": 0.0, "status": "active"}
+    vendor_id = str(result.inserted_id)
+
+    # Create / link a vendor LOGIN user — this is what the resend-invite
+    # endpoint expects to find.
+    existing = await db.users.find_one({"email": email_lower})
+    invitation_status = "skipped"
+    invite_reason: Optional[str] = None
+    if existing:
+        if existing.get("role") and existing["role"] != "vendor":
+            # Don't demote an admin/employee into a vendor — surface the conflict.
+            invite_reason = (
+                f"A user with this email already exists as '{existing.get('role')}'. "
+                "Vendor record created, but no invitation was sent. "
+                "Resolve the email conflict and use Resend Invite."
+            )
+        else:
+            # Link the existing vendor user to this new business.
+            await db.users.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"vendor_id": vendor_id, "role": "vendor", "updated_at": now}}
+            )
+            invitation_status = "user_linked"
+    else:
+        # Create the vendor login row. Password is unset — they use the email
+        # OTP / email-code login flow described in the invitation email.
+        await db.users.insert_one({
+            "email": email_lower,
+            "password_hash": None,        # passwordless until they choose to set one
+            "name": login_name,
+            "role": "vendor",
+            "vendor_id": vendor_id,
+            "created_at": now,
+        })
+        invitation_status = "user_created"
+
+    # Send invitation email — best-effort, never blocks vendor creation.
+    try:
+        from routers.sites import _send_invitation_safe
+        if invite_reason is None:
+            ok = _send_invitation_safe(email_lower, login_name, "vendor")
+            invitation_status = "sent" if ok else "send_failed"
+            if not ok:
+                invite_reason = "Email provider returned an error — check Resend dashboard."
+    except Exception as exc:                  # pragma: no cover
+        invitation_status = "send_failed"
+        invite_reason = f"{type(exc).__name__}: {exc}"
+
+    try:
+        await audit_log(user, "vendor", vendor_id, "created",
+                        {"email": email_lower, "invitation_status": invitation_status})
+    except Exception:
+        pass
+
+    return {
+        "id": vendor_id,
+        "name": name_value,
+        "description": canonical["description"],
+        "cuisine_type": canonical["cuisine_type"],
+        "email": email_lower,
+        "phone": phone_value,
+        "contact_email": email_lower,
+        "contact_phone": phone_value,
+        "address": canonical.get("address"),
+        "image_url": canonical.get("image_url"),
+        "rating": 0.0,
+        "status": "active",
+        "invitation_status": invitation_status,
+        "invitation_reason": invite_reason,
+    }
 
 @api_router.get("/vendors")
 async def get_vendors():
-    vendors = await db.vendors.find({"status": "active"}, {"_id": 1, "name": 1, "description": 1, "cuisine_type": 1, "rating": 1, "status": 1}).to_list(1000)
-    for vendor in vendors:
-        vendor["id"] = str(vendor.pop("_id"))
-    return vendors
+    """List active vendors with contact + mapping summary.
+
+    Returns BOTH `email`/`phone` (canonical) and `contact_email`/`contact_phone`
+    (legacy) for every row so older clients keep working.
+    """
+    vendors = await db.vendors.find(
+        {"status": "active"},
+        {
+            "_id": 1, "name": 1, "description": 1, "cuisine_type": 1,
+            "email": 1, "phone": 1, "contact_email": 1, "contact_phone": 1,
+            "address": 1, "image_url": 1, "rating": 1, "status": 1,
+            "commission_pct": 1, "auto_confirm": 1, "low_stock_threshold": 1,
+            "created_at": 1,
+        }
+    ).to_list(1000)
+    if not vendors:
+        return []
+
+    # Count site mappings + linked login user in two batch queries (no N+1).
+    vendor_ids = [str(v["_id"]) for v in vendors]
+    mapping_cur = db.vendor_site_mappings.aggregate([
+        {"$match": {"vendor_id": {"$in": vendor_ids}}},
+        {"$group": {"_id": "$vendor_id", "count": {"$sum": 1}}},
+    ])
+    mapping_counts = {row["_id"]: row["count"] async for row in mapping_cur}
+
+    login_users = await db.users.find(
+        {"vendor_id": {"$in": vendor_ids}, "role": "vendor"},
+        {"_id": 1, "email": 1, "vendor_id": 1}
+    ).to_list(2000)
+    login_map = {u["vendor_id"]: u for u in login_users}
+
+    out = []
+    for v in vendors:
+        vid = str(v.pop("_id"))
+        # Unify field names — prefer canonical, fall back to legacy.
+        email = v.get("email") or v.get("contact_email") or ""
+        phone = v.get("phone") or v.get("contact_phone") or ""
+        out.append({
+            "id": vid,
+            "name": v.get("name", ""),
+            "description": v.get("description", ""),
+            "cuisine_type": v.get("cuisine_type", ""),
+            "email": email,
+            "phone": phone,
+            "contact_email": email,
+            "contact_phone": phone,
+            "address": v.get("address"),
+            "image_url": v.get("image_url"),
+            "rating": float(v.get("rating") or 0.0),
+            "status": v.get("status", "active"),
+            "commission_pct": float(v.get("commission_pct") or 0.0),
+            "auto_confirm": bool(v.get("auto_confirm", False)),
+            "low_stock_threshold": int(v.get("low_stock_threshold") or 0),
+            "mapped_sites_count": mapping_counts.get(vid, 0),
+            "has_login_user": vid in login_map,
+            "created_at": v.get("created_at"),
+        })
+    return out
 
 @api_router.get("/vendors/{vendor_id}")
 async def get_vendor(vendor_id: str):
@@ -748,6 +892,35 @@ async def get_vendor(vendor_id: str):
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     vendor["id"] = str(vendor.pop("_id"))
+    # Unify the contact fields like /vendors does.
+    email = vendor.get("email") or vendor.get("contact_email") or ""
+    phone = vendor.get("phone") or vendor.get("contact_phone") or ""
+    vendor["email"] = email
+    vendor["phone"] = phone
+    vendor["contact_email"] = email
+    vendor["contact_phone"] = phone
+    # Include the list of sites the vendor is mapped to (id + name + lifecycle).
+    mapping_rows = await db.vendor_site_mappings.find({"vendor_id": vendor["id"]}).to_list(500)
+    site_ids = [m["site_id"] for m in mapping_rows]
+    if site_ids:
+        from bson import ObjectId
+        site_oids = []
+        for sid in site_ids:
+            try:
+                site_oids.append(ObjectId(sid))
+            except Exception:
+                pass
+        sites = await db.sites.find(
+            {"_id": {"$in": site_oids}},
+            {"_id": 1, "name": 1, "lifecycle_status": 1, "status": 1}
+        ).to_list(500) if site_oids else []
+        vendor["mapped_sites"] = [
+            {"id": str(s["_id"]), "name": s.get("name"),
+             "lifecycle_status": s.get("lifecycle_status"), "status": s.get("status")}
+            for s in sites
+        ]
+    else:
+        vendor["mapped_sites"] = []
     return vendor
 
 # Menu Routes
@@ -2407,6 +2580,12 @@ async def update_vendor(vendor_id: str, payload: Dict[str, Any], user: dict = De
         cleaned["commission_pct"] = v
     if "status" in cleaned and cleaned["status"] not in ("active", "inactive", "suspended"):
         raise HTTPException(status_code=400, detail="status must be active|inactive|suspended")
+    # Mirror canonical (`email`/`phone`) into legacy (`contact_email`/`contact_phone`)
+    # so older readers stay consistent after an edit.
+    if "email" in cleaned:
+        cleaned["contact_email"] = cleaned["email"]
+    if "phone" in cleaned:
+        cleaned["contact_phone"] = cleaned["phone"]
     await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": cleaned})
     await audit_log(user, "vendor", vendor_id, "updated", cleaned)
     return {"message": "Vendor updated"}

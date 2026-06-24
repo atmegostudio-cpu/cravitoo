@@ -67,11 +67,22 @@ class CompanyResponse(BaseModel):
 # ============== VENDOR ==============
 
 class VendorCreate(BaseModel):
+    # Accept both legacy (`contact_email`/`contact_phone`) and canonical
+    # (`email`/`phone`) field names. The server stores BOTH for backward
+    # compatibility with code paths that read either set (the PATCH endpoint
+    # and frontend use `email`/`phone`; older order/reports code uses
+    # `contact_email`/`contact_phone`).
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
     name: str
     description: str
     cuisine_type: str
-    contact_email: EmailStr
-    contact_phone: str
+    contact_email: EmailStr = Field(..., alias="email")
+    contact_phone: str = Field(..., alias="phone")
+    address: Optional[str] = None
+    image_url: Optional[str] = None
+    # When provided, the server will create a vendor LOGIN user with this name.
+    # Defaults to the vendor business name + " - Ops".
+    login_user_name: Optional[str] = None
 
 
 class VendorResponse(BaseModel):

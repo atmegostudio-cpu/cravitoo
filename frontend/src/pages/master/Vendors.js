@@ -97,8 +97,11 @@ const MasterVendors = () => {
               <thead className="bg-background">
                 <tr className="text-left text-xs text-text-muted uppercase">
                   <th className="px-4 py-3">Vendor</th>
+                  <th className="px-4 py-3">Contact</th>
                   <th className="px-4 py-3">Cuisine</th>
+                  <th className="px-4 py-3">Sites</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Login</th>
                   <th className="px-4 py-3">Rating</th>
                   <th className="px-4 py-3">Commission %</th>
                   <th className="px-4 py-3 w-12"></th>
@@ -118,13 +121,31 @@ const MasterVendors = () => {
                         </div>
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-xs">
+                      <p data-testid={`vendor-email-${v.id}`} className="text-text-primary truncate max-w-[180px]" title={v.email}>{v.email || '—'}</p>
+                      <p data-testid={`vendor-phone-${v.id}`} className="text-text-muted">{v.phone || '—'}</p>
+                    </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{v.cuisine_type || '—'}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <span data-testid={`vendor-sites-count-${v.id}`} className={`px-2 py-1 rounded-full font-medium text-xs ${
+                        (v.mapped_sites_count ?? 0) > 0 ? 'bg-primary-light text-primary' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {v.mapped_sites_count ?? 0} {(v.mapped_sites_count ?? 0) === 1 ? 'site' : 'sites'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 text-xs rounded-full font-medium ${
                         v.status === 'active' ? 'bg-emerald-50 text-emerald-700' :
                         v.status === 'inactive' ? 'bg-gray-100 text-gray-600' :
                         'bg-amber-50 text-amber-700'
                       }`}>{v.status || 'active'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {v.has_login_user ? (
+                        <span data-testid={`vendor-login-${v.id}`} className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">Linked</span>
+                      ) : (
+                        <span data-testid={`vendor-login-${v.id}`} className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium">No login</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{v.rating ? `${v.rating.toFixed(1)} ⭐` : '—'}</td>
                     <td className="px-4 py-3">
