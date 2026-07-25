@@ -3,6 +3,22 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Client Handover Clean Slate (COMPLETED)
+- Auto `seed_demo_data` **permanently disabled** on startup (no test data ever again).
+- Demo panel removed: `routers/demo.py` + `frontend/src/pages/master/DemoControl.js`
+  deleted; App.js route and Navbar link removed.
+- Preview MongoDB wiped (backup collection `_wipe_backup_20260725_*`); master
+  admin login preserved.
+- New hard-delete endpoints with full cascade:
+  - `DELETE /api/sites/{site_id}` — cascades meal_schedules, vendor_site_mappings,
+    menu_items, orders, order_status_history, reservations; unbinds users.
+  - `DELETE /api/vendors/{vendor_id}` — cascades vendor_site_mappings, menu_items,
+    orders, reservations, favorites, vendor login user.
+  - `DELETE /api/master/corporate-clients/{id}?cascade=true` — hard-deletes the
+    client and all linked users/sites/orders/domains/invoices.
+- Frontend delete buttons wired on Sites, Vendors (Cities/CorporateClients/Domains
+  already had them).
+
 ## Master Prompt PDF Gap Analysis (Feb 2026)
 
 User uploaded the Cravitoo Master Prompt PDF. Compared against existing app, identified **8 gap items**. Plan agreed with user is to ship in 5 steps:

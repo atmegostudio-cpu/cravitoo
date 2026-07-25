@@ -248,6 +248,63 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         await db.sites.update_one({"_id": safe_objectid(site_id, "Site")}, {"$set": cleaned})
         return {"message": "Site updated"}
 
+    @r.delete("/sites/{site_id}")
+    async def delete_site(site_id: str, user: dict = Depends(get_current_user)):
+        """Hard-delete a site and cascade-clean every child record.
+
+        Master Admin only. Removes: site row, meal_schedules, vendor_site_mappings,
+        menu_items, reservations, orders, order_status_history, and unbinds any
+        users (site_admin/employee) that pointed to this site.
+        """
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can delete sites")
+        site = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")})
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+
+        removed: Dict[str, int] = {}
+
+        # 1) Collect order IDs at this site so we can wipe their history too.
+        order_ids = [str(o["_id"]) async for o in db.orders.find({"site_id": site_id}, {"_id": 1})]
+        if order_ids:
+            removed["order_status_history"] = (await db.order_status_history.delete_many(
+                {"order_id": {"$in": order_ids}}
+            )).deleted_count
+
+        # 2) Cascade deletes for direct children
+        removed["orders"] = (await db.orders.delete_many({"site_id": site_id})).deleted_count
+        removed["reservations"] = (await db.reservations.delete_many({"site_id": site_id})).deleted_count
+        removed["pre_order_reservations"] = (
+            await db.pre_order_reservations.delete_many({"site_id": site_id})
+        ).deleted_count
+        removed["menu_items"] = (await db.menu_items.delete_many({"site_id": site_id})).deleted_count
+        removed["vendor_site_mappings"] = (
+            await db.vendor_site_mappings.delete_many({"site_id": site_id})
+        ).deleted_count
+        removed["meal_schedules"] = (await db.meal_schedules.delete_many({"site_id": site_id})).deleted_count
+        removed["allowed_domains"] = (
+            await db.allowed_domains.update_many(
+                {"site_id": site_id}, {"$unset": {"site_id": ""}}
+            )
+        ).modified_count
+
+        # 3) Unbind users that were tied to this site (do NOT delete the accounts).
+        removed["users_unbound"] = (
+            await db.users.update_many(
+                {"site_id": site_id},
+                {"$unset": {"site_id": ""}}
+            )
+        ).modified_count
+        # Super admins may have this site in assigned_sites — pull it.
+        await db.users.update_many(
+            {"assigned_sites": site_id},
+            {"$pull": {"assigned_sites": site_id}},
+        )
+
+        # 4) Finally drop the site itself.
+        await db.sites.delete_one({"_id": site["_id"]})
+        return {"message": f"Site '{site.get('name')}' deleted", "removed": removed}
+
     # Vendor-Site Mapping (Master/Super Admin)
     @r.post("/sites/{site_id}/vendors")
     async def map_vendor_to_site(site_id: str, data: VendorSiteMappingCreate, user: dict = Depends(get_current_user)):

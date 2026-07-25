@@ -345,14 +345,9 @@ async def startup_event():
             await seed_admin()
         except Exception as e:
             logger.error(f"seed_admin failed: {e}")
-        try:
-            from env_config import is_production
-            if is_production():
-                logger.info("seed_demo_data skipped (CRAVITOO_ENV=production)")
-            else:
-                await seed_demo_data()
-        except Exception as e:
-            logger.error(f"seed_demo_data failed: {e}")
+        # NOTE: auto seed_demo_data is permanently disabled. Client demo
+        # environment must stay clean; any demo/test rows must be created
+        # explicitly by the master admin. See PRD.md (Feb 2026).
 
         # Resend health check at startup — single source of truth for whether
         # the configured FROM domain is verified. Mis-configured DNS is the
@@ -2591,6 +2586,48 @@ async def update_vendor(vendor_id: str, payload: Dict[str, Any], user: dict = De
     return {"message": "Vendor updated"}
 
 
+@api_router.delete("/vendors/{vendor_id}")
+async def delete_vendor(vendor_id: str, user: dict = Depends(get_current_user)):
+    """Hard-delete a vendor and cascade-clean every child record.
+
+    Master Admin only. Removes: vendor row, its vendor_site_mappings,
+    menu_items, orders, order_status_history, reservations, vendor login
+    user row, and any favorites pointing at this vendor.
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin can delete vendors")
+    vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    removed: Dict[str, int] = {}
+
+    order_ids = [str(o["_id"]) async for o in db.orders.find({"vendor_id": vendor_id}, {"_id": 1})]
+    if order_ids:
+        removed["order_status_history"] = (await db.order_status_history.delete_many(
+            {"order_id": {"$in": order_ids}}
+        )).deleted_count
+
+    removed["orders"] = (await db.orders.delete_many({"vendor_id": vendor_id})).deleted_count
+    removed["reservations"] = (await db.reservations.delete_many({"vendor_id": vendor_id})).deleted_count
+    removed["pre_order_reservations"] = (
+        await db.pre_order_reservations.delete_many({"vendor_id": vendor_id})
+    ).deleted_count
+    removed["menu_items"] = (await db.menu_items.delete_many({"vendor_id": vendor_id})).deleted_count
+    removed["vendor_site_mappings"] = (
+        await db.vendor_site_mappings.delete_many({"vendor_id": vendor_id})
+    ).deleted_count
+    removed["favorites"] = (await db.favorites.delete_many({"vendor_id": vendor_id})).deleted_count
+    removed["vendor_users"] = (await db.users.delete_many(
+        {"vendor_id": vendor_id, "role": "vendor"}
+    )).deleted_count
+
+    await db.vendors.delete_one({"_id": vendor["_id"]})
+    await audit_log(user, "vendor", vendor_id, "deleted",
+                    {"name": vendor.get("name"), "removed": removed})
+    return {"message": f"Vendor '{vendor.get('name')}' deleted", "removed": removed}
+
+
 # ============== EMPLOYEE: REFUNDS, FAVOURITES ==============
 
 @api_router.get("/refunds")
@@ -3176,7 +3213,6 @@ from routers.allowed_domains import make_router as make_allowed_domains_router  
 from routers.exports import make_router as make_exports_router  # noqa: E402
 from routers.corporate_clients import make_router as make_corporate_clients_router  # noqa: E402
 from routers.billing import make_router as make_billing_router, run_billing_for_period  # noqa: E402
-from routers.demo import make_router as make_demo_router  # noqa: E402
 from routers.reset import make_router as make_reset_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
@@ -3198,7 +3234,6 @@ app.include_router(make_allowed_domains_router(db, safe_objectid, get_current_us
 app.include_router(make_exports_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_corporate_clients_router(db, safe_objectid, get_current_user), prefix="/api")
 app.include_router(make_billing_router(db, safe_objectid, get_current_user), prefix="/api")
-app.include_router(make_demo_router(db, safe_objectid, get_current_user, hash_password), prefix="/api")
 app.include_router(make_reset_router(db, get_current_user), prefix="/api")
 
 

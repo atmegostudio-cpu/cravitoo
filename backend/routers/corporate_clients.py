@@ -197,16 +197,74 @@ def make_router(db, safe_objectid, get_current_user):
         }
 
     @r.delete("/master/corporate-clients/{client_id}")
-    async def delete_client(client_id: str, user: dict = Depends(get_current_user)):
+    async def delete_client(
+        client_id: str,
+        cascade: bool = False,
+        user: dict = Depends(get_current_user),
+    ):
+        """Hard-delete a corporate client.
+
+        - Default behaviour blocks deletion if employees are still linked.
+        - Pass `?cascade=true` to also delete linked employees, sites and
+          the client's data. Master Admin only.
+        """
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can delete corporate clients")
-        # Soft-block: don't allow deletion if there are employees linked
+        client = await db.companies.find_one({"_id": safe_objectid(client_id, "Company")})
+        if not client:
+            raise HTTPException(status_code=404, detail="Corporate client not found")
+
         emp_count = await db.users.count_documents({"company_id": client_id})
-        if emp_count > 0:
-            raise HTTPException(status_code=400, detail=f"Cannot delete: {emp_count} employees are still linked to this client. Move them first.")
-        result = await db.companies.delete_one({"_id": safe_objectid(client_id, "Company")})
+        if emp_count > 0 and not cascade:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot delete: {emp_count} employees are still linked. "
+                    "Re-issue the request with ?cascade=true to hard-delete them."
+                ),
+            )
+
+        removed: Dict[str, int] = {}
+        if cascade:
+            removed["users"] = (await db.users.delete_many({"company_id": client_id})).deleted_count
+            # Cascade sites belonging to this company — reuse orders/mappings cleanup
+            site_ids = [str(s["_id"]) async for s in db.sites.find({"company_id": client_id}, {"_id": 1})]
+            if site_ids:
+                order_ids = [str(o["_id"]) async for o in db.orders.find(
+                    {"site_id": {"$in": site_ids}}, {"_id": 1}
+                )]
+                if order_ids:
+                    removed["order_status_history"] = (await db.order_status_history.delete_many(
+                        {"order_id": {"$in": order_ids}}
+                    )).deleted_count
+                removed["orders"] = (await db.orders.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["reservations"] = (await db.reservations.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["menu_items"] = (await db.menu_items.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["vendor_site_mappings"] = (await db.vendor_site_mappings.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["meal_schedules"] = (await db.meal_schedules.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["sites"] = (await db.sites.delete_many(
+                    {"company_id": client_id}
+                )).deleted_count
+            removed["allowed_domains"] = (await db.allowed_domains.delete_many(
+                {"company_id": client_id}
+            )).deleted_count
+            removed["invoices"] = (await db.invoices.delete_many(
+                {"client_id": client_id}
+            )).deleted_count
+
+        result = await db.companies.delete_one({"_id": client["_id"]})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Corporate client not found")
-        return {"ok": True}
+        return {"ok": True, "removed": removed}
 
     return r

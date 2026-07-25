@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X } from 'lucide-react';
+import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -56,6 +56,22 @@ const MasterSites = () => {
   };
 
   useEffect(() => { fetchSites(); }, []);
+
+  const deleteSite = async (site, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(
+      `Permanently delete "${site.name}"?\n\n` +
+      `This will also remove ALL menu items, vendor mappings, meal schedules, ` +
+      `reservations and orders at this site. This cannot be undone.`
+    )) return;
+    try {
+      await axios.delete(`${API}/sites/${site.id}`, { withCredentials: true });
+      fetchSites();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to delete site');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -113,37 +129,49 @@ const MasterSites = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {sites.map((site) => (
-              <Link
+              <div
                 key={site.id}
-                to={`/master/sites/${site.id}`}
-                data-testid={`site-card-${site.id}`}
-                className="bg-card border border-border-light rounded-2xl p-6 hover:shadow-lg hover:border-primary/40 transition-all group"
+                className="relative bg-card border border-border-light rounded-2xl p-6 hover:shadow-lg hover:border-primary/40 transition-all group"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="bg-primary-light rounded-xl p-3">
-                    <Building2 className="h-6 w-6 text-primary" />
+                <button
+                  data-testid={`delete-site-${site.id}`}
+                  onClick={(e) => deleteSite(site, e)}
+                  title="Permanently delete this site"
+                  className="absolute top-3 right-3 z-10 text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded-lg transition-colors"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <Link
+                  to={`/master/sites/${site.id}`}
+                  data-testid={`site-card-${site.id}`}
+                  className="block"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="bg-primary-light rounded-xl p-3">
+                      <Building2 className="h-6 w-6 text-primary" />
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-text-muted group-hover:text-primary transition-colors mr-8" />
                   </div>
-                  <ChevronRight className="h-5 w-5 text-text-muted group-hover:text-primary transition-colors" />
-                </div>
-                <h3 className="font-heading text-lg font-medium text-text-primary mb-1">{site.name}</h3>
-                <p className="text-text-muted text-xs mb-3">{site.city}</p>
-                {site.lifecycle_status && (
-                  <div className="mb-3">
-                    <LifecycleBadge status={site.lifecycle_status} />
+                  <h3 className="font-heading text-lg font-medium text-text-primary mb-1">{site.name}</h3>
+                  <p className="text-text-muted text-xs mb-3">{site.city}</p>
+                  {site.lifecycle_status && (
+                    <div className="mb-3">
+                      <LifecycleBadge status={site.lifecycle_status} />
+                    </div>
+                  )}
+                  <div className="space-y-1.5 text-xs text-text-secondary">
+                    <p className="flex items-start gap-1.5"><MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" /> {site.address}</p>
+                    <p className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {site.contact_email}</p>
+                    <p className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> {site.contact_phone}</p>
                   </div>
-                )}
-                <div className="space-y-1.5 text-xs text-text-secondary">
-                  <p className="flex items-start gap-1.5"><MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" /> {site.address}</p>
-                  <p className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {site.contact_email}</p>
-                  <p className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> {site.contact_phone}</p>
-                </div>
-                <div className="mt-4 flex gap-2 flex-wrap">
-                  {site.allow_pre_order && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">Pre-order</span>}
-                  {site.allow_cash_carry && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">Cash & Carry</span>}
-                  {site.allow_company_paid && <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full">Company-paid</span>}
-                  {site.allow_employee_paid && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full">Self-paid</span>}
-                </div>
-              </Link>
+                  <div className="mt-4 flex gap-2 flex-wrap">
+                    {site.allow_pre_order && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-full">Pre-order</span>}
+                    {site.allow_cash_carry && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">Cash & Carry</span>}
+                    {site.allow_company_paid && <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full">Company-paid</span>}
+                    {site.allow_employee_paid && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full">Self-paid</span>}
+                  </div>
+                </Link>
+              </div>
             ))}
           </div>
         </div>

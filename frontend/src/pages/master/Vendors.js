@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Edit, Save, X, Settings, Mail } from 'lucide-react';
+import { Store, Edit, Save, X, Settings, Mail, Trash2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -66,6 +66,20 @@ const MasterVendors = () => {
       alert(e?.response?.data?.detail || 'Failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteVendor = async (v) => {
+    if (!window.confirm(
+      `Permanently delete vendor "${v.name}"?\n\n` +
+      `This will also remove ALL menu items, site mappings, orders, ` +
+      `reservations and the vendor login user. This cannot be undone.`
+    )) return;
+    try {
+      await axios.delete(`${API}/vendors/${v.id}`, { withCredentials: true });
+      await load();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to delete vendor');
     }
   };
 
@@ -206,6 +220,14 @@ const MasterVendors = () => {
                         </button>
                         <button onClick={() => openProfileEdit(v)} data-testid={`edit-profile-${v.id}`} className="text-text-secondary hover:text-primary p-1.5 rounded hover:bg-background">
                           <Settings className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteVendor(v)}
+                          data-testid={`delete-vendor-${v.id}`}
+                          title="Permanently delete this vendor and all their data"
+                          className="text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
