@@ -51,6 +51,7 @@ import PrivacyPolicy from './pages/legal/PrivacyPolicy';
 import TermsOfService from './pages/legal/TermsOfService';
 import DataSettings from './pages/legal/DataSettings';
 import ChangePassword from './pages/legal/ChangePassword';
+import ResetApp from './pages/master/ResetApp';
 import CookieConsent from './components/CookieConsent';
 
 import VendorMenuRequests from './pages/vendor/MenuRequests';
@@ -292,6 +293,11 @@ function AppRoutes() {
       <Route path="/settings/security" element={
         <ProtectedRoute allowedRoles={['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin']}>
           <ChangePassword />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/reset" element={
+        <ProtectedRoute allowedRoles={['master_admin', 'super_admin']}>
+          <ResetApp />
         </ProtectedRoute>
       } />
 

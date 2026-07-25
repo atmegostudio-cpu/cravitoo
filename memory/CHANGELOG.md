@@ -1,3 +1,11 @@
+## Feb 2026 — Reset App to Blank State
+- Backend: `POST /api/admin/reset-to-blank?confirm=I_UNDERSTAND_THIS_DELETES_EVERYTHING&keep_domain=cravitoo.com` (master_admin only). Wipes 20 collections after copying every row into `_reset_backup_<ts>` for rollback. Preserves admin login + 1 signup domain. Returns rollback command in response.
+- Backend: `GET /api/admin/reset-preview` (master_admin only, read-only) — returns counts per collection.
+- Frontend: `/master/reset` page with (a) live preview of what will be deleted, (b) confirmation phrase input, (c) domain-to-keep input, (d) success card with rollback hint.
+- 4/4 safety checks pass: preview 200, missing confirm 400, wrong-role 403, anonymous 401.
+- Client-handover workflow: redeploy → log in as master admin → /master/reset → confirm → onboard fresh.
+
+
 ## Feb 2026 — Self-Serve Change Password
 - Backend: `POST /api/auth/change-password` — accepts `{current_password, new_password}`, verifies current, enforces 8-char min, writes audit_log entry `password_changed`.
 - Frontend: `/settings/security` page with form (data-testids `change-password-*`).
