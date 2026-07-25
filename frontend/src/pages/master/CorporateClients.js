@@ -97,12 +97,32 @@ const CorporateClients = () => {
   };
 
   const remove = async (client) => {
-    if (!window.confirm(`Delete "${client.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${client.name}"?\n\nIf there are linked employees/sites, you will be asked whether to cascade.`)) return;
     try {
       await axios.delete(`${API}/master/corporate-clients/${client.id}`, { withCredentials: true });
       await load();
     } catch (e) {
-      alert(e?.response?.data?.detail || 'Delete failed');
+      const detail = e?.response?.data?.detail || '';
+      // Backend returns a "Re-issue with ?cascade=true" hint when employees are linked.
+      if (typeof detail === 'string' && detail.includes('cascade=true')) {
+        if (!window.confirm(
+          `${detail}\n\n` +
+          `⚠ Cascading will PERMANENTLY delete every employee, site, order, invoice ` +
+          `and domain linked to "${client.name}". This cannot be undone.\n\n` +
+          `Continue?`
+        )) return;
+        try {
+          await axios.delete(
+            `${API}/master/corporate-clients/${client.id}?cascade=true`,
+            { withCredentials: true }
+          );
+          await load();
+        } catch (e2) {
+          alert(e2?.response?.data?.detail || 'Cascade delete failed');
+        }
+        return;
+      }
+      alert(detail || 'Delete failed');
     }
   };
 

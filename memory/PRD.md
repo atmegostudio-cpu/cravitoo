@@ -15,9 +15,23 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
   - `DELETE /api/vendors/{vendor_id}` — cascades vendor_site_mappings, menu_items,
     orders, reservations, favorites, vendor login user.
   - `DELETE /api/master/corporate-clients/{id}?cascade=true` — hard-deletes the
-    client and all linked users/sites/orders/domains/invoices.
-- Frontend delete buttons wired on Sites, Vendors (Cities/CorporateClients/Domains
-  already had them).
+    client and all linked users, sites, orders, order_status_history,
+    payment_transactions, reservations, pre_order_reservations, menu_items,
+    vendor_site_mappings, meal_schedules, vendor_onboarding, allowed_domains,
+    invoices.
+  - `DELETE /api/onboarding/vendors/{onb_id}` — single-row hard delete.
+  - `DELETE /api/onboarding/vendors?prefix=TEST__` — bulk purge by name prefix.
+- Reset-to-Blank (`POST /api/admin/reset-to-blank`) collections extended to
+  include `vendor_onboarding`, `menu_change_requests`, `favorites` so the
+  Dashboard reads 0 across the board after a reset.
+- Frontend delete UX:
+  - Sites, Vendors: single-click Trash icon on the row.
+  - Corporate Clients: first click attempts safe delete; if backend reports
+    "employees still linked", a second confirm-dialog offers cascade delete
+    in one click (no need for the user to know about the `?cascade=true` URL
+    param).
+  - Vendor Onboarding: per-row Trash icon + master-admin "Purge Test Data"
+    button (bulk-deletes rows by vendor-name prefix, defaults to `TEST__`).
 
 ## Master Prompt PDF Gap Analysis (Feb 2026)
 

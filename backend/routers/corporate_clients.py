@@ -237,10 +237,16 @@ def make_router(db, safe_objectid, get_current_user):
                     removed["order_status_history"] = (await db.order_status_history.delete_many(
                         {"order_id": {"$in": order_ids}}
                     )).deleted_count
+                    removed["payment_transactions"] = (await db.payment_transactions.delete_many(
+                        {"order_id": {"$in": order_ids}}
+                    )).deleted_count
                 removed["orders"] = (await db.orders.delete_many(
                     {"site_id": {"$in": site_ids}}
                 )).deleted_count
                 removed["reservations"] = (await db.reservations.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["pre_order_reservations"] = (await db.pre_order_reservations.delete_many(
                     {"site_id": {"$in": site_ids}}
                 )).deleted_count
                 removed["menu_items"] = (await db.menu_items.delete_many(
@@ -250,6 +256,9 @@ def make_router(db, safe_objectid, get_current_user):
                     {"site_id": {"$in": site_ids}}
                 )).deleted_count
                 removed["meal_schedules"] = (await db.meal_schedules.delete_many(
+                    {"site_id": {"$in": site_ids}}
+                )).deleted_count
+                removed["vendor_onboarding"] = (await db.vendor_onboarding.delete_many(
                     {"site_id": {"$in": site_ids}}
                 )).deleted_count
                 removed["sites"] = (await db.sites.delete_many(
