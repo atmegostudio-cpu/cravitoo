@@ -1,3 +1,10 @@
+## Feb 2026 — Self-Serve Change Password
+- Backend: `POST /api/auth/change-password` — accepts `{current_password, new_password}`, verifies current, enforces 8-char min, writes audit_log entry `password_changed`.
+- Frontend: `/settings/security` page with form (data-testids `change-password-*`).
+- Navbar: new key icon shortcut (`data-testid="nav-change-password"`) between notification bell and shield icon.
+- 5/5 e2e tests pass on preview (wrong-current 400, too-short 400, same-as-current 400, valid change 200, revert 200).
+
+
 ## Feb 2026 — Vendor Feature Fixes (4 bugs)
 - **Bug 1 (email/phone not visible)**: `POST /vendors` already saved data, but `GET /vendors` projection hid the fields. Rewrote both endpoints to return `email`, `phone`, `contact_email`, `contact_phone`, `mapped_sites_count`, `has_login_user`. Frontend Vendors.js now shows Contact + Sites + Login columns.
 - **Bug 2 (invitation email not sent)**: `POST /vendors` now auto-creates a linked vendor user (role=`vendor`, password=None) and calls `_send_invitation_safe()` to send the Resend invitation email. Response includes `invitation_status` (`sent` / `user_linked` / `send_failed` / `skipped`) and `invitation_reason` for transparency.

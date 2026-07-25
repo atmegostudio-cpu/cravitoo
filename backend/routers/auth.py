@@ -34,6 +34,11 @@ class OTPVerify(BaseModel):
     code: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 OTP_EXPIRY_MINUTES = 10
 OTP_MAX_ATTEMPTS = 5
 OTP_REQUEST_LIMIT_PER_HOUR = 3
@@ -605,5 +610,49 @@ def make_router(
             "message": "Your account and personal data have been deleted. Order records have been anonymised for tax compliance (retained 7 years).",
             "anonymisation_id": anon_marker,
         }
+
+    # =========================================================================
+    # Change Password — any authenticated user can rotate their own password.
+    # Requires the CURRENT password (defence against session-hijack attacks
+    # where the attacker has a valid access_token but not the password).
+    # =========================================================================
+    @r.post("/auth/change-password")
+    async def change_password(data: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+        # Minimum strength — keep the rule small but real
+        if len(data.new_password) < 8:
+            raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+        if data.new_password == data.current_password:
+            raise HTTPException(status_code=400, detail="New password must be different from the current one")
+
+        user_doc = await db.users.find_one({"_id": safe_objectid(user["id"], "User")})
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # If the account has no password (invitation-only user), let them SET one
+        # by providing any non-empty current_password (treated as accept-invite).
+        existing_hash = user_doc.get("password_hash")
+        if existing_hash:
+            if not verify_password(data.current_password, existing_hash):
+                raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+        new_hash = hash_password(data.new_password)
+        await db.users.update_one(
+            {"_id": user_doc["_id"]},
+            {"$set": {"password_hash": new_hash, "password_updated_at": datetime.now(timezone.utc)}}
+        )
+        try:
+            await db.audit_log.insert_one({
+                "user_id": user["id"],
+                "user_email": user_doc.get("email"),
+                "user_role": user_doc.get("role"),
+                "entity_type": "auth",
+                "entity_id": user["id"],
+                "action": "password_changed",
+                "details": {"first_time_set": not bool(existing_hash)},
+                "created_at": datetime.now(timezone.utc),
+            })
+        except Exception:  # pragma: no cover
+            pass
+        return {"ok": True, "message": "Password updated successfully"}
 
     return r
