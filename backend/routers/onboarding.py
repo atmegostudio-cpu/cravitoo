@@ -395,6 +395,61 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         await audit_log(user, "vendor_onboarding", onb_id, "deleted_doc", {"doc_type": doc_type})
         return {"message": "Deleted"}
 
+    @r.delete("/onboarding/vendors/{onb_id}")
+    async def delete_vendor_onboarding(onb_id: str, user: dict = Depends(get_current_user)):
+        """Hard-delete a vendor onboarding row (application).
+
+        Master admin (any status) or site admin (only their site + only
+        pre-approval statuses). Removes just the onboarding record — if a
+        real vendor was already created from this application, use
+        DELETE /api/vendors/{id} to remove that too.
+        """
+        o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+        if not o:
+            raise HTTPException(status_code=404, detail="Onboarding not found")
+        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if user["role"] == "site_admin":
+            if o.get("site_id") != user.get("site_id"):
+                raise HTTPException(status_code=403, detail="Not your site")
+            if o.get("status") in ("approved", "active"):
+                raise HTTPException(status_code=400, detail="Cannot delete an approved onboarding")
+        await db.vendor_onboarding.delete_one({"_id": o["_id"]})
+        await audit_log(user, "vendor_onboarding", onb_id, "deleted",
+                        {"vendor_name": o.get("vendor_name")})
+        return {"message": f"Onboarding '{o.get('vendor_name')}' deleted"}
+
+    @r.delete("/onboarding/vendors")
+    async def bulk_delete_onboardings(
+        prefix: str | None = None,
+        status: str | None = None,
+        user: dict = Depends(get_current_user),
+    ):
+        """Bulk-delete onboarding rows. Master admin only.
+
+        Filters:
+        - `prefix` — match `vendor_name` starting with this string (case-insensitive).
+                    Useful to purge auto-generated `TEST__vendor_...` demo rows.
+        - `status` — restrict to a single status value.
+        Refuses to run without at least one filter (safety guard).
+        """
+        if user["role"] != "master_admin":
+            raise HTTPException(status_code=403, detail="Only master admin")
+        if not prefix and not status:
+            raise HTTPException(
+                status_code=400,
+                detail="Refusing to bulk-delete without a `prefix` or `status` filter",
+            )
+        filt: dict = {}
+        if prefix:
+            filt["vendor_name"] = {"$regex": f"^{prefix}", "$options": "i"}
+        if status:
+            filt["status"] = status
+        result = await db.vendor_onboarding.delete_many(filt)
+        await audit_log(user, "vendor_onboarding", "bulk", "bulk_deleted",
+                        {"filter": filt, "deleted": result.deleted_count})
+        return {"deleted": result.deleted_count, "filter": filt}
+
     @r.post("/onboarding/vendors/{onb_id}/submit-to-master")
     async def submit_to_master(onb_id: str, user: dict = Depends(get_current_user)):
         """Site admin submits to master after their review."""

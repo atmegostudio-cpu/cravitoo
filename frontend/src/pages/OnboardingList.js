@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { ClipboardList, Plus, ChevronRight, Search, Filter } from 'lucide-react';
+import { ClipboardList, Plus, ChevronRight, Search, Filter, Trash2, AlertTriangle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -40,6 +40,37 @@ const OnboardingList = () => {
 
   useEffect(() => { load(); }, [statusFilter]);
 
+  const deleteRow = async (it, e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!window.confirm(`Delete onboarding for "${it.vendor_name}"?\nThis cannot be undone.`)) return;
+    try {
+      await axios.delete(`${API}/onboarding/vendors/${it.id}`, { withCredentials: true });
+      await load();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to delete');
+    }
+  };
+
+  const purgeTestData = async () => {
+    const prefix = window.prompt(
+      'Bulk-delete onboardings whose vendor name starts with:\n\n(e.g. "TEST__" to purge auto-generated demo rows)',
+      'TEST__'
+    );
+    if (!prefix) return;
+    if (!window.confirm(`This will PERMANENTLY delete every onboarding row whose vendor name starts with "${prefix}". Continue?`)) return;
+    try {
+      const { data } = await axios.delete(
+        `${API}/onboarding/vendors?prefix=${encodeURIComponent(prefix)}`,
+        { withCredentials: true }
+      );
+      alert(`Deleted ${data.deleted} onboarding rows.`);
+      await load();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed');
+    }
+  };
+
   if (loading) {
     return (<><Navbar /><div className="min-h-screen bg-background flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div></>);
   }
@@ -58,7 +89,17 @@ const OnboardingList = () => {
               <p className="text-text-secondary mt-2">Track applications through documents, review, and final approval</p>
             </div>
             {canCreate && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {user?.role === 'master_admin' && (
+                  <button
+                    onClick={purgeTestData}
+                    data-testid="purge-test-onboardings-btn"
+                    className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-xl font-medium hover:bg-red-100"
+                    title="Bulk-delete onboardings by vendor-name prefix (e.g. TEST__)"
+                  >
+                    <AlertTriangle className="h-4 w-4" /> Purge Test Data
+                  </button>
+                )}
                 <label className="cursor-pointer flex items-center gap-2 bg-card border border-border-light text-text-primary px-4 py-2.5 rounded-xl font-medium hover:bg-background" data-testid="bulk-import-onboarding-label">
                   <input
                     type="file"
@@ -160,9 +201,21 @@ const OnboardingList = () => {
                         {it.created_at ? new Date(it.created_at).toLocaleDateString('en-IN') : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <Link to={`/onboarding/${it.id}`}>
-                          <ChevronRight className="h-5 w-5 text-text-muted" />
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          {user?.role === 'master_admin' && (
+                            <button
+                              onClick={(e) => deleteRow(it, e)}
+                              data-testid={`delete-onboarding-${it.id}`}
+                              title="Delete this onboarding"
+                              className="text-red-500 hover:text-white hover:bg-red-600 p-1.5 rounded transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                          <Link to={`/onboarding/${it.id}`}>
+                            <ChevronRight className="h-5 w-5 text-text-muted" />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
