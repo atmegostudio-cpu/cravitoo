@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2 } from 'lucide-react';
+import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -86,6 +87,43 @@ const MasterDashboard = () => {
               </div>
             </div>
           </div>
+
+          {/* Quick actions row */}
+          {(() => {
+            const hasOrphans =
+              data && (data.total_sites || 0) === 0 && (data.total_vendors || 0) === 0 &&
+              ((data.total_users || 0) > 1 || (data.total_orders || 0) > 0 ||
+               (data.total_employees || 0) > 0 || (data.total_revenue || 0) > 0);
+            return hasOrphans ? (
+              <div
+                data-testid="orphan-warning-card"
+                className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="bg-red-100 rounded-xl p-2.5">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-semibold text-red-800">Orphan data detected</h3>
+                    <p className="text-sm text-red-700 mt-0.5">
+                      You have 0 sites and 0 active vendors but{' '}
+                      <strong>{data.total_users || 0} users</strong>,{' '}
+                      <strong>{data.total_orders || 0} orders</strong> and{' '}
+                      <strong>₹{(data.total_revenue || 0).toLocaleString('en-IN')}</strong>{' '}
+                      revenue still exist. Reset the app to clear everything.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  to="/master/reset"
+                  data-testid="go-to-reset-btn"
+                  className="whitespace-nowrap flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-medium"
+                >
+                  <Trash2 className="h-4 w-4" /> Reset App to Blank
+                </Link>
+              </div>
+            ) : null;
+          })()}
 
           {/* Quick actions row */}
           <div className="bg-card border border-border-light rounded-2xl p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
