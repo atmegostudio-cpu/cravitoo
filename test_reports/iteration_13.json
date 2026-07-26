@@ -1,0 +1,34 @@
+{
+  "summary": "Full backend + frontend test of the new Vendor-Onboarding Menu tab. Backend: 15/15 pytest pass in test_onboarding_menu.py covering POST/PATCH/DELETE/upload-excel endpoints, price validation, meal-period filtering, checklist auto-flip, unknown-item 404, Excel replace behaviour, bad extension rejection, status-guard on rejected onboardings, and full master-approval materialisation into menu_items (menu_items_created count returned & vendor menu populated). Frontend Playwright: master admin login → API-created fresh onboarding → clicked 'Menu (0)' tab → verified MenuTab container + Add/Bulk-upload/Download-template toolbar → Add item form works with meal-period pill toggles → row rendered with correct testid → availability toggle flips Yes↔No → edit prefills and persists new price → delete confirms and empties list → counter goes back to Menu (0). All acceptance criteria in the review request are met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_onboarding_menu.py",
+    "/app/test_reports/pytest/pytest_iter13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Excel upload endpoint REPLACES draft_menu (documented in code + tested). Manual add uses append semantics. Behaviour is consistent with the review-request spec.",
+    "_load_editable_onboarding correctly enforces both site_admin site scoping and the 5 editable statuses; approved/active/rejected are 400-rejected — verified.",
+    "_parse_meal_periods silently drops unknown values (e.g. 'brunch') both on POST and on Excel upload — matches spec. PATCH also filters via inline comprehension.",
+    "checklist.menu_uploaded flips on add + delete-last-item correctly (verified end-to-end).",
+    "Master approval flow materialises draft_menu → menu_items with vendor_id + site_id + meal_periods bound; response.menu_items_created returned; downstream GET /api/vendors/{id}/menu shows the items.",
+    "MenuTab.js is clean and self-contained (~395 lines) with proper data-testid coverage on every interactive element (tab-menu, menu-tab-container, add-menu-item-btn, menu-excel-upload, menu-form, menu-form-name/category/price/description/image/veg/available/meal-{mp}/save, menu-row-{id}, menu-edit-{id}, menu-delete-{id}, menu-toggle-{id}).",
+    "Minor code-quality note: MenuTab uses window.confirm for delete/replace confirmations. Fine for MVP but a shadcn AlertDialog would be more brand-consistent (already flagged in prior iterations for other pages).",
+    "Minor: OnboardingDetail.js line 194 recomputes '(data.draft_menu || []).length' on every render — negligible cost but could be memoised alongside the documents count."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_onboarding_menu.py (NEW — 15 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (7/7 UI steps)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master admin) — only account after clean slate, verified working.",
+  "seed_data_creation": "Tests created ~14 TEST__vendor_<hex> onboarding rows and a handful of vendors/menu_items via master approval. Cleaned up with bulk DELETE /api/onboarding/vendors?prefix=TEST__ at end (deleted 30 rows, includes leftovers from prior iterations that shared the TEST__ prefix). The approved-vendor row that materialised into menu_items collection is intentionally left in place — it is a real approved 'TEST__vendor_*' vendor and can be removed via DELETE /api/vendors/{id} if desired.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend Menu endpoints are all green. Regression suite lives at /app/backend/tests/test_onboarding_menu.py. To re-run: `pytest backend/tests/test_onboarding_menu.py -v`. Test fixtures reuse the first existing site/city — if the DB is wiped again the fixture will attempt to create a City, Corporate client, and Site automatically (site payload requires name/address/city/city_id/contact_email/contact_phone; corporate_client_id optional). Frontend Menu tab is accessible at /onboarding/{onbId} and only shows Add/Edit/Delete/Toggle buttons while canEdit=true (status ∈ draft/documents_pending/under_site_review/changes_requested/under_master_review). No orphan behaviour observed — deleting all draft_menu items correctly flips checklist.menu_uploaded to false and no stale rows remain in the response. Cleanup command: DELETE /api/onboarding/vendors?prefix=TEST__ (master-only).",
+  "rca of the issue": "N/A — no functional issues found. The Menu Upload tab feature is fully wired end-to-end from the MongoDB draft_menu array through the FastAPI onboarding router into the React MenuTab component, and materialises correctly into the live menu_items collection on master approval."
+}

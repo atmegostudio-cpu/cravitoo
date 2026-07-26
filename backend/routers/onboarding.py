@@ -37,8 +37,11 @@ from models import (
     CHECKLIST_FIELDS,
     DOC_TYPES,
     ONBOARDING_STATUSES,
+    VALID_MEAL_PERIODS,
     ChecklistUpdate,
     OnboardingDecision,
+    OnboardingMenuItemCreate,
+    OnboardingMenuItemUpdate,
     VendorOnboardingBasic,
     VendorOnboardingUpdate,
 )
@@ -80,6 +83,43 @@ def onboarding_to_dict(o):
 
 def _is_master(user: dict) -> bool:
     return user.get("role") == "master_admin"
+
+
+# Onboarding rows are editable up to (but not including) master approval.
+_MENU_EDITABLE_STATUSES = {
+    "draft", "documents_pending", "under_site_review",
+    "changes_requested", "under_master_review",
+}
+
+
+def _parse_meal_periods(raw) -> list[str]:
+    """Accept list, comma-separated string, single string. Filter to VALID_MEAL_PERIODS."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        parts = [p.strip().lower() for p in raw.split(",")]
+    elif isinstance(raw, list):
+        parts = [str(p).strip().lower() for p in raw]
+    else:
+        parts = [str(raw).strip().lower()]
+    return [p for p in parts if p in VALID_MEAL_PERIODS]
+
+
+async def _load_editable_onboarding(db, safe_objectid, onb_id: str, user: dict):
+    """Fetch onboarding row and enforce edit-permissions. Raises HTTPException on any violation."""
+    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
+    if not o:
+        raise HTTPException(status_code=404, detail="Onboarding not found")
+    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        raise HTTPException(status_code=403, detail="Not your site")
+    if o.get("status") not in _MENU_EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot edit menu — status is '{o.get('status')}'",
+        )
+    return o
 
 
 def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path):
@@ -165,16 +205,13 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         file: UploadFile = File(...),
         user: dict = Depends(get_current_user),
     ):
-        """Pre-load menu items as 'draft' under onboarding — get activated when vendor is approved."""
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
-            raise HTTPException(status_code=403, detail="Access denied")
-        o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
-        if not o:
-            raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
-            raise HTTPException(status_code=403, detail="Not your site")
-        if o.get("status") in ("approved", "active", "rejected"):
-            raise HTTPException(status_code=400, detail=f"Cannot edit menu — status is '{o.get('status')}'")
+        """Pre-load menu items as 'draft' under onboarding — activated on master approval.
+
+        Excel columns (header row required):
+          name*, category*, price*, description, meal_period (comma-sep:
+          breakfast,lunch,snacks,dinner), is_vegetarian, is_available, image_url
+        """
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
         if not (file.filename or "").lower().endswith((".xlsx", ".xls")):
             raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
         content = await file.read()
@@ -204,23 +241,121 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                 if price <= 0:
                     errors.append({"row": idx, "error": f"Invalid price for {name}"})
                     continue
+                is_avail_raw = rec.get("is_available")
+                is_available = True if is_avail_raw is None else \
+                    str(is_avail_raw).strip().lower() in ("true", "yes", "1", "available", "y")
                 items.append({
+                    "item_id": str(uuid.uuid4()),
                     "name": name,
                     "description": str(rec.get("description") or ""),
                     "category": str(rec.get("category") or "Main").strip(),
                     "price": price,
                     "is_vegetarian": str(rec.get("is_vegetarian", "")).lower() in ("true", "yes", "1", "veg"),
                     "image_url": str(rec.get("image_url") or "") or None,
-                    "is_available": True,
+                    "is_available": is_available,
+                    "meal_periods": _parse_meal_periods(rec.get("meal_period")),
                 })
             except Exception as e:
                 errors.append({"row": idx, "error": str(e)})
-        await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": {"draft_menu": items, "updated_at": datetime.now(timezone.utc)}})
-        # Auto-tick "menu_uploaded" in checklist
-        new_checklist = {**(o.get("checklist", {})), "menu_uploaded": True}
-        await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": {"checklist": new_checklist}})
+        # Replace draft_menu with the newly uploaded set (Excel upload is
+        # treated as a bulk "replace" — manual add/edit happens via CRUD endpoints).
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {
+                "draft_menu": items,
+                "checklist": {**(o.get("checklist", {})), "menu_uploaded": bool(items)},
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
         await audit_log(user, "vendor_onboarding", onb_id, "menu_uploaded", {"items": len(items)})
         return {"inserted": len(items), "errors": errors, "total_attempted": len(rows) - 1}
+
+    @r.post("/onboarding/vendors/{onb_id}/menu")
+    async def onboarding_menu_add(
+        onb_id: str,
+        body: OnboardingMenuItemCreate,
+        user: dict = Depends(get_current_user),
+    ):
+        """Add ONE menu item to the draft menu."""
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        if body.price <= 0:
+            raise HTTPException(status_code=400, detail="Price must be > 0")
+        item = {
+            "item_id": str(uuid.uuid4()),
+            "name": body.name.strip(),
+            "description": body.description or "",
+            "category": (body.category or "Main").strip(),
+            "price": float(body.price),
+            "is_vegetarian": bool(body.is_vegetarian),
+            "is_available": bool(body.is_available),
+            "meal_periods": [p for p in (body.meal_periods or []) if p in VALID_MEAL_PERIODS],
+            "image_url": body.image_url,
+        }
+        draft = list(o.get("draft_menu", [])) + [item]
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {
+                "draft_menu": draft,
+                "checklist": {**(o.get("checklist", {})), "menu_uploaded": True},
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
+        await audit_log(user, "vendor_onboarding", onb_id, "menu_item_added",
+                        {"name": item["name"]})
+        return {"message": "Item added", "item": item, "total": len(draft)}
+
+    @r.patch("/onboarding/vendors/{onb_id}/menu/{item_id}")
+    async def onboarding_menu_update(
+        onb_id: str,
+        item_id: str,
+        body: OnboardingMenuItemUpdate,
+        user: dict = Depends(get_current_user),
+    ):
+        """Update ONE menu item in the draft menu (by item_id)."""
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        target = next((i for i, x in enumerate(draft) if x.get("item_id") == item_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Menu item not found")
+        current = dict(draft[target])
+        updates = body.model_dump(exclude_unset=True)
+        if "price" in updates and updates["price"] is not None and float(updates["price"]) <= 0:
+            raise HTTPException(status_code=400, detail="Price must be > 0")
+        if "meal_periods" in updates and updates["meal_periods"] is not None:
+            updates["meal_periods"] = [p for p in updates["meal_periods"] if p in VALID_MEAL_PERIODS]
+        current.update(updates)
+        draft[target] = current
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {"draft_menu": draft, "updated_at": datetime.now(timezone.utc)}},
+        )
+        await audit_log(user, "vendor_onboarding", onb_id, "menu_item_updated",
+                        {"item_id": item_id, "fields": list(updates.keys())})
+        return {"message": "Item updated", "item": current}
+
+    @r.delete("/onboarding/vendors/{onb_id}/menu/{item_id}")
+    async def onboarding_menu_delete(
+        onb_id: str,
+        item_id: str,
+        user: dict = Depends(get_current_user),
+    ):
+        """Delete ONE menu item from the draft menu."""
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        new_draft = [x for x in draft if x.get("item_id") != item_id]
+        if len(new_draft) == len(draft):
+            raise HTTPException(status_code=404, detail="Menu item not found")
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {
+                "draft_menu": new_draft,
+                "checklist": {**(o.get("checklist", {})), "menu_uploaded": bool(new_draft)},
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
+        await audit_log(user, "vendor_onboarding", onb_id, "menu_item_deleted",
+                        {"item_id": item_id})
+        return {"message": "Item deleted", "remaining": len(new_draft)}
 
     @r.post("/onboarding/vendors")
     async def create_vendor_onboarding(data: VendorOnboardingBasic, user: dict = Depends(get_current_user)):
@@ -554,6 +689,35 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                 "status": "active",
                 "created_at": datetime.now(timezone.utc),
             })
+            # Materialise draft_menu → menu_items so the vendor's menu is live
+            # the instant they're approved. Every draft row is bound to the new
+            # vendor_id + site_id and its meal_periods are preserved.
+            draft_menu = o.get("draft_menu") or []
+            menu_docs_created = 0
+            if draft_menu:
+                now = datetime.now(timezone.utc)
+                menu_docs = []
+                for m in draft_menu:
+                    menu_docs.append({
+                        "vendor_id": vendor_id,
+                        "site_id": o.get("site_id"),
+                        "name": m.get("name"),
+                        "description": m.get("description") or "",
+                        "category": m.get("category") or "Main",
+                        "price": float(m.get("price") or 0),
+                        "image_url": m.get("image_url"),
+                        "is_vegetarian": bool(m.get("is_vegetarian")),
+                        "is_available": bool(m.get("is_available", True)),
+                        "meal_periods": [
+                            p for p in (m.get("meal_periods") or [])
+                            if p in {"breakfast", "lunch", "snacks", "dinner"}
+                        ],
+                        "onboarding_id": str(o["_id"]),
+                        "created_at": now,
+                    })
+                if menu_docs:
+                    ins = await db.menu_items.insert_many(menu_docs)
+                    menu_docs_created = len(ins.inserted_ids)
             # Create vendor LOGIN user (passwordless via email OTP) if none exists yet
             vendor_email = (o.get("email") or "").lower().strip()
             invite_sent = False
@@ -616,6 +780,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             set_doc["status"] = "active"
             set_doc["vendor_id"] = vendor_id
             set_doc["vendor_user_invited"] = invite_sent
+            set_doc["menu_items_created"] = menu_docs_created
         else:
             set_doc["status"] = "rejected"
             # Branded "Vendor Rejected" email (PDF Module 13)
@@ -638,8 +803,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             except Exception as e:
                 logger.warning(f"Vendor rejected-decision email failed: {e}")
         await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
-        await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id")})
-        return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False)}
+        await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id"), "menu_items_created": set_doc.get("menu_items_created", 0)})
+        return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False), "menu_items_created": set_doc.get("menu_items_created", 0)}
 
     @r.get("/onboarding/vendors/{onb_id}/audit-trail")
     async def onboarding_audit_trail(onb_id: str, user: dict = Depends(get_current_user)):

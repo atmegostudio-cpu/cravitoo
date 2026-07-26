@@ -132,6 +132,33 @@ class MenuItemSiteUpdate(BaseModel):
     meal_periods: Optional[List[str]] = None
 
 
+# --- Vendor Onboarding — draft menu items (pre-activation) ---
+VALID_MEAL_PERIODS = {"breakfast", "lunch", "snacks", "dinner"}
+
+
+class OnboardingMenuItemCreate(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "Main"
+    price: float
+    is_vegetarian: bool = False
+    is_available: bool = True
+    meal_periods: List[str] = []  # subset of VALID_MEAL_PERIODS
+    image_url: Optional[str] = None
+
+
+class OnboardingMenuItemUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    is_vegetarian: Optional[bool] = None
+    is_available: Optional[bool] = None
+    meal_periods: Optional[List[str]] = None
+    image_url: Optional[str] = None
+
+
+
 # ============== ORDERS ==============
 
 class OrderItemInput(BaseModel):
