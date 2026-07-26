@@ -41,7 +41,10 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://corporate-feast.emergent.host"
+      }
     },
     "production-vendor": {
       "channel": "production-vendor",
@@ -51,7 +54,8 @@
       "autoIncrement": true,
       "env": {
         "APP_VARIANT": "vendor",
-        "VENDOR_EAS_PROJECT_ID": "81d21be4-16e8-4f76-b5b8-2bf2f40523ca"
+        "VENDOR_EAS_PROJECT_ID": "81d21be4-16e8-4f76-b5b8-2bf2f40523ca",
+        "EXPO_PUBLIC_BACKEND_URL": "https://corporate-feast.emergent.host"
       }
     }
   },

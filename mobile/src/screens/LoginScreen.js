@@ -185,13 +185,6 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.buttonSecondaryText}>Login with Email Code</Text>
               </TouchableOpacity>
 
-              <View style={styles.demo}>
-                <Text style={styles.demoText}>Demo Account:</Text>
-                <Text style={styles.demoCreds}>
-                  {PARTNER ? 'vendor@spicekitchen.com / vendor123' : 'employee@techcorp.com / employee123'}
-                </Text>
-              </View>
-
               {!PARTNER && (
                 <TouchableOpacity onPress={() => navigation.navigate('Register')}>
                   <Text style={styles.linkText}>
