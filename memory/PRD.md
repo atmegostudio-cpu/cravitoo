@@ -3,6 +3,25 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Vendor Onboarding Menu Tab (COMPLETED)
+- New dedicated **Menu tab** inside `/onboarding/{id}` with full CRUD:
+  - `POST   /api/onboarding/vendors/{id}/menu` — add single item.
+  - `PATCH  /api/onboarding/vendors/{id}/menu/{item_id}` — partial update.
+  - `DELETE /api/onboarding/vendors/{id}/menu/{item_id}` — remove one.
+  - `POST   /api/onboarding/vendors/{id}/menu/upload-excel` — bulk replace.
+- Every item carries: `name`, `description`, `category`, `price`,
+  `is_vegetarian`, `is_available`, `meal_periods` (list of
+  breakfast/lunch/snacks/dinner), `image_url`, plus a UUID `item_id`.
+- Excel template accepts `meal_period` column with comma-separated values.
+- On master approval, `draft_menu` is materialised into the `menu_items`
+  collection bound to the newly-created `vendor_id` + `site_id` — response
+  now returns `menu_items_created` count.
+- Edit-window is enforced: only statuses `draft`, `documents_pending`,
+  `under_site_review`, `changes_requested`, `under_master_review` allow
+  menu edits (approved/active/rejected are 400).
+- Regression suite at `/app/backend/tests/test_onboarding_menu.py`
+  (15 tests, all green).
+
 ## Feb 2026 — Client Handover Clean Slate (COMPLETED)
 - Auto `seed_demo_data` **permanently disabled** on startup (no test data ever again).
 - Demo panel removed: `routers/demo.py` + `frontend/src/pages/master/DemoControl.js`
