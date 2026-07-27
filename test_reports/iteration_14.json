@@ -1,0 +1,35 @@
+{
+  "summary": "Backend contract testing for iter-14 long-lived-session + admin deactivate/reactivate. 16/16 pytest cases passed against the preview URL. Verified 365-day refresh_token lifetime on both password login and OTP flows, 15-min access_token, /auth/refresh happy + sad paths (invalid/expired/wrong-type all 401), role-guarded /admin/users/{id}/deactivate + /reactivate with self-guard (400), master-admin-target guard (400), non-admin caller (403), and full lifecycle: deactivate immediately 403s existing access_token on /auth/me AND previously-issued refresh_token on /auth/refresh with detail 'Account deactivated'; reactivate restores both fresh-login AND the OLD refresh_token starts working again. audit_log rows written on both actions. Backwards-compat verified — seeded master admin has no is_active field and still authenticates. Preview DB left clean (1 user, 0 otp_codes).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_session_persistence.py",
+    "/app/test_reports/pytest/pytest_iter14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GOOD: is_active check in get_current_user uses explicit `is False` — correctly treats missing/None as active for backwards compat.",
+    "GOOD: /auth/refresh consistently returns 403 (not 401) with 'Account deactivated' — matches contract and the mobile client's 403 handler.",
+    "GOOD: self-guard and master-admin guard both use 400 with human-readable detail, letting the UI show the reason.",
+    "GOOD: audit_log rows persisted for both deactivated + reactivated actions with actor id.",
+    "OBSERVATION: /auth/login does NOT itself gate on is_active — a deactivated user gets a 200 login response, but the very next /auth/me/refresh 403s. This is safe (session unusable) but slightly wasteful; consider short-circuiting at /auth/login too so mobile doesn't briefly store a doomed token.",
+    "OBSERVATION: Two identical /auth/refresh calls within the same second return byte-identical JWTs (exp is in seconds). Not a bug — but if the frontend uses token string equality to detect 'session refreshed', it may false-negative. Prefer using the exp claim or a rotation counter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_session_persistence.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only per request)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin). Scratch employees are created + deleted inline by the test fixture.",
+  "seed_data_creation": "None — all scratch users, audit_log rows, and otp_codes created during the run are deleted on fixture teardown. Verified post-run: 1 user (admin), 0 otp_codes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_session_persistence.py is a self-contained regression suite for the session-persistence + deactivate/reactivate contract. Run: `pytest /app/backend/tests/test_session_persistence.py -v`. It uses motor to directly insert scratch users (email domain must NOT be a reserved TLD like .local — use cravitootest.com). JWT_SECRET is read from /app/backend/.env. Preview DB expected to have exactly 1 user (admin@cravitoo.com) before and after the run.",
+  "rca of the issue": "N/A — all contract items behave as specified."
+}

@@ -161,7 +161,7 @@ def make_router(
         secure_cookie = is_secure_request(request)
         samesite_value = "none" if secure_cookie else "lax"
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=31536000, path="/")
 
         # Best-effort welcome email (fire-and-forget — failure doesn't block registration)
         try:
@@ -203,7 +203,7 @@ def make_router(
         secure_cookie = is_secure_request(request)
         samesite_value = "none" if secure_cookie else "lax"
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=31536000, path="/")
     
         return {
             "id": user_id,
@@ -266,6 +266,9 @@ def make_router(
         user = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
         if not user:
             raise HTTPException(status_code=401, detail="User no longer exists")
+        # Deactivated accounts cannot silently refresh — kill the session.
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
 
         new_access = create_access_token(str(user["_id"]), user["email"], user["role"])
         secure_cookie = is_secure_request(request)
@@ -449,7 +452,7 @@ def make_router(
         secure_cookie = is_secure_request(request)
         samesite_value = "none" if secure_cookie else "lax"
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=900, path="/")
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=604800, path="/")
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=secure_cookie, samesite=samesite_value, max_age=31536000, path="/")
 
         # Mark email as verified on the user record too
         await db.users.update_one({"_id": user["_id"]}, {"$set": {"email_verified": True, "last_login_at": now}})

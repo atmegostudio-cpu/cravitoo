@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import client from '../api/client';
+import client, { setSessionInvalidCallback } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -48,19 +48,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // If the client's response interceptor gives up on the session (refresh
+    // failed OR account was deactivated), it invokes this callback so we
+    // reset user state and the app boots back to the Login stack.
+    setSessionInvalidCallback(() => {
+      setUser(null);
+    });
     bootstrap();
   }, []);
 
   const bootstrap = async () => {
     try {
       const token = await SecureStore.getItemAsync('access_token');
-      if (token) {
+      const refresh = await SecureStore.getItemAsync('refresh_token');
+      if (!token && !refresh) {
+        // Fully anonymous — nothing to restore.
+        return;
+      }
+      try {
         const { data } = await client.get('/auth/me');
         setUser(data);
+      } catch (e) {
+        // 401 already triggered auto-refresh via the interceptor. If we're
+        // still here with an error, the refresh also failed — the interceptor
+        // has already wiped the tokens, so simply stay logged out.
+        setUser(null);
       }
-    } catch (e) {
-      await SecureStore.deleteItemAsync('access_token');
-      await SecureStore.deleteItemAsync('refresh_token');
     } finally {
       setLoading(false);
     }

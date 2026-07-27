@@ -150,8 +150,14 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
     payload = {"sub": user_id, "email": email, "role": role, "exp": datetime.now(timezone.utc) + timedelta(minutes=15), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+# Refresh tokens last 365 days so mobile users stay logged in across app
+# close / device restart without re-authenticating. Session terminates only
+# when the user manually logs out or an admin deactivates the account
+# (checked in `get_current_user` and `/auth/refresh`).
+REFRESH_TOKEN_DAYS = 365
+
 def create_refresh_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "refresh"}
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_DAYS), "type": "refresh"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
@@ -169,6 +175,11 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": safe_objectid(payload["sub"], "User")})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        # Kick deactivated accounts immediately (session ends the moment an
+        # admin flips is_active=False). Field is optional — treat missing/None
+        # as active for backwards compatibility with existing rows.
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
         user["_id"] = str(user["_id"])
         user["id"] = user["_id"]
         user.pop("password_hash", None)
@@ -724,6 +735,48 @@ async def get_companies(user: dict = Depends(get_current_user)):
     return companies
 
 # Vendor Routes
+@api_router.post("/admin/users/{user_id}/deactivate")
+async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
+    """Immediately end the target user's session and prevent future logins.
+
+    Master/Super Admin only. Sets `is_active=False`; every future
+    /auth/refresh and every authenticated call from that user starts
+    returning 403. To re-enable, hit /reactivate.
+    """
+    if not is_master_or_super(admin):
+        raise HTTPException(status_code=403, detail="Only master/super admin")
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("role") == "master_admin":
+        raise HTTPException(status_code=400, detail="Cannot deactivate a master admin")
+    await db.users.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"is_active": False, "deactivated_at": datetime.now(timezone.utc), "deactivated_by": admin["id"]}},
+    )
+    await audit_log(admin, "user", user_id, "deactivated",
+                    {"email": target.get("email"), "role": target.get("role")})
+    return {"ok": True, "user_id": user_id, "is_active": False}
+
+
+@api_router.post("/admin/users/{user_id}/reactivate")
+async def reactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
+    """Re-enable a previously deactivated user. Master/Super Admin only."""
+    if not is_master_or_super(admin):
+        raise HTTPException(status_code=403, detail="Only master/super admin")
+    target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"is_active": True}, "$unset": {"deactivated_at": "", "deactivated_by": ""}},
+    )
+    await audit_log(admin, "user", user_id, "reactivated", {"email": target.get("email")})
+    return {"ok": True, "user_id": user_id, "is_active": True}
+
+
 @api_router.post("/vendors")
 async def create_vendor(data: VendorCreate, user: dict = Depends(get_current_user)):
     """Create a vendor business record AND its login user, then send invitation email.
