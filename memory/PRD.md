@@ -3,6 +3,20 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Master Admin Password Auto-Reset Bug Fixed (COMPLETED)
+- **Bug:** `seed_admin()` in `server.py` was overwriting the admin's stored
+  `password_hash` back to `ADMIN_PASSWORD` on every backend restart if the
+  stored hash didn't verify against that env value. Any password change
+  was silently reverted on the next redeploy / auto-reload.
+- **Fix:** `seed_admin()` now only writes the password on **first creation**.
+  Existing admins keep whatever password they set — role/name drift is still
+  self-healed, but the hash is never touched.
+- **Regression suite:** `/app/backend/tests/test_seed_admin_password.py`
+  (2 tests, green) — proves the changed password survives repeated
+  `seed_admin()` calls.
+- Verified with real curl reproduction: change password → restart backend →
+  old password returns 401, new password logs in successfully.
+
 ## Feb 2026 — Vendor Onboarding Menu Tab (COMPLETED)
 - New dedicated **Menu tab** inside `/onboarding/{id}` with full CRUD:
   - `POST   /api/onboarding/vendors/{id}/menu` — add single item.

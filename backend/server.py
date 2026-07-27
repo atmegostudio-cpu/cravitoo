@@ -467,6 +467,15 @@ async def startup_event():
     asyncio.create_task(_monthly_billing_scheduler())
 
 async def seed_admin():
+    """Ensure a master admin exists.
+
+    IMPORTANT: this function must NEVER overwrite an existing admin's
+    password. The `.env` ADMIN_PASSWORD is a one-time bootstrap value used
+    only when the account is first created — after that, the admin owns
+    their password and it can only be changed via the change-password /
+    reset-password APIs. Restarting the backend or re-deploying must not
+    revert the password.
+    """
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -480,16 +489,15 @@ async def seed_admin():
             "created_at": datetime.now(timezone.utc)
         })
         logger.info(f"Master admin created: {admin_email}")
-    else:
-        updates = {}
-        if existing.get("role") != "master_admin":
-            updates["role"] = "master_admin"
-            updates["name"] = "Master Admin"
-        if not verify_password(admin_password, existing["password_hash"]):
-            updates["password_hash"] = hash_password(admin_password)
-        if updates:
-            await db.users.update_one({"email": admin_email}, {"$set": updates})
-            logger.info("Master admin updated")
+        return
+    # Existing admin — only fix role/name drift; NEVER touch password_hash.
+    updates = {}
+    if existing.get("role") != "master_admin":
+        updates["role"] = "master_admin"
+        updates["name"] = "Master Admin"
+    if updates:
+        await db.users.update_one({"email": admin_email}, {"$set": updates})
+        logger.info("Master admin role restored (password left intact)")
 
 async def seed_demo_data():
     demo_company_email = "demo@techcorp.com"
