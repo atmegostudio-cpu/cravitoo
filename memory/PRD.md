@@ -3,6 +3,35 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Persistent Employee Sessions + Admin Deactivate (COMPLETED)
+- **Behaviour**: Employees stay logged in indefinitely across app close /
+  device restart. Session only ends on manual logout or when a master/super
+  admin deactivates the account.
+- **Backend changes:**
+  - `refresh_token` lifetime **7 days → 365 days** (login, register, OTP
+    verify — all cookie `max_age` set to 31 536 000).
+  - `get_current_user` and `/auth/refresh` now return **403 "Account
+    deactivated"** when `users.is_active === False`. Missing/undefined
+    field is treated as active (backwards-compat).
+  - `/auth/login` and `/auth/otp/verify` also short-circuit for
+    deactivated accounts (avoids handing out doomed tokens).
+  - New admin endpoints: `POST /api/admin/users/{id}/deactivate` and
+    `/reactivate` — master/super admin only, cannot self-deactivate,
+    cannot deactivate a master admin. Writes an `audit_log` row.
+- **Mobile changes:**
+  - `client.js` — new response interceptor: on 401, silently calls
+    `/auth/refresh` with the stored refresh_token and retries the
+    original request. Concurrent refreshes are de-duplicated. On
+    403 "Account deactivated" or refresh failure, both tokens are
+    wiped and the app returns to the Login stack via
+    `setSessionInvalidCallback`.
+  - `AuthContext.bootstrap` tries the refresh flow before deleting
+    tokens on `/auth/me` failure.
+- **Regression suite:** `/app/backend/tests/test_session_persistence.py`
+  (16 tests, all green) covers login/OTP refresh lifetime, refresh happy
+  + sad paths, deactivate/reactivate lifecycle, role guards, self-guard,
+  master-admin guard, audit log, and backwards-compat.
+
 ## Feb 2026 — Master Admin Password Auto-Reset Bug Fixed (COMPLETED)
 - **Bug:** `seed_admin()` in `server.py` was overwriting the admin's stored
   `password_hash` back to `ADMIN_PASSWORD` on every backend restart if the

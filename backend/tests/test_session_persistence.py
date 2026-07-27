@@ -8,6 +8,7 @@ Covers iteration-14 changes:
  - Backwards-compat: users w/o is_active field still active
 """
 import os
+import sys
 import time
 import uuid
 import asyncio
@@ -18,6 +19,11 @@ import bcrypt
 import pytest
 import requests
 from bson import ObjectId
+
+# Ensure the /app/backend package (email_service, server, etc.) is importable
+# regardless of the pytest working directory.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")

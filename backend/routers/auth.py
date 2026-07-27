@@ -195,7 +195,11 @@ def make_router(
     
         await clear_login_attempts(identifier)
         await clear_login_attempts(email_identifier)
-    
+
+        # Deactivated accounts must not receive fresh tokens.
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
+
         user_id = str(user["_id"])
         access_token = create_access_token(user_id, email_lower, user["role"])
         refresh_token = create_refresh_token(user_id)
@@ -444,6 +448,10 @@ def make_router(
             result = await db.users.insert_one(user_doc)
             user = {**user_doc, "_id": result.inserted_id}
             auto_created = True
+
+        # Deactivated accounts must not receive fresh tokens even via OTP.
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Account deactivated")
 
         user_id = str(user["_id"])
         access_token = create_access_token(user_id, email_lower, user["role"])
