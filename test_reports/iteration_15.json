@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only regression for mobile checkout UX. Seeded scratch client -> site -> vendor(s) -> menu(3) -> employee via API; ran Playwright at 390x844 (mobile) and 1440x900 (desktop). ALL 12 mobile flows + ALL 3 desktop flows pass. Hamburger drawer, floating checkout bar (count + total live-update), bottom-sheet with vendor grouping/qty controls/keep-shopping/X close, cart persistence via localStorage.cravitoo_cart, empty->hide, and desktop sticky cart + Razorpay handoff all behave per contract. All previous data-testids (menu-item-{id}, add-to-cart-{id}, vendor-tab-{id}, cart-count, cart-total, place-order-btn, cart-item-{id}, cart-vendor-{id}, cart-qty-{id}, cart-section, empty-cart-message, vegetarian-icon) are preserved. Scratch data cleaned up via cascade DELETE — preview DB back to 1 user (admin).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "employee/menu (desktop AND mobile-when-sheet-open)", "issues": ["Duplicate data-testids: because the sticky desktop cart column (`hidden lg:block`) stays in the DOM on mobile and the sheet also renders the same testids, `cart-total`, `cart-count`, `cart-item-{id}`, `cart-qty-{id}`, `cart-vendor-{id}`, `increase-qty-{id}`, `decrease-qty-{id}`, `empty-cart-message` all appear TWICE at once whenever the mobile sheet is open (or on desktop where both would be duplicated if screen dips below lg during resize). Playwright strict-mode selectors fail without .last/.first, and any assistive tech reading the page will hear labels twice. RECOMMEND: change the `compact` branch of CartInner to emit suffixed testids (e.g., `cart-total-sheet`, `cart-qty-{id}-sheet`) OR conditionally render only ONE CartInner at a time based on viewport instead of relying on `hidden` CSS. Suffixed testids for the sheet are already used for `place-order-btn` vs `place-order-btn-sheet` and `cart-section` vs `cart-sheet-inner`, so the same pattern should be extended to the inner elements too."]},
+      {"screen": "employee/menu (mobile)", "issues": ["No focus trap inside the bottom sheet or the Navbar mobile drawer — Tab key can leak focus behind the overlay to menu items. Not blocking (X + backdrop tap both close correctly), but a11y nice-to-have."]}
+    ]
+  },
+  "test_report_links": ["/app/tests/seed_and_test_mobile.py"],
+  "action_items": [
+    "OPTIONAL (a11y/testing hygiene): suffix the inner cart data-testids inside the mobile sheet (e.g., `cart-total-sheet`, `cart-count-sheet`, `cart-qty-{id}-sheet`, `cart-vendor-{id}-sheet`, `increase-qty-{id}-sheet`, `decrease-qty-{id}-sheet`, `empty-cart-message-sheet`) so mobile+desktop don't emit duplicates. Right now the desktop `hidden lg:block` column stays in the DOM and clashes with the sheet's copy."
+  ],
+  "critical_code_review_comments": [
+    "GOOD: cart persistence via localStorage.cravitoo_cart works across reload; verified value survives page refresh with floating button re-showing correct '3 items · ₹580'.",
+    "GOOD: handleCheckoutTap() picks the right branch on window.innerWidth >= 1024 (desktop scroll) vs mobile (open sheet).",
+    "GOOD: floating button toggles precisely at totalItemsInCart > 0 and disappears the moment the last decrement removes the vendor entry.",
+    "GOOD: Navbar mobile drawer has body-scroll lock and closes on route change AND on X — no infinite-open state observed.",
+    "MINOR: two <style>{keyframes}</style> tags are injected inline every time the drawer/sheet mounts. Consider moving `slideUp` and `slideRight` keyframes into index.css / tailwind config to avoid duplicated <style> tags in the DOM tree.",
+    "MINOR: CartInner is defined inside EmployeeMenu, so it gets a fresh component identity on every render — cheap here but a common source of re-mount bugs. Consider hoisting or wrapping in useMemo/useCallback."
+  ],
+  "updated_files": ["/app/tests/seed_and_test_mobile.py (seed + cleanup script — not a pytest, run manually)"],
+  "success_rate": { "backend": "N/A (skipped per request)", "frontend": "100% (12/12 mobile + 3/3 desktop assertions pass)" },
+  "test_credentials": "Scratch employee created + destroyed inline. Master admin admin@cravitoo.com / admin123 used only for API seeding + cleanup.",
+  "seed_data_creation": "All scratch data (1 city, 1 client, 1 site, 1 allowed-domain, 2 vendors, 3 menu items, 1 employee user, 1 pending order from desktop-checkout smoke test) removed via /master/corporate-clients/{id}?cascade=true + /vendors/{id} + /cities/{id}. Post-run: exactly 1 user in DB (admin@cravitoo.com).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Playwright fill+button-click did NOT trigger the login form's onSubmit in this preview; use `input[type=password].press('Enter')` instead. Cookie banner ('Got it') must be dismissed before interacting with Sign In on mobile viewport or it overlays the button. Seed script /app/tests/seed_and_test_mobile.py builds a full chain and writes creds to /tmp/seed_data.json. Cleanup after use to keep preview at 1 user.",
+  "rca of the issue": "No blocking issues. Only design nit: duplicate data-testids in mobile sheet + hidden desktop cart column simultaneously in the DOM (see design_issues[0])."
+}
