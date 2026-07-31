@@ -37,6 +37,98 @@ const openRazorpayCheckout = ({ keyId, razorpayOrderId, amount, currency, name, 
     rzp.open();
   });
 
+const CartInner = ({
+  compact = false,
+  cartByVendor,
+  totalItemsInCart,
+  grandTotal,
+  updateQuantity,
+  onCheckout,
+  submitting,
+}) => {
+  // When rendered inside the mobile bottom-sheet (`compact`), suffix all
+  // inner data-testids with `-sheet` so they don't clash with the hidden
+  // desktop sticky column that stays mounted in the DOM.
+  const tid = (base) => (compact ? `${base}-sheet` : base);
+  return (
+    <div data-testid={compact ? 'cart-sheet-inner' : 'cart-section'} className="bg-card border border-border-light rounded-xl p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div className="flex items-center space-x-2">
+          <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+          <h3 className="font-heading text-lg sm:text-xl font-medium text-text-primary">Your Cart</h3>
+        </div>
+        {totalItemsInCart > 0 && (
+          <span data-testid={tid('cart-count')} className="bg-primary text-white text-xs font-medium px-2 py-1 rounded-full">
+            {totalItemsInCart}
+          </span>
+        )}
+      </div>
+      {Object.keys(cartByVendor).length === 0 ? (
+        <p data-testid={tid('empty-cart-message')} className="text-text-secondary text-center py-8 text-sm">Your cart is empty</p>
+      ) : (
+        <>
+          {Object.entries(cartByVendor).map(([vId, vCart]) => (
+            <div key={vId} className="mb-4 pb-4 border-b border-border-light last:border-b-0">
+              <div className="flex items-center space-x-2 mb-3">
+                <Store className="h-4 w-4 text-primary" />
+                <p data-testid={tid(`cart-vendor-${vId}`)} className="font-medium text-text-primary text-sm">{vCart.vendorName}</p>
+              </div>
+              {vCart.items.map((item) => (
+                <div key={item.id} data-testid={tid(`cart-item-${item.id}`)} className="flex justify-between items-start mb-3">
+                  <div className="flex-1 pr-3">
+                    <p className="text-text-primary text-sm mb-1 leading-tight">{item.name}</p>
+                    <p className="text-text-secondary text-xs">₹{item.price.toFixed(2)}</p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => updateQuantity(vId, item.id, -1)}
+                      data-testid={tid(`decrease-qty-${item.id}`)}
+                      className="bg-background hover:bg-gray-200 rounded-full p-1.5 transition-colors touch-manipulation"
+                    >
+                      <Minus className="h-4 w-4 text-text-primary" />
+                    </button>
+                    <span data-testid={tid(`cart-qty-${item.id}`)} className="font-medium text-text-primary text-sm w-5 text-center">
+                      {item.quantity}
+                    </span>
+                    <button
+                      onClick={() => updateQuantity(vId, item.id, 1)}
+                      data-testid={tid(`increase-qty-${item.id}`)}
+                      className="bg-background hover:bg-gray-200 rounded-full p-1.5 transition-colors touch-manipulation"
+                    >
+                      <Plus className="h-4 w-4 text-text-primary" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+          <div className="border-t-2 border-border-light pt-4 mb-4">
+            <div className="flex justify-between items-center">
+              <span className="font-heading text-base sm:text-lg font-medium text-text-primary">Total</span>
+              <span data-testid={tid('cart-total')} className="font-heading text-xl sm:text-2xl font-semibold text-primary">
+                ₹{grandTotal.toFixed(2)}
+              </span>
+            </div>
+            {Object.keys(cartByVendor).length > 1 && (
+              <p className="text-xs text-text-muted mt-2">
+                {Object.keys(cartByVendor).length} separate orders will be created
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onCheckout}
+            disabled={submitting}
+            data-testid={compact ? 'place-order-btn-sheet' : 'place-order-btn'}
+            className="w-full bg-primary hover:bg-primary-hover text-white py-3.5 rounded-xl font-semibold transition-colors disabled:opacity-50 touch-manipulation"
+          >
+            {submitting ? 'Processing...' : `Proceed to Checkout · ₹${grandTotal.toFixed(0)}`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
 const EmployeeMenu = () => {
   const [searchParams] = useSearchParams();
   const vendorId = searchParams.get('vendor');
@@ -204,6 +296,15 @@ const EmployeeMenu = () => {
     }
   };
 
+  const CART_PROPS = {
+    cartByVendor,
+    totalItemsInCart,
+    grandTotal,
+    updateQuantity,
+    onCheckout: placeOrdersForAllVendors,
+    submitting,
+  };
+
   if (loading) {
     return (
       <>
@@ -215,83 +316,6 @@ const EmployeeMenu = () => {
     );
   }
 
-  const CartInner = ({ compact = false }) => (
-    <div data-testid={compact ? 'cart-sheet-inner' : 'cart-section'} className="bg-card border border-border-light rounded-xl p-4 sm:p-6">
-      <div className="flex items-center justify-between mb-4 sm:mb-6">
-        <div className="flex items-center space-x-2">
-          <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-          <h3 className="font-heading text-lg sm:text-xl font-medium text-text-primary">Your Cart</h3>
-        </div>
-        {totalItemsInCart > 0 && (
-          <span data-testid="cart-count" className="bg-primary text-white text-xs font-medium px-2 py-1 rounded-full">
-            {totalItemsInCart}
-          </span>
-        )}
-      </div>
-      {Object.keys(cartByVendor).length === 0 ? (
-        <p data-testid="empty-cart-message" className="text-text-secondary text-center py-8 text-sm">Your cart is empty</p>
-      ) : (
-        <>
-          {Object.entries(cartByVendor).map(([vId, vCart]) => (
-            <div key={vId} className="mb-4 pb-4 border-b border-border-light last:border-b-0">
-              <div className="flex items-center space-x-2 mb-3">
-                <Store className="h-4 w-4 text-primary" />
-                <p data-testid={`cart-vendor-${vId}`} className="font-medium text-text-primary text-sm">{vCart.vendorName}</p>
-              </div>
-              {vCart.items.map((item) => (
-                <div key={item.id} data-testid={`cart-item-${item.id}`} className="flex justify-between items-start mb-3">
-                  <div className="flex-1 pr-3">
-                    <p className="text-text-primary text-sm mb-1 leading-tight">{item.name}</p>
-                    <p className="text-text-secondary text-xs">₹{item.price.toFixed(2)}</p>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => updateQuantity(vId, item.id, -1)}
-                      data-testid={`decrease-qty-${item.id}`}
-                      className="bg-background hover:bg-gray-200 rounded-full p-1.5 transition-colors touch-manipulation"
-                    >
-                      <Minus className="h-4 w-4 text-text-primary" />
-                    </button>
-                    <span data-testid={`cart-qty-${item.id}`} className="font-medium text-text-primary text-sm w-5 text-center">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() => updateQuantity(vId, item.id, 1)}
-                      data-testid={`increase-qty-${item.id}`}
-                      className="bg-background hover:bg-gray-200 rounded-full p-1.5 transition-colors touch-manipulation"
-                    >
-                      <Plus className="h-4 w-4 text-text-primary" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-          <div className="border-t-2 border-border-light pt-4 mb-4">
-            <div className="flex justify-between items-center">
-              <span className="font-heading text-base sm:text-lg font-medium text-text-primary">Total</span>
-              <span data-testid="cart-total" className="font-heading text-xl sm:text-2xl font-semibold text-primary">
-                ₹{grandTotal.toFixed(2)}
-              </span>
-            </div>
-            {Object.keys(cartByVendor).length > 1 && (
-              <p className="text-xs text-text-muted mt-2">
-                {Object.keys(cartByVendor).length} separate orders will be created
-              </p>
-            )}
-          </div>
-          <button
-            onClick={placeOrdersForAllVendors}
-            disabled={submitting}
-            data-testid={compact ? 'place-order-btn-sheet' : 'place-order-btn'}
-            className="w-full bg-primary hover:bg-primary-hover text-white py-3.5 rounded-xl font-semibold transition-colors disabled:opacity-50 touch-manipulation"
-          >
-            {submitting ? 'Processing...' : `Proceed to Checkout · ₹${grandTotal.toFixed(0)}`}
-          </button>
-        </>
-      )}
-    </div>
-  );
 
   return (
     <>
@@ -360,7 +384,7 @@ const EmployeeMenu = () => {
             {/* Desktop sticky cart column — hidden on mobile (mobile uses bottom sheet). */}
             <div ref={cartSectionRef} className="hidden lg:block">
               <div className="sticky top-24">
-                <CartInner />
+                <CartInner {...CART_PROPS} />
               </div>
             </div>
           </div>
@@ -413,7 +437,7 @@ const EmployeeMenu = () => {
               </button>
             </div>
             <div className="px-4 pb-6 pt-2">
-              <CartInner compact />
+              <CartInner compact {...CART_PROPS} />
               {Object.keys(cartByVendor).length > 0 && (
                 <button
                   onClick={() => setCartSheetOpen(false)}

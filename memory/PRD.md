@@ -3,6 +3,31 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Mobile-First Menu & Checkout UX (COMPLETED)
+- **Floating checkout bar** on mobile (< lg breakpoint): fixed at bottom,
+  shows live count + total (`3 items · ₹580`) with cart icon badge.
+  Hidden on desktop.
+- **Bottom-sheet cart drawer** on mobile: swipe-up animation, vendor-
+  grouped items, +/- qty controls, "Keep shopping" back-out, X close,
+  backdrop tap to dismiss. Body scroll is locked while open.
+- **Desktop unchanged**: still uses the sticky right-column cart. Tapping
+  the checkout button scrolls smoothly to the sticky cart if the user is
+  ≥ 1024 px wide.
+- **Mobile hamburger nav**: Navbar now shows a hamburger on < md that
+  opens a full-height slide-in drawer with all role-appropriate links,
+  user identity, quick links (Preferences, Meal Plans, Change Password,
+  Data & Privacy), and Logout. Closes automatically on route change.
+- **Menu page**: vendor tabs are horizontally scrollable with snap-scroll,
+  menu cards drop to single column below sm, images shorter on small
+  screens, buttons enlarged to `touch-manipulation` size.
+- Duplicate data-testids in the mobile sheet suffixed with `-sheet`
+  (e.g. `cart-total-sheet`, `place-order-btn-sheet`) so Playwright
+  strict-mode selectors and screen readers don't see them twice.
+- `CartInner` hoisted out of `EmployeeMenu` (props-driven) — fixes the
+  React "component defined during render" anti-pattern.
+- Verified end-to-end by testing agent (`iteration_15.json`,
+  12/12 mobile flows + 3/3 desktop flows pass).
+
 ## Feb 2026 — Persistent Employee Sessions + Admin Deactivate (COMPLETED)
 - **Behaviour**: Employees stay logged in indefinitely across app close /
   device restart. Session only ends on manual logout or when a master/super
