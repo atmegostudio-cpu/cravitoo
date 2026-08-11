@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Cravitoo · Developer Handover Q&amp;A</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1a1a1a; max-width:780px; margin:24px auto; padding:0 24px; line-height:1.55; }
+  h1 { color:#FF5A1F; font-size:26px; letter-spacing:-0.5px; border-bottom:2px solid #FF5A1F; padding-bottom:8px; }
+  h2 { color:#111; font-size:18px; margin-top:28px; }
+  h3 { font-size:15px; color:#333; margin-top:20px; }
+  p strong:first-child { color:#FF5A1F; }
+  code { background:#f5f5f5; padding:1px 6px; border-radius:4px; font-size:13px; }
+  pre { background:#f5f5f5; padding:12px 16px; border-radius:6px; font-size:12px; overflow-x:auto; }
+  hr { border:none; border-top:1px solid #eee; margin:26px 0; }
+  em { color:#555; }
+  strong { color:#000; }
+  ul li { padding:2px 0; }
+  .brand-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:12px; color:#666; }
+  @media print { body { font-size:10.5pt; } h1 { font-size:19pt; } h2 { font-size:13pt; } a { color:#000; text-decoration:none; } }
+</style></head><body>
+<div class="brand-bar"><span>Cravitoo · Developer Handover Pack</span><span>v1.0 · Feb 2026</span></div>
+<h1>Cravitoo · Developer Onboarding Pack</h1>
+<p><em>Two Q&amp;A documents to prepare for your meeting with an external software developer.</em></p>
+<hr />
+<h1>📄 Part 1 — What YOU (the founder) will present to the developer</h1>
+<p><em>Print this and hand it over at the start of the meeting. It answers every technical question a developer needs to onboard on Cravitoo.</em></p>
+<h3>1. What is Cravitoo?</h3>
+<p>A production-ready corporate food-ordering platform for India. Employees at partner companies browse menus, place orders (pre-order or cash-and-carry), and pay via Razorpay. Partner vendors receive orders on their Vendor app. Master, City and Site admins manage the full ecosystem. Three clients (web + Customer mobile + Partner mobile) all talk to the same backend and database.</p>
+<h3>2. What is the tech stack?</h3>
+<ul>
+<li><strong>Web frontend:</strong> React 19, React Router, TailwindCSS, Shadcn UI, Axios, lucide-react icons.</li>
+<li><strong>Mobile:</strong> React Native + Expo (EAS Build). Two variants: <strong>Customer</strong> and <strong>Partner</strong>, both from the same repo (<code>APP_VARIANT</code> env).</li>
+<li><strong>Backend:</strong> FastAPI (Python 3.11), Motor (async MongoDB driver), JWT auth (access 15 min + refresh 365 days), bcrypt, Pydantic v2.</li>
+<li><strong>Database:</strong> MongoDB Atlas (managed by Emergent).</li>
+<li><strong>Third-party integrations:</strong> Resend (emails — paid tier, <code>noreply@cravitoo.com</code>), Razorpay (payments), OpenAI GPT via the Emergent LLM key (AI recommendations), Expo Push Notifications, Google Maps (planned).</li>
+<li><strong>Hosting:</strong> Emergent Platform. Preview = <code>corporate-feast.preview.emergentagent.com</code>. Production = <code>corporate-feast.emergent.host</code> mapped to <code>app.cravitoo.com</code>.</li>
+</ul>
+<h3>3. How is the code organised?</h3>
+<pre><code>/app
+├── backend/           FastAPI app
+│   ├── server.py      main app + core endpoints
+│   ├── routers/       auth, sites, onboarding, reset, corporate_clients,
+│   │                  allowed_domains, billing, reservations
+│   ├── models.py      Pydantic + Mongo schemas
+│   ├── email_service.py  Resend wrapper
+│   └── tests/         pytest regression suite
+├── frontend/          React web app
+│   ├── src/pages/     employee, master, corporate, vendor, onboarding
+│   ├── src/components/ Navbar, Sidebar, NotificationBell, ProtectedRoute
+│   └── src/context/   AuthContext
+└── mobile/            React Native (Expo) — Customer + Partner variants
+    ├── src/screens/   employee, vendor, admin, auth
+    ├── src/api/client.js  axios + 401 auto-refresh interceptor
+    └── eas.json       production &amp; production-vendor build profiles
+</code></pre>
+<h3>4. What roles / user types exist?</h3>
+<ul>
+<li><code>master_admin</code> — full platform control (only one)</li>
+<li><code>super_admin</code> — helps master</li>
+<li><code>city_admin</code> — manages one city</li>
+<li><code>site_admin</code> — manages one corporate office site</li>
+<li><code>corporate_admin</code> — company HR / operations lead</li>
+<li><code>vendor</code> — restaurant partner</li>
+<li><code>employee</code> — end user placing orders</li>
+</ul>
+<h3>5. What are the biggest modules?</h3>
+<ul>
+<li><strong>Vendor Onboarding</strong> — documents, checklist, site review, master approval, menu upload (auto-materialises to <code>menu_items</code> on approval)</li>
+<li><strong>Menu &amp; Ordering</strong> — browse, cart, Razorpay checkout, order status</li>
+<li><strong>Meal Plans / Subscriptions</strong></li>
+<li><strong>Meal Schedules &amp; Pre-orders</strong></li>
+<li><strong>Corporate Clients + Sites + Allowed Domains</strong> — employee email gate</li>
+<li><strong>Monthly Billing Engine</strong></li>
+<li><strong>Notifications</strong> — email + push</li>
+<li><strong>Reset-to-Blank</strong> — client handover clean slate</li>
+</ul>
+<h3>6. What is the deployment / CI flow?</h3>
+<ul>
+<li>Emergent hosts both preview and production. "Save to GitHub" pushes to the repo; "Re-publish" deploys.</li>
+<li>Mobile is built via <strong>EAS</strong> locally (<code>eas build --profile production</code>) then submitted to Play Store + TestFlight. JS-only mobile fixes can hot-ship via <code>eas update --branch production</code>.</li>
+</ul>
+<h3>7. Known open issues / recent bug fixes</h3>
+<ul>
+<li>✅ Master admin password reset-on-restart bug (fixed via <code>seed_admin</code> no-longer-touches-password)</li>
+<li>✅ Session persistence — refresh tokens now 365 days, 401 auto-refresh interceptor in mobile</li>
+<li>✅ Cascade delete on Sites / Vendors / Corporate Clients (prevents orphans)</li>
+<li>✅ Demo-data seeding permanently disabled</li>
+<li>⏳ Play Store rollout of the new mobile builds (needs redeploy from <code>eas.json</code> with production URL)</li>
+<li>⏳ Some employee flows (Orders, Meal Plans, Preferences) not yet fully responsive on mobile web</li>
+</ul>
+<h3>8. What tests exist?</h3>
+<ul>
+<li><code>pytest /app/backend/tests/</code> — regression suites for session persistence, seed_admin, onboarding menu, vendor commission, reservation timezone.</li>
+<li><code>/app/test_reports/iteration_*.json</code> — Playwright + backend contract reports from the automated testing agent.</li>
+<li>ESLint config for the frontend.</li>
+</ul>
+<h3>9. What are the API contracts?</h3>
+<ul>
+<li>All backend routes are prefixed <strong><code>/api</code></strong> and routed by Emergent's ingress to port 8001.</li>
+<li>Auth: JWT (access 15 min + refresh 365 days), delivered as cookies (web) or <code>Authorization: Bearer</code> (mobile).</li>
+<li>Full route list: <code>GET /api/health</code>, <code>POST /api/auth/*</code>, <code>/api/sites</code>, <code>/api/vendors</code>, <code>/api/menu</code>, <code>/api/orders</code>, <code>/api/onboarding/*</code>, <code>/api/master/*</code>, <code>/api/admin/*</code>, <code>/api/reports/*</code>. Documentation via OpenAPI at <code>/docs</code> (FastAPI auto-generated).</li>
+</ul>
+<h3>10. What are the immediate priorities you'd like the developer to work on?</h3>
+<ul>
+<li>Full mobile-web responsiveness for the remaining employee pages (Orders, Meal Plans, Preferences)</li>
+<li>Deactivate / Reactivate user UI on the Admins &amp; Employees page (backend already exists)</li>
+<li>Vendor self-service menu editor on the Vendor app</li>
+<li>Auto-refresh dashboard (websocket push for real-time counts)</li>
+<li>Ready-to-run EAS Build + store submission for both mobile variants</li>
+</ul>
+<h3>11. Access / handover items you'll provide the developer</h3>
+<ul>
+<li>GitHub read/write access to the Emergent repo</li>
+<li>Emergent workspace collaborator invite (so they can Save-to-GitHub / Re-publish / view logs)</li>
+<li>Resend API key, Razorpay keys, <code>JWT_SECRET</code>, <code>ADMIN_EMAIL</code>, <code>ADMIN_PASSWORD</code>, <code>MONGO_URL</code>, <code>DB_NAME</code> — via a password manager (1Password / Bitwarden), never over email</li>
+<li>Play Store &amp; Apple Developer team invites for the two mobile apps</li>
+<li>Domain (<code>cravitoo.com</code>) DNS access if they need to update MX / TXT records</li>
+<li>This document + <code>/app/memory/PRD.md</code> + the Vendor Registration Checklist</li>
+</ul>
+<hr />
+<div style="page-break-after: always"></div>
+
+<h1>🎤 Part 2 — What the developer will ask YOU</h1>
+<p><em>Skim through these before the meeting. Fill in the blanks where marked <code>&lt;...&gt;</code>.</em></p>
+<h2>Business / product</h2>
+<p><strong>Q1. Who is the target user and what's the current scale?</strong>
+Corporate employees in India. Currently <code>&lt;state MAU / DAU numbers OR "pre-launch, first client handover in progress"&gt;</code>.</p>
+<p><strong>Q2. Do you have paying customers yet?</strong>
+<code>&lt;yes/no — if yes, how many companies, sites, employees, and monthly GMV&gt;</code>.</p>
+<p><strong>Q3. What's the primary revenue model?</strong>
+Commission on vendor sales (12–18 %) + optional corporate subscription for premium features.</p>
+<p><strong>Q4. Who owns the IP? Any prior contractors?</strong>
+<code>&lt;you / your company&gt;</code>. Prior work: built on Emergent Platform by Emergent's AI agents (E1). No third-party contractors have write access today.</p>
+<p><strong>Q5. What's the launch / production deadline?</strong>
+<code>&lt;your date&gt;</code>. Current status: mobile apps waiting on final EAS build + store rollout.</p>
+<h2>Access &amp; credentials</h2>
+<p><strong>Q6. Can you give me a walkthrough of the running app?</strong>
+Yes — I have a demo master admin (<code>admin@cravitoo.com</code>) on the preview URL. Live production is <code>app.cravitoo.com</code>.</p>
+<p><strong>Q7. Do you have GitHub, Emergent, Play Store, Apple Developer, Resend, Razorpay, and MongoDB Atlas access ready to hand over?</strong>
+Yes — I'll share credentials via 1Password / Bitwarden / your preferred password manager. Direct email / WhatsApp will not be used for secrets.</p>
+<p><strong>Q8. Do you have separate accounts for me or will I use yours?</strong>
+<code>&lt;create a dedicated dev@cravitoo.com or use their own email — recommend the former&gt;</code>.</p>
+<p><strong>Q9. Are there any secrets in the codebase today?</strong>
+No — every secret is in Emergent's Manage-Publishing → Secrets (production) and <code>/app/backend/.env</code> (preview only, not committed). No secrets in the repo.</p>
+<h2>Architecture</h2>
+<p><strong>Q10. What database are we using, and how big is it?</strong>
+MongoDB Atlas managed by Emergent, current size <code>&lt;let me get you the exact size — Manage Publishing → Database tab&gt;</code>.</p>
+<p><strong>Q11. Do you have staging / preview / production environments?</strong>
+Two — <strong>preview</strong> (<code>corporate-feast.preview.emergentagent.com</code>, safe to break) and <strong>production</strong> (<code>app.cravitoo.com</code>). Preview is used by the AI agent for testing.</p>
+<p><strong>Q12. What CI/CD is in place?</strong>
+Emergent handles it. "Save to GitHub" → commit. "Re-publish" → deploy. Mobile is built via EAS locally then submitted to stores.</p>
+<p><strong>Q13. Any test coverage?</strong>
+Yes — pytest regression suites for critical flows; Playwright reports in <code>/app/test_reports/</code>. No dedicated frontend unit tests yet.</p>
+<p><strong>Q14. Any known scaling bottlenecks?</strong>
+Not encountered yet — traffic is low. Likely candidates when it grows: MongoDB Atlas tier, Razorpay webhook throughput, Resend rate limits.</p>
+<h2>Mobile</h2>
+<p><strong>Q15. Do you have Play Store &amp; Apple Developer accounts?</strong>
+<code>&lt;yes — under Cravitoo owner name / or need to be created&gt;</code>. Bundle IDs: <code>&lt;add&gt;</code>. EAS project IDs are in <code>mobile/eas.json</code>.</p>
+<p><strong>Q16. Which one is the customer app vs partner app?</strong>
+Both from same repo. <code>production</code> profile = Customer, <code>production-vendor</code> profile = Partner. <code>APP_VARIANT</code> env selects the UI.</p>
+<p><strong>Q17. Are there any live installs I need to migrate?</strong>
+<code>&lt;state number of Play Store / TestFlight installs — this affects whether OTA updates or forced re-install are needed&gt;</code>.</p>
+<h2>Integrations</h2>
+<p><strong>Q18. Which third-party services am I responsible for?</strong>
+Razorpay (payments), Resend (email), OpenAI via Emergent LLM key, Expo Push. All keys are in Emergent → Secrets.</p>
+<p><strong>Q19. What's the Resend sender domain?</strong>
+<code>noreply@cravitoo.com</code>, verified on paid tier.</p>
+<p><strong>Q20. Razorpay — test or live mode?</strong>
+<code>&lt;test on preview, live on production&gt;</code>.</p>
+<h2>Team / process</h2>
+<p><strong>Q21. How do you want me to communicate?</strong>
+<code>&lt;Slack / WhatsApp / email — pick one primary, one urgent&gt;</code>. Weekly written status update; monthly demo call.</p>
+<p><strong>Q22. What are the top 3 priorities right now?</strong>
+Full mobile-web responsiveness · Deactivate-user UI · Mobile Play Store / TestFlight rollout with production backend URL baked in.</p>
+<p><strong>Q23. Do you have a bug tracker?</strong>
+<code>&lt;Notion / Linear / GitHub Issues / no — pick or say we'll set up&gt;</code>. Currently informal — bugs go through this Emergent chat + the PRD.md.</p>
+<p><strong>Q24. What's the definition of "done" for a feature?</strong>
+Code merged → regression tests pass → Playwright smoke passes → deployed to preview → verified by me → deployed to production.</p>
+<p><strong>Q25. What's the budget / hourly rate / retainer?</strong>
+<code>&lt;your commercial answer&gt;</code>.</p>
+<p><strong>Q26. What's my scope — full-time hand-over or ongoing feature work?</strong>
+<code>&lt;state whether it's a one-time fix, monthly retainer, or full ownership transfer&gt;</code>.</p>
+<h2>Legal / handover</h2>
+<p><strong>Q27. Is there an NDA to sign?</strong>
+<code>&lt;yes — send in advance / no&gt;</code>.</p>
+<p><strong>Q28. Who signs off on production deploys?</strong>
+<code>&lt;you / a designated stakeholder&gt;</code>. Currently only I have master admin access.</p>
+<p><strong>Q29. Where is the source of truth for feature roadmap?</strong>
+<code>/app/memory/PRD.md</code> in the repo + the Emergent chat history for context.</p>
+<p><strong>Q30. Can I use my own tooling / language / stack for new modules?</strong>
+<code>&lt;prefer FastAPI + React to keep it consistent — Emergent's AI agent works best with this stack&gt;</code>.</p>
+<hr />
+<h2>One extra thing to bring to the meeting</h2>
+<p>Also bring the <strong>Vendor Registration Checklist PDF</strong> — it doubles as a concrete example of the level of documentation you already maintain. Developers judge founders by the quality of the handover pack, and this one is already miles ahead of the average.</p>
+<hr />
+<p><em>Cravitoo · Developer Handover Pack · v1.0 · Feb 2026</em></p>
+</body></html>
