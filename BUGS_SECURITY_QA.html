@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Cravitoo · Bugs &amp; Security Q&amp;A</title>
+<style>
+  @page { size:A4; margin:18mm 16mm; }
+  body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1a1a1a; max-width:780px; margin:24px auto; padding:0 24px; line-height:1.55; }
+  h1 { color:#FF5A1F; font-size:26px; letter-spacing:-0.5px; border-bottom:2px solid #FF5A1F; padding-bottom:8px; }
+  h2 { color:#111; font-size:18px; margin-top:28px; }
+  h3 { font-size:15px; color:#333; margin-top:20px; }
+  code { background:#f5f5f5; padding:1px 6px; border-radius:4px; font-size:13px; }
+  pre { background:#f5f5f5; padding:12px 16px; border-radius:6px; font-size:12px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:12px 0; }
+  th, td { border:1px solid #ddd; padding:8px 10px; text-align:left; }
+  th { background:#fff5f0; color:#FF5A1F; }
+  hr { border:none; border-top:1px solid #eee; margin:26px 0; }
+  em { color:#555; }
+  .brand-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:12px; color:#666; }
+  @media print { body { font-size:10.5pt; } h1 { font-size:19pt; } h2 { font-size:13pt; } a { color:#000; text-decoration:none; } }
+</style></head><body>
+<div class="brand-bar"><span>Cravitoo · Bugs &amp; Security Pack</span><span>v1.0 · Feb 2026</span></div>
+<h1>Cravitoo · Bugs &amp; Security Q&amp;A Pack</h1>
+<p><em>Two Q&amp;A documents to bring to your meeting when the discussion turns to bugs, vulnerabilities and security posture.</em></p>
+<hr />
+<h1>🛡️ Part 1 — Bugs &amp; Security brief YOU present to the developer</h1>
+<p><em>Print and hand over. Answers every question a developer needs to understand what's fixed, what's open, and where the risk currently lives.</em></p>
+<h3>1. Have there been any known security incidents so far?</h3>
+<p>No confirmed incidents. During development the AI-agent testing suite discovered and fixed 5 critical issues before production traffic began:
+- Role escalation via unauthenticated API calls
+- Demo/test credentials being served from production
+- Logout not clearing tokens (infinite loop after sign-out)
+- Master admin password reset-to-default on every restart
+- Employee session getting wiped every 15 minutes (access-token expiry with no refresh path)</p>
+<p>Every one of these was closed by regression tests before going live.</p>
+<h3>2. What authentication model does the app use?</h3>
+<ul>
+<li><strong>JWT</strong> — signed with <code>JWT_SECRET</code> (HS256).</li>
+<li><strong>Access token:</strong> 15-minute lifetime.</li>
+<li><strong>Refresh token:</strong> 365-day lifetime, stored in mobile SecureStore (Keychain/Keystore) or HttpOnly <code>Secure</code> <code>SameSite=None</code> cookies on web.</li>
+<li><strong>Password hashing:</strong> bcrypt with per-user salt.</li>
+<li><strong>OTP login:</strong> email OTPs sent via Resend; codes hashed at rest with SHA-256; one-time use.</li>
+<li><strong>Brute-force protection:</strong> in-memory rate limiter locks an IP+email pair after N failed logins for <code>LOCKOUT_MINUTES</code> minutes.</li>
+<li><strong>Session invalidation:</strong> admin sets <code>is_active=false</code> on the user; the very next request returns <strong>403 Account deactivated</strong> on every endpoint including <code>/auth/refresh</code>.</li>
+</ul>
+<h3>3. What role-based access control (RBAC) exists?</h3>
+<p>Every protected endpoint calls a <code>get_current_user</code> dependency that decodes the JWT and checks the user's role against the required set. Explicit helpers:
+- <code>is_master_admin(user)</code>
+- <code>is_master_or_super(user)</code>
+- <code>can_access_site(user, site_id)</code> — city/site admins are scoped to their own city/site.
+- Cross-tenant access is blocked at the query level (queries include <code>company_id</code> / <code>site_id</code> filters).</p>
+<h3>4. What secrets &amp; credentials exist, and where do they live?</h3>
+<table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Where</th>
+<th>Rotation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MONGO_URL</code>, <code>DB_NAME</code></td>
+<td>Emergent → Manage Publishing → Secrets</td>
+<td>Every 90 days recommended</td>
+</tr>
+<tr>
+<td><code>JWT_SECRET</code></td>
+<td>Same</td>
+<td>Rotate on any suspected leak</td>
+</tr>
+<tr>
+<td><code>ADMIN_EMAIL</code>, <code>ADMIN_PASSWORD</code></td>
+<td>Same (bootstrap only — real admin password lives in DB)</td>
+<td>Every quarter</td>
+</tr>
+<tr>
+<td><code>RESEND_API_KEY</code></td>
+<td>Same</td>
+<td>Rotate via Resend dashboard</td>
+</tr>
+<tr>
+<td><code>RAZORPAY_KEY_ID</code>, <code>RAZORPAY_KEY_SECRET</code></td>
+<td>Same</td>
+<td>Rotate via Razorpay dashboard</td>
+</tr>
+<tr>
+<td><code>EMERGENT_LLM_KEY</code></td>
+<td>Same</td>
+<td>Emergent-managed</td>
+</tr>
+<tr>
+<td>No secrets in git. <code>/app/backend/.env</code> is in <code>.gitignore</code> and only holds preview values.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3>5. Recently fixed bugs (already closed with regression tests)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Severity</th>
+<th>Description</th>
+<th>Test file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S-01</td>
+<td>Critical</td>
+<td>Master admin password reset back to <code>admin123</code> after every backend restart</td>
+<td><code>tests/test_seed_admin_password.py</code></td>
+</tr>
+<tr>
+<td>S-02</td>
+<td>Critical</td>
+<td>Access token 15 min + no refresh → employees kicked out every 15 min</td>
+<td><code>tests/test_session_persistence.py</code></td>
+</tr>
+<tr>
+<td>S-03</td>
+<td>Critical</td>
+<td><code>get_current_user</code> didn't respect <code>is_active</code> → deactivated employees could keep using the app</td>
+<td><code>tests/test_session_persistence.py</code></td>
+</tr>
+<tr>
+<td>S-04</td>
+<td>High</td>
+<td>Delete Site / Vendor / Corporate Client had no cascade → orphans in <code>orders</code>, <code>menu_items</code>, <code>payment_transactions</code>, <code>vendor_onboarding</code> inflated the dashboard</td>
+<td>curl-verified in preview</td>
+</tr>
+<tr>
+<td>S-05</td>
+<td>High</td>
+<td>Demo panel (<code>/master/demo</code> + <code>routers/demo.py</code>) shipped to production; also hardcoded <code>vendor@spicekitchen.com / employee@techcorp.com</code> on mobile login</td>
+<td>routes deleted, files removed</td>
+</tr>
+<tr>
+<td>S-06</td>
+<td>Medium</td>
+<td>Auto <code>seed_demo_data</code> ran on every preview and staging boot</td>
+<td>permanently disabled at startup</td>
+</tr>
+<tr>
+<td>S-07</td>
+<td>Medium</td>
+<td>Mobile apps hard-coded to preview backend URL — could leak preview data to production users</td>
+<td><code>eas.json</code> now overrides <code>EXPO_PUBLIC_BACKEND_URL</code> per build profile</td>
+</tr>
+</tbody>
+</table>
+<h3>6. Known open bugs / limitations (backlog — nothing production-blocking)</h3>
+<ul>
+<li>Some employee flows on mobile web (Orders, Meal Plans, Preferences) aren't yet fully responsive.</li>
+<li>No admin UI yet for deactivating a user — the backend endpoints exist (<code>POST /api/admin/users/{id}/deactivate|reactivate</code>), but they must be called via API for now.</li>
+<li>Dashboard counts update on page load, not in real time (websocket push not yet wired).</li>
+<li>No 2FA / TOTP for master admin login.</li>
+<li>No CAPTCHA on <code>/auth/register</code> — mitigated by allowed-domain whitelist.</li>
+<li>No rate limiting on <code>/auth/otp/request</code> beyond a 60-second cooldown per email.</li>
+<li>Push-token cleanup on uninstall relies on backend-marking-inactive; stale tokens may still receive one silent push before being pruned.</li>
+</ul>
+<h3>7. Compliance &amp; data handling</h3>
+<ul>
+<li><strong>PII stored:</strong> email, name, phone, company_id, site_id. No card data ever hits Cravitoo servers — Razorpay hosts the checkout popup and returns a signed token.</li>
+<li><strong>DPDP Act (India) readiness:</strong> user can request data export &amp; deletion from <code>/settings/data</code>. Master admin can bulk-wipe via Reset-to-Blank for client handover.</li>
+<li><strong>Cookies:</strong> only two — <code>access_token</code> and <code>refresh_token</code>. Both HttpOnly, Secure, SameSite=None. No third-party trackers.</li>
+<li><strong>Analytics:</strong> none in prod (no Google Analytics / Mixpanel).</li>
+<li><strong>Retention:</strong> audit_log rows are kept indefinitely; deleted user rows are hard-deleted (not soft).</li>
+</ul>
+<h3>8. Payment / financial security</h3>
+<ul>
+<li>Razorpay integration uses the <strong>standard checkout flow</strong> — server creates order via <code>POST /payments/razorpay/create-order</code>, popup collects card, and the backend verifies the HMAC signature (<code>POST /payments/razorpay/verify</code>) before marking the order paid.</li>
+<li>Payment webhooks are validated via Razorpay signature header.</li>
+<li>Refunds are manual (Razorpay dashboard) for now.</li>
+</ul>
+<h3>9. Infrastructure security</h3>
+<ul>
+<li>Managed by Emergent — TLS termination, DDoS at the edge, MongoDB Atlas connection with IP allowlist and TLS.</li>
+<li>Backend runs as a non-root process inside a Kubernetes pod.</li>
+<li>Automatic backups: MongoDB Atlas point-in-time (last 24h) + one weekly snapshot; Reset endpoint also creates a <code>_reset_backup_&lt;timestamp&gt;</code> collection before wiping.</li>
+</ul>
+<h3>10. What tools + tests are in place today?</h3>
+<ul>
+<li><code>pytest /app/backend/tests/</code> — regression suites for every critical security fix (S-01 through S-07 all have named tests).</li>
+<li>Playwright automated flows (<code>/app/test_reports/iteration_*.json</code>) — 15+ full-app smoke runs on file.</li>
+<li>ESLint on the frontend; ruff/basic Python lint on the backend.</li>
+<li>No SAST / SCA / DAST tool wired yet — this is your first ask for the developer.</li>
+</ul>
+<h3>11. Immediate security asks for the developer</h3>
+<ol>
+<li>Add <strong>2FA (TOTP)</strong> for master admin + super admin.</li>
+<li>Add <strong>rate limiting</strong> middleware on <code>/auth/otp/request</code>, <code>/auth/register</code>, and <code>/auth/refresh</code>.</li>
+<li>Wire <strong>SCA</strong> (<code>pip-audit</code>, <code>npm audit</code>) into the GitHub CI so vulnerable dependencies get flagged automatically.</li>
+<li>Add a <strong>security.txt</strong> file at <code>/.well-known/security.txt</code> with a responsible-disclosure contact.</li>
+<li>Consider rotating <code>JWT_SECRET</code> on production and force-re-login of all sessions.</li>
+</ol>
+<hr />
+<div style="page-break-after: always"></div>
+
+<h1>🎤 Part 2 — Bugs &amp; Security questions the developer will ask YOU</h1>
+<p><em>Skim before the meeting. Fill in the <code>&lt;...&gt;</code> blanks.</em></p>
+<h2>Access &amp; scope</h2>
+<p><strong>Q1. What level of access are you giving me — read-only, code-write, or full production admin?</strong>
+<code>&lt;pick one; recommend "code-write in preview + supervised production deploy" for the first month&gt;</code>.</p>
+<p><strong>Q2. Are there NDAs, security clearances or data-handling policies I need to sign?</strong>
+<code>&lt;yes/no&gt;</code>. If yes, will be sent in advance.</p>
+<p><strong>Q3. Can I use my own machine + editor, or do you require a hardened corporate laptop?</strong>
+<code>&lt;own machine — but FDE + password + auto-lock required&gt;</code>.</p>
+<p><strong>Q4. Who reviews and approves security-related PRs?</strong>
+<code>&lt;you / a security consultant / me alone&gt;</code>.</p>
+<h2>Threat model</h2>
+<p><strong>Q5. What's the worst-case breach scenario you're worried about?</strong>
+Real customer payment fraud through a compromised master admin OR mass leak of employee PII (emails + order history) via a leaked JWT_SECRET.</p>
+<p><strong>Q6. Any known active adversaries or targeted threats?</strong>
+No — this is a B2B corporate app in India, not high-profile enough for targeted attacks. Main risks: credential stuffing, weak admin passwords, and misconfigured deploys.</p>
+<p><strong>Q7. Have you engaged any pen-testers before?</strong>
+<code>&lt;yes — vendor + date / no&gt;</code>. Please plan for a first pass once the mobile rollout is done.</p>
+<h2>Known bugs</h2>
+<p><strong>Q8. Give me the top 5 open bugs in priority order.</strong>
+1. Mobile-web responsiveness on Orders / Meal Plans / Preferences.
+2. Missing Deactivate/Reactivate UI for admins.
+3. Dashboard not real-time — counts only update on refresh.
+4. Vendor self-service menu editor missing (only master can edit post-approval).
+5. Play Store / TestFlight rollout of the corrected production-URL mobile build not yet done.</p>
+<p><strong>Q9. Are there any P0/P1 bugs live in production right now?</strong>
+<code>&lt;no active P0 as of Feb 2026 — confirm on the day&gt;</code>.</p>
+<p><strong>Q10. Where do bugs get reported today?</strong>
+Through this Emergent chat + noted in <code>/app/memory/PRD.md</code>. No formal tracker yet — happy to move to GitHub Issues, Linear or Notion.</p>
+<p><strong>Q11. What's your definition of "critical" vs "high" vs "medium"?</strong>
+Critical = data loss, payment fraud, auth bypass, or full outage. High = any user cannot complete their core task. Medium = a workaround exists. Low = polish/UX.</p>
+<h2>Security-specific</h2>
+<p><strong>Q12. Have you had any security audits, code reviews or vulnerability disclosures?</strong>
+<code>&lt;yes: Emergent internal — see /app/PHASE1_FULL_AUDIT_RESULTS.md / no external audit yet&gt;</code>.</p>
+<p><strong>Q13. Where are all secrets stored today?</strong>
+Emergent Manage Publishing → Secrets. Nothing in the git repo. Preview values in <code>/app/backend/.env</code> (gitignored).</p>
+<p><strong>Q14. What's the JWT secret rotation policy?</strong>
+None formally — rotate on suspected leak. Please help set up a quarterly rotation.</p>
+<p><strong>Q15. Do you have MFA on the Emergent, GitHub, Play Store, Apple Developer, Razorpay, Resend, and MongoDB Atlas accounts?</strong>
+<code>&lt;yes on all — confirm in advance / no on &lt;X&gt;&gt;</code>. Please treat this as your day-1 checklist.</p>
+<p><strong>Q16. What logs are captured, and for how long?</strong>
+FastAPI structlog to stdout → Emergent's log aggregator (~7 days). MongoDB <code>audit_log</code> collection is kept indefinitely (every admin action).</p>
+<p><strong>Q17. Any GDPR / DPDP Act compliance work in-flight?</strong>
+Yes — <code>/settings/data</code> gives a data-export + delete-account button. Master admin can bulk-wipe. No cross-border data transfer (Mongo Atlas in Mumbai region — confirm).</p>
+<p><strong>Q18. Are there rate limits on auth endpoints?</strong>
+Yes on <code>/auth/login</code> (per IP+email lockout). No formal limit on <code>/auth/otp/request</code> (only 60s cooldown per email). No limit on <code>/auth/register</code>.</p>
+<p><strong>Q19. Is TLS enforced end-to-end?</strong>
+Yes — Emergent's ingress terminates TLS 1.2+ and rewrites HTTP → HTTPS. Backend refuses <code>Secure=false</code> cookies in production (<code>is_secure_request</code> check).</p>
+<p><strong>Q20. What's your incident-response process today?</strong>
+Informal — I'm the master admin, I flip toggles / roll back via Emergent's rollback feature. Need help defining a formal runbook.</p>
+<h2>Data integrity</h2>
+<p><strong>Q21. Any test data lingering in production?</strong>
+<code>&lt;no — wiped via Reset-to-Blank in Feb 2026 / confirm on the day&gt;</code>.</p>
+<p><strong>Q22. Do you take database backups?</strong>
+Yes — MongoDB Atlas point-in-time (24h) + weekly snapshot + <code>_reset_backup_&lt;ts&gt;</code> collection created before every Reset. Please add a monthly export to S3 as a belt-and-braces measure.</p>
+<p><strong>Q23. How do we recover from a bad deploy?</strong>
+Emergent "Rollback" button reverts to the previous release. Database migrations are backwards-compatible so far — no destructive schema changes shipped.</p>
+<p><strong>Q24. Any regulatory reporting obligations?</strong>
+FSSAI vendor compliance (handled at onboarding). No RBI/SEBI reporting; payments are routed through Razorpay who handles KYC.</p>
+<h2>Testing &amp; QA</h2>
+<p><strong>Q25. Coverage % of the codebase by tests?</strong>
+<code>&lt;not measured yet — probably ~15-20% by lines, but every critical auth/onboarding path has a regression test&gt;</code>.</p>
+<p><strong>Q26. Do you run CI on every commit?</strong>
+Emergent runs lint + smoke automatically on Save-to-GitHub. Full pytest and Playwright runs are triggered manually. Please help set up GitHub Actions to run all tests on every PR.</p>
+<p><strong>Q27. Any bug-bounty program?</strong>
+No — happy to bootstrap something small (HackerOne / Bugcrowd VDP) once the developer audits our current posture.</p>
+<h2>Financial / payment</h2>
+<p><strong>Q28. Is Razorpay in test mode or live mode?</strong>
+<code>&lt;test on preview, live on production — confirm on the day&gt;</code>. Live-mode key rotation available in the Razorpay dashboard.</p>
+<p><strong>Q29. Are refunds automated?</strong>
+No — manual through Razorpay dashboard. Automating this is a P2 backlog item.</p>
+<p><strong>Q30. What's the maximum single-transaction value?</strong>
+<code>&lt;₹? — Razorpay account default, please confirm&gt;</code>. Corporate orders can be higher.</p>
+<h2>After the meeting</h2>
+<p><strong>Q31. What's the smallest useful task I can pick up first to build trust?</strong>
+Add the Deactivate/Reactivate button to the Admins &amp; Employees list — backend endpoints already exist, needs only UI work. Should take under 2 hours and gives you a full round-trip through the codebase.</p>
+<p><strong>Q32. How do I get started?</strong>
+1. Emergent workspace invite → 2. GitHub read/write → 3. Password manager share → 4. Clone repo, <code>yarn install</code> in <code>/app/frontend</code> and <code>pip install -r requirements.txt</code> in <code>/app/backend</code> → 5. Hit preview URL with master admin creds → 6. Read <code>/app/memory/PRD.md</code> in full.</p>
+<hr />
+<p><em>Cravitoo · Bugs &amp; Security Q&amp;A Pack · v1.0 · Feb 2026</em></p>
+</body></html>
