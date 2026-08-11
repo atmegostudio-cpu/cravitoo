@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Cravitoo · Bug Fix & Security Audit Scope</title>
+<style>
+  @page { size:A4; margin:18mm 16mm; }
+  body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1a1a1a; max-width:780px; margin:24px auto; padding:0 24px; line-height:1.55; }
+  h1 { color:#FF5A1F; font-size:26px; letter-spacing:-0.5px; border-bottom:2px solid #FF5A1F; padding-bottom:8px; }
+  h2 { color:#111; font-size:18px; margin-top:28px; }
+  h3 { font-size:15px; color:#333; margin-top:20px; }
+  code { background:#f5f5f5; padding:1px 6px; border-radius:4px; font-size:13px; }
+  em { color:#555; }
+  hr { border:none; border-top:1px solid #eee; margin:26px 0; }
+  strong { color:#000; }
+  blockquote { border-left:3px solid #FF5A1F; margin:12px 0; padding:8px 16px; background:#fff5f0; color:#333; font-style:italic; }
+  .brand-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:12px; color:#666; }
+  @media print { body { font-size:10.5pt; } h1 { font-size:19pt; } h2 { font-size:13pt; } a { color:#000; text-decoration:none; } }
+</style></head><body>
+<div class="brand-bar"><span>Cravitoo · Bug Fix &amp; Security Audit Scope</span><span>v1.0 · Feb 2026</span></div>
+<h1>Cravitoo · Bug Fix &amp; Security Audit Scope Questions</h1>
+<p><em>46 questions to ask when you brief the developer on bug hunting and code-level security auditing. These force them to commit to concrete deliverables instead of hand-wavy work.</em></p>
+<p>Ask in this exact order. Anything vague = red flag.</p>
+<hr />
+<h1>🐛 PART A — Bug check &amp; fix scope</h1>
+<h2>1. Process &amp; approach</h2>
+<p><strong>Q1. How will you find bugs I don't yet know about?</strong>
+<em>(Correct answer includes: reading the codebase, running the existing test suite, manual exploratory testing, and using an automated scanner. Bad answer: "I'll just start fixing.")</em></p>
+<p><strong>Q2. Will you deliver a written bug report before you start fixing anything?</strong>
+<em>(Insist on YES. Format: bug ID, severity, reproduction steps, screenshot, root cause, proposed fix, hours estimate.)</em></p>
+<p><strong>Q3. What severity levels will you use — P0 / P1 / P2 / P3? Define each in plain English.</strong></p>
+<p><strong>Q4. How will you prioritise which bugs to fix first — by severity, by user impact, or by fix effort?</strong></p>
+<p><strong>Q5. Will you write a regression test for every bug you fix?</strong>
+<em>(Insist on YES. Bugs come back if there's no test.)</em></p>
+<p><strong>Q6. Where will you fix each bug — preview only, or straight to production?</strong>
+<em>(Correct: preview first → I test → then production. Never straight to prod.)</em></p>
+<p><strong>Q7. How will I verify each bug is actually fixed?</strong>
+<em>(They should give you a reproduction video, a passing test, and a preview URL you can click.)</em></p>
+<h2>2. Scope &amp; estimates</h2>
+<p><strong>Q8. How many hours do you think it'll take to check the full codebase for bugs?</strong></p>
+<p><strong>Q9. Will you charge fixed-price for the full bug sweep, or by the hour?</strong>
+<em>(Fixed-price protects you. Hourly protects them. Push for fixed with a cap.)</em></p>
+<p><strong>Q10. What's your commitment on new bugs introduced by your fixes — free re-fix?</strong>
+<em>(Insist on a 30-day warranty on every fix.)</em></p>
+<p><strong>Q11. Will you rewrite any modules, or only patch?</strong>
+<em>(Rewrites are dangerous. If they suggest a rewrite, ask "why" and "what's the risk if it breaks?" — a good developer will resist rewrites.)</em></p>
+<p><strong>Q12. Which files will you touch, and which will you leave alone?</strong>
+<em>(Ask them to name a list before starting. Prevents scope creep.)</em></p>
+<h2>3. Communication during the fix cycle</h2>
+<p><strong>Q13. How often will you show me progress — daily, twice a week, weekly?</strong></p>
+<p><strong>Q14. What format for status updates — Loom video, screenshots, written summary, or live call?</strong></p>
+<p><strong>Q15. How will you notify me if a fix uncovers a bigger issue?</strong></p>
+<p><strong>Q16. What happens if a bug turns out to be un-fixable — do I still pay?</strong>
+<em>(Correct answer: yes for time spent, but only if they document why and suggest a workaround.)</em></p>
+<h2>4. Testing after fixes</h2>
+<p><strong>Q17. Will you run the existing pytest suite before AND after each fix to catch regressions?</strong></p>
+<p><strong>Q18. Will you add Playwright / end-to-end tests for the flows you touch?</strong></p>
+<p><strong>Q19. What browsers / devices will you test on — Chrome desktop, Safari iOS, Chrome Android, mobile web?</strong></p>
+<p><strong>Q20. How will you test payment flows without hitting live Razorpay?</strong>
+<em>(Correct: use Razorpay test-mode keys — never touch production payments during dev.)</em></p>
+<hr />
+<h1>🔒 PART B — Code-level security audit</h1>
+<h2>5. Audit scope</h2>
+<p><strong>Q21. What does your code-level security audit cover?</strong>
+<em>(Correct answer must mention: OWASP Top 10, authentication flows, RBAC checks, secret storage, input validation, SQL/NoSQL injection, XSS, CSRF, dependency vulnerabilities, insecure defaults, hard-coded credentials, exposed debug endpoints.)</em></p>
+<p><strong>Q22. Will you audit the backend, web frontend, AND both mobile apps — or only some?</strong>
+<em>(Insist on ALL three clients + backend.)</em></p>
+<p><strong>Q23. Will you audit the third-party integrations — Razorpay, Resend, MongoDB, Emergent LLM key usage?</strong></p>
+<p><strong>Q24. Will you audit the deployment config — env vars, CORS, cookies, TLS settings?</strong></p>
+<p><strong>Q25. Will you check every API endpoint for missing authorisation checks (e.g. an employee calling a master-admin endpoint)?</strong>
+<em>(This is THE most common bug in multi-tenant apps. Push hard on this one.)</em></p>
+<p><strong>Q26. What tools will you use for the security audit?</strong>
+<em>(Correct answer includes at least: <code>bandit</code> or <code>semgrep</code> for Python, <code>npm audit</code> and <code>snyk</code> for JS, <code>pip-audit</code> for Python deps, manual code review. Wrong answer: "I'll just eyeball it.")</em></p>
+<p><strong>Q27. Will you check for exposed secrets in git history — not just the current code?</strong>
+<em>(Ask them to run <code>truffleHog</code> or <code>git-secrets</code> across the full history. Old commits can still leak.)</em></p>
+<h2>6. Specific areas of Cravitoo I want them to check</h2>
+<p><strong>Q28. Will you verify that <code>is_active=false</code> really terminates the session on every endpoint, not just <code>/auth/refresh</code>?</strong></p>
+<p><strong>Q29. Will you verify that the Razorpay signature verification in <code>/payments/razorpay/verify</code> cannot be bypassed?</strong></p>
+<p><strong>Q30. Will you verify that a site_admin cannot access another site's data by tampering with <code>site_id</code> in the URL?</strong></p>
+<p><strong>Q31. Will you verify that the <code>/auth/otp/verify</code> endpoint doesn't leak whether an email is registered (timing attack / different error messages)?</strong></p>
+<p><strong>Q32. Will you check that the JWT secret is strong (32+ random chars) and never falls back to a default?</strong></p>
+<p><strong>Q33. Will you verify that the delete endpoints (Site, Vendor, Corporate Client) can't be triggered by a lower-role user via CSRF or role escalation?</strong></p>
+<p><strong>Q34. Will you check the mobile apps for insecure token storage, exposed API keys inside the APK, or debuggable release builds?</strong></p>
+<p><strong>Q35. Will you scan the ~40K lines of code for hard-coded secrets, TODOs referencing security, or commented-out authentication code?</strong></p>
+<h2>7. Deliverables from the security audit</h2>
+<p><strong>Q36. What will the final security report look like?</strong>
+<em>(Must include: executive summary, vulnerability list with CVSS scores, affected files with line numbers, reproduction, recommended fix, effort to fix. Push for a written PDF you can archive.)</em></p>
+<p><strong>Q37. Will you rate each finding — Critical / High / Medium / Low / Informational?</strong></p>
+<p><strong>Q38. Will you fix the vulnerabilities as part of the audit fee, or is fixing separate?</strong>
+<em>(Get this in writing upfront. Ideal: Critical + High get fixed inside the audit fee. Medium + Low are quoted separately.)</em></p>
+<p><strong>Q39. How long will the audit take — days or weeks?</strong></p>
+<p><strong>Q40. Will you re-audit after fixes to confirm the vulnerability is truly closed?</strong>
+<em>(YES — a security audit without a re-audit is worthless.)</em></p>
+<h2>8. What the developer must NOT do</h2>
+<p><strong>Q41. Confirm you will NOT run any security tests against production — only against preview.</strong></p>
+<p><strong>Q42. Confirm you will NOT use my real customer PII in any test — only test data.</strong></p>
+<p><strong>Q43. Confirm you will NOT publish, blog about, or share ANY vulnerability finding externally, ever — even after we finish.</strong>
+<em>(Bake this into the NDA.)</em></p>
+<p><strong>Q44. Confirm you will NOT install new tools or SaaS services that ping my data outside India without explicit written approval.</strong></p>
+<hr />
+<h2>📄 5 artefacts the developer MUST hand over at the end</h2>
+<p>If they don't deliver all five, they're not really done:</p>
+<ul>
+<li>✅ Written <strong>Bug Report v1</strong> — full list of bugs found before any fixes (baseline)</li>
+<li>✅ Written <strong>Security Audit Report</strong> with CVSS scores per finding</li>
+<li>✅ Written <strong>Fix Log</strong> — bug ID → files changed → PR link → test coverage</li>
+<li>✅ Passing <strong>CI run</strong> on the final <code>main</code> branch (pytest + Playwright + lint all green)</li>
+<li>✅ <strong>Post-audit changelog</strong> — a short doc explaining what changed at a high level</li>
+</ul>
+<hr />
+<h2>💬 Two questions to close the conversation</h2>
+<p><strong>Q45. "What's the ONE thing you'd fix on day 1 that would make Cravitoo materially safer / more stable?"</strong>
+<em>(Great developers answer this in under 30 seconds. Bad ones ramble. Their answer also tells you their instincts.)</em></p>
+<p><strong>Q46. "What's the ONE thing about Cravitoo's code that worries you most, based on the walkthrough today?"</strong>
+<em>(If they say "nothing looks concerning" — they didn't actually look. Walk away. Every real codebase has something worrying.)</em></p>
+<hr />
+<h2>🚦 Warning signs during this conversation</h2>
+<ul>
+<li>🚩 "I don't need to write a bug report, I'll just fix as I go"</li>
+<li>🚩 "Regression tests slow me down"</li>
+<li>🚩 "I'll audit production directly, it's fine"</li>
+<li>🚩 "I can do the full audit in one day" — impossible for 40K lines</li>
+<li>🚩 "OWASP Top 10 is outdated" — it's not, still gold standard</li>
+<li>🚩 They can't name a single security tool</li>
+<li>🚩 They ask for full production access on day one to "look around"</li>
+<li>🚩 They refuse fixed-price scope</li>
+</ul>
+<h2>✅ Green signals</h2>
+<ul>
+<li>✅ They ask to see the code BEFORE quoting</li>
+<li>✅ They suggest starting with a <strong>1-day paid discovery</strong> to write the bug report, then quote the fix work separately</li>
+<li>✅ They mention specific tools by name (<code>bandit</code>, <code>semgrep</code>, <code>snyk</code>, <code>pip-audit</code>, <code>truffleHog</code>)</li>
+<li>✅ They insist on preview → your sign-off → production for every change</li>
+<li>✅ They ask for the existing test suite before writing any code</li>
+<li>✅ They read your PRD.md, Bugs &amp; Security PDF, and ask follow-up questions</li>
+</ul>
+<hr />
+<h2>🧾 Two commercial structures to propose</h2>
+<p><strong>Option 1 — Fixed-price bug-sweep + audit package (safest for you)</strong></p>
+<blockquote>
+<p>"₹X for a full-codebase bug report + security audit + fix-list, delivered within 2 weeks. Critical and High findings fixed inside the fee. Medium and Low quoted separately."</p>
+</blockquote>
+<p><strong>Option 2 — Time &amp; materials with a hard cap</strong></p>
+<blockquote>
+<p>"₹Y/hour, capped at Z hours. Weekly written status. Any hour over cap requires my written approval. All work in preview first."</p>
+</blockquote>
+<p><strong>Never agree to:</strong> open-ended hourly with no cap, cash-in-advance for the full amount, or "trust me, I'll be quick."</p>
+<hr />
+<p><em>Cravitoo · Bug Fix &amp; Security Audit Scope · v1.0 · Feb 2026</em></p>
+</body></html>
