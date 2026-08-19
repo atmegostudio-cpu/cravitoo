@@ -28,6 +28,8 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from storage import path_to_url, put_object
 from typing import Optional
 
 import openpyxl
@@ -485,20 +487,35 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         content = await file.read()
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File must be under 10 MB")
+        # Persist to Emergent Object Storage — survives redeploys / pod restarts.
+        # The local /tmp path was ephemeral, which is exactly why "File not found"
+        # was showing after every re-publish.
         ext = (file.filename or "doc").rsplit(".", 1)[-1].lower()[:5]
         if ext not in ("pdf", "png", "jpg", "jpeg", "webp"):
             raise HTTPException(status_code=400, detail="Allowed types: PDF, PNG, JPG, JPEG, WEBP")
-        fname = f"onb_{uuid.uuid4().hex}.{ext}"
-        fpath = UPLOAD_DIR / fname
-        with open(fpath, "wb") as f:
-            f.write(content)
-        base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
-        url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+        mime = {
+            "pdf": "application/pdf",
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "webp": "image/webp",
+        }.get(ext, "application/octet-stream")
+        storage_path = f"cravitoo/onboarding/{onb_id}/{doc_type}_{uuid.uuid4().hex}.{ext}"
+        try:
+            from starlette.concurrency import run_in_threadpool
+            result = await run_in_threadpool(put_object, storage_path, content, mime)
+        except Exception as e:
+            logger.error(f"Object storage put failed for onboarding doc: {e}")
+            raise HTTPException(status_code=503, detail="Storage temporarily unavailable, please retry in a minute")
+        canonical_path = result["path"]
+        url = path_to_url(canonical_path)
         docs = o.get("documents", {})
         docs[doc_type] = {
             "url": url,
-            "filename": fname,
+            "storage_path": canonical_path,
+            "filename": os.path.basename(canonical_path),
             "original_name": file.filename,
+            "content_type": mime,
             "uploaded_by": user["email"],
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "size": len(content),
@@ -508,8 +525,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         if o.get("status") == "draft":
             set_doc["status"] = "documents_pending"
         await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
-        await audit_log(user, "vendor_onboarding", onb_id, "uploaded_doc", {"doc_type": doc_type, "filename": fname})
-        return {"doc_type": doc_type, "url": url, "filename": fname}
+        await audit_log(user, "vendor_onboarding", onb_id, "uploaded_doc", {"doc_type": doc_type, "filename": os.path.basename(canonical_path)})
+        return {"doc_type": doc_type, "url": url, "filename": os.path.basename(canonical_path)}
 
     @r.delete("/onboarding/vendors/{onb_id}/documents/{doc_type}")
     async def delete_onboarding_doc(onb_id: str, doc_type: str, user: dict = Depends(get_current_user)):

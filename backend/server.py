@@ -356,6 +356,13 @@ async def startup_event():
             await seed_admin()
         except Exception as e:
             logger.error(f"seed_admin failed: {e}")
+        # Bootstrap persistent object storage session.
+        try:
+            from storage import init_storage
+            init_storage()
+            logger.info("Emergent Object Storage initialized")
+        except Exception as e:
+            logger.error(f"Object storage init failed: {e}")
         # NOTE: auto seed_demo_data is permanently disabled. Client demo
         # environment must stay clean; any demo/test rows must be created
         # explicitly by the master admin. See PRD.md (Feb 2026).
@@ -2576,7 +2583,6 @@ async def upload_menu_image(
     if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
         ext = "png"
     fname = f"{uuid.uuid4().hex}.{ext}"
-    fpath = UPLOAD_DIR / fname
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image must be under 5 MB")
@@ -2588,6 +2594,18 @@ async def upload_menu_image(
         img.verify()
     except Exception:
         raise HTTPException(status_code=400, detail="File is not a valid image")
+    mime = f"image/{'jpeg' if ext == 'jpg' else ext}"
+    # Try persistent object storage first; only fall back to (ephemeral) local
+    # disk if object storage is completely unavailable.
+    try:
+        from storage import path_to_url, put_object
+        from starlette.concurrency import run_in_threadpool
+        storage_path = f"cravitoo/menu-images/{fname}"
+        result = await run_in_threadpool(put_object, storage_path, content, mime)
+        return {"url": path_to_url(result["path"]), "filename": os.path.basename(result["path"]), "size": len(content)}
+    except Exception as e:
+        logger.warning(f"Object storage put failed for menu image, falling back to local: {e}")
+    fpath = UPLOAD_DIR / fname
     with open(fpath, "wb") as f:
         f.write(content)
     base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
@@ -2597,12 +2615,44 @@ async def upload_menu_image(
 
 @api_router.get("/uploads/{filename}")
 async def serve_upload(filename: str):
-    # Sanitize filename — allow optional alphanumeric prefix (e.g. "ai_", "onb_") + hex + extension
+    """Stream an uploaded file. Supports two backends:
+
+    1. **Emergent Object Storage** (persistent) — filenames prefixed `s_` are
+       base64-encoded storage paths. Files here survive redeploys.
+    2. **Legacy local disk** (`/tmp/cravitoo_uploads`, ephemeral) — anything
+       uploaded before the object-storage migration. These will 404 after a
+       redeploy — the user must re-upload.
+    """
+    from storage import filename_to_path, get_object
+    from starlette.concurrency import run_in_threadpool
+    storage_path = filename_to_path(filename)
+    if storage_path is not None:
+        try:
+            data, content_type = await run_in_threadpool(get_object, storage_path)
+        except Exception as e:
+            logger.warning(f"Object storage GET failed for {storage_path}: {e}")
+            raise HTTPException(
+                status_code=404,
+                detail="File not found in persistent storage. Please re-upload.",
+            )
+        return Response(content=data, media_type=content_type)
+    # If the filename LOOKED like an object-storage token (s_-prefixed) but we
+    # couldn't decode it, don't fall through to the legacy branch — return the
+    # friendly 404 immediately (matches the persistent-storage contract).
+    if filename.startswith("s_"):
+        raise HTTPException(
+            status_code=404,
+            detail="File not found in persistent storage. Please re-upload.",
+        )
+    # Legacy path — sanitise + look on local disk (best-effort; ephemeral).
     if not re.match(r'^[a-z]{0,8}_?[a-f0-9]+\.[a-z]+$', filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
     fpath = UPLOAD_DIR / filename
     if not fpath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(
+            status_code=404,
+            detail="File not found — the previous upload was lost on redeploy. Please re-upload the document.",
+        )
     return FileResponse(str(fpath))
 
 

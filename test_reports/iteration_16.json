@@ -1,0 +1,37 @@
+{
+  "summary": "Backend-only regression test of the Emergent Object Storage migration for vendor onboarding documents (production bug: uploaded PDFs 404'd after every redeploy because they were on ephemeral /tmp). Wrote /app/backend/tests/test_storage_upload.py with 11 tests covering: health, s_-prefixed URL shape, canonical storage_path, bytes-hash round-trip, THE KEY REGRESSION (upload -> restart backend -> re-GET returns 200 + same bytes), PNG upload, 10 MB size limit, disallowed .txt extension, invalid s_ token -> 404, legacy filename friendly 404, soft-delete (DB entry gone, object still in storage), and unauthenticated 401/403. All 11 pass. Fixed one small server-side gap discovered during testing: s_-prefixed filenames that failed base64 decode were falling through to the legacy regex branch and returning 400 'Invalid filename' — the spec (and the friendly UX message) requires a 404 with 'File not found in persistent storage'. Fix applied in /app/backend/server.py::serve_upload.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/uploads/s_<bad token>", "issue": "Fell through to legacy branch and returned 400 'Invalid filename' instead of 404 'File not found in persistent storage'. FIXED in this iteration."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_storage_upload.py",
+    "/app/test_reports/pytest/pytest_iter16_storage.xml",
+    "/app/test_reports/pytest/pytest_iter16_regression.xml"
+  ],
+  "action_items": [
+    "None for this bug fix — object-storage migration is verified end-to-end including cross-restart persistence.",
+    "Unrelated: test_session_persistence.py has 6 errors + 1 failure due to `asyncio.get_event_loop()` no longer implicitly creating a loop on Py 3.11 MainThread. Pre-existing (not caused by this iteration). Consider replacing with `asyncio.new_event_loop()` or `asyncio.run(...)`."
+  ],
+  "critical_code_review_comments": [
+    "storage.py: put_object/get_object are synchronous (requests) calls inside async FastAPI endpoints — they block the event loop for the full upload/download. For 10 MB files this can stall the worker. Consider httpx.AsyncClient or run_in_threadpool.",
+    "server.py upload_menu_image (line ~2598) writes the file to local UPLOAD_DIR BEFORE attempting object storage, then also writes to object storage. On k8s the local write is pointless (ephemeral) and adds latency; the local write also happens even when the object-storage path succeeds. Simplify: try object storage first, only fall back to local disk on exception.",
+    "server.py serve_upload: legacy regex `^[a-z]{0,8}_?[a-f0-9]+\\.[a-z]+$` is quite strict; some pre-migration filenames may not match and would return 400 instead of the friendly 404. Low priority since legacy files are already gone.",
+    "onboarding.py upload_onboarding_doc: no try/except around put_object — if object storage is down, the endpoint 500s. Consider catching and returning 503 with a retry-guidance message.",
+    "server.py delete for onboarding docs only removes the DB entry; storage objects accumulate indefinitely. Fine as a soft-delete for compliance, but document this + add a periodic garbage-collection job."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (serve_upload: added 404 branch for s_-prefixed filenames that fail base64 decode)",
+    "/app/backend/tests/test_storage_upload.py (new file — 11 regression tests)"
+  ],
+  "success_rate": {"backend": "100% (11/11 new tests) + all storage-fix targeted regression"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin, from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created scratch chain (City → Corporate Client → Site → Vendor Onboarding) per test module and cleaned up on teardown. All scratch rows prefixed TEST_/TEST__. Cleanup verified to run — preview DB should be back to blank onboardings after suite. Object-storage objects for uploaded PDFs/PNGs remain (by design — soft delete only).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The Emergent Object Storage migration is proven correct across a live backend restart. Any future test that uploads onboarding docs should use DOC_TYPES from /app/backend/models.py (gst_certificate, pan_card, fssai_license, shop_establishment, bank_details, cancelled_cheque, msme_certificate, insurance) — 'agreement' is NOT a valid doc_type.",
+  "rca of the issue": "RCA: onboarding/upload_onboarding_doc previously wrote to /tmp/cravitoo_uploads. In Kubernetes, /tmp lives in the pod's writable layer and is wiped on every pod restart / redeploy. The DB record kept the /api/uploads/{filename} URL but the on-disk file was gone, so serve_upload -> Path.exists() -> False -> 404 'File not found'. FIX (verified by this iteration): (1) storage.py wraps Emergent Object Storage (put/get) with retry-on-init-expiry; (2) upload_onboarding_doc + upload_menu_image now put_object to cravitoo/onboarding/{onb_id}/... and cravitoo/menu-images/... paths and return a URL whose filename is `s_` + urlsafe-b64(path); (3) serve_upload decodes the token and streams via get_object; (4) legacy /tmp filenames still return a friendly 404 asking the user to re-upload. Persistence proven: uploaded file, ran `sudo supervisorctl restart backend`, waited for /api/health, re-GET'd the URL — 200 with identical bytes."
+}

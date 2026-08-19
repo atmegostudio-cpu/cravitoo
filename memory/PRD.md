@@ -3,6 +3,28 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Vendor Onboarding "File not found" Bug Fixed (COMPLETED)
+- **Bug (production):** clicking View on any Vendor Onboarding document
+  returned `{"detail":"File not found"}`. Uploads were being stored on the
+  Kubernetes pod's `/tmp/cravitoo_uploads` — an ephemeral folder wiped on
+  every re-publish, leaving DB rows pointing to non-existent files.
+- **Fix:** Migrated file uploads to **Emergent Object Storage** (persistent,
+  cross-restart). New `/app/backend/storage.py` wraps put/get with a
+  retry-on-inactive-key. `POST /api/onboarding/vendors/{id}/documents/*`
+  and `POST /api/upload/menu-image` now write to
+  `cravitoo/onboarding/{id}/...` / `cravitoo/menu-images/...` respectively
+  and return a URL whose filename is `s_` + urlsafe-b64(path).
+  `GET /api/uploads/{filename}` decodes the token and streams via
+  `get_object`. Legacy `/tmp` filenames still get a friendly 404 asking
+  the user to re-upload.
+- All storage calls now `run_in_threadpool` so the async event loop is
+  never blocked by the sync `requests` client.
+- Storage init logged at startup: `INFO - Emergent Object Storage
+  initialized`.
+- **Regression suite:** `/app/backend/tests/test_storage_upload.py` — 11
+  tests, all green. Includes the critical *upload → supervisor restart →
+  re-GET returns 200 with identical bytes* assertion.
+
 ## Feb 2026 — Mobile-First Menu & Checkout UX (COMPLETED)
 - **Floating checkout bar** on mobile (< lg breakpoint): fixed at bottom,
   shows live count + total (`3 items · ₹580`) with cart icon badge.
