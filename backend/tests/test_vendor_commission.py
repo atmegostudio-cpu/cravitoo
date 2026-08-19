@@ -29,7 +29,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "cravitoo_db")
 
 CREDS = {
-    "master_admin": ("admin@cravitoo.com", "admin123"),
+    "master_admin": (os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD")),
     "corporate_admin": ("demo@techcorp.com", "demo123"),
     "site_admin": ("siteadmin@techcorp.com", "site123"),
     "vendor": ("vendor@spicekitchen.com", "vendor123"),

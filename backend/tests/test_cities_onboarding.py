@@ -14,7 +14,7 @@ load_dotenv("/app/backend/.env")
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else "http://localhost:8001"
 API = f"{BASE_URL}/api"
 
-MASTER = {"email": "admin@cravitoo.com", "password": "admin123"}
+MASTER = {"email": os.environ.get("ADMIN_EMAIL"), "password": os.environ.get("ADMIN_PASSWORD")}
 SITE_ADMIN = {"email": "siteadmin@techcorp.com", "password": "site123"}
 EMPLOYEE = {"email": "employee@techcorp.com", "password": "employee123"}
 

@@ -3,6 +3,7 @@ import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import ExportButtons from '../../components/ExportButtons';
 import { Calendar, Users, Coffee, Sunrise, Sun, Moon, Loader2, CheckCircle2 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_META = {
@@ -22,7 +23,7 @@ const VendorReservations = () => {
         const { data } = await axios.get(`${API}/reservations/vendor/counts`, { withCredentials: true });
         setData(data);
       } catch (e) {
-        console.error(e);
+        logger.error(e);
       } finally { setLoading(false); }
     };
     fetch();

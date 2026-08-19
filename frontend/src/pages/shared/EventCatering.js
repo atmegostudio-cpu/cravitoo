@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { CalendarDays, Users, Plus, CheckCircle, Clock, Send } from 'lucide-react';
@@ -22,15 +22,16 @@ const EventCatering = () => {
     menu_items: []
   });
 
-  useEffect(() => {
-    fetchData();
+  const fetchMenu = useCallback(async (vendorId) => {
+    try {
+      const { data } = await axios.get(`${API}/menu/${vendorId}`, { withCredentials: true });
+      setMenuItems(data);
+    } catch (error) {
+      logger.error('Error:', error);
+    }
   }, []);
 
-  useEffect(() => {
-    if (formData.vendor_id) fetchMenu(formData.vendor_id);
-  }, [formData.vendor_id]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [eventsRes, vendorsRes] = await Promise.all([
         axios.get(`${API}/events`, { withCredentials: true }),
@@ -46,16 +47,15 @@ const EventCatering = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchMenu = async (vendorId) => {
-    try {
-      const { data } = await axios.get(`${API}/menu/${vendorId}`, { withCredentials: true });
-      setMenuItems(data);
-    } catch (error) {
-      logger.error('Error:', error);
-    }
-  };
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (formData.vendor_id) fetchMenu(formData.vendor_id);
+  }, [formData.vendor_id, fetchMenu]);
 
   const toggleMenuItem = (itemId) => {
     const existing = formData.menu_items.findIndex(i => i.menu_item_id === itemId);

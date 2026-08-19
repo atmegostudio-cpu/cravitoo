@@ -10,8 +10,8 @@ from pymongo import MongoClient
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-MASTER_EMAIL = "admin@cravitoo.com"
-MASTER_PASS = "admin123"
+MASTER_EMAIL = os.environ.get("ADMIN_EMAIL")
+MASTER_PASS = os.environ.get("ADMIN_PASSWORD")
 
 MONGO_URL = "mongodb://localhost:27017"
 DB_NAME = "cravitoo_db"

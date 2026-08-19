@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { ShoppingCart, Leaf, Plus, Minus, Store, X, ChevronDown } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -149,8 +150,34 @@ const EmployeeMenu = () => {
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const cartSectionRef = useRef(null);
 
-  useEffect(() => { fetchVendors(); }, []);
-  useEffect(() => { if (selectedVendor) fetchMenu(); }, [selectedVendor]);
+  const fetchVendors = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/vendors`, { withCredentials: true });
+      setVendors(data);
+      if (!selectedVendor && data.length > 0) {
+        setSelectedVendor(data[0].id);
+      }
+    } catch (error) {
+      logger.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedVendor]);
+
+  const fetchMenu = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/menu/${selectedVendor}`, { withCredentials: true });
+      setMenuItems(data);
+    } catch (error) {
+      logger.error('Error:', error);
+    }
+  }, [selectedVendor]);
+
+  useEffect(() => {
+    fetchVendors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { if (selectedVendor) fetchMenu(); }, [selectedVendor, fetchMenu]);
   useEffect(() => {
     localStorage.setItem('cravitoo_cart', JSON.stringify(cartByVendor));
   }, [cartByVendor]);
@@ -160,29 +187,6 @@ const EmployeeMenu = () => {
     document.body.style.overflow = cartSheetOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [cartSheetOpen]);
-
-  const fetchVendors = async () => {
-    try {
-      const { data } = await axios.get(`${API}/vendors`, { withCredentials: true });
-      setVendors(data);
-      if (!selectedVendor && data.length > 0) {
-        setSelectedVendor(data[0].id);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchMenu = async () => {
-    try {
-      const { data } = await axios.get(`${API}/menu/${selectedVendor}`, { withCredentials: true });
-      setMenuItems(data);
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
 
   const getCurrentVendor = () => vendors.find(v => v.id === selectedVendor);
 
@@ -272,7 +276,7 @@ const EmployeeMenu = () => {
         window.location.href = '/employee/orders';
       }
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
       alert(error.response?.data?.detail || 'Failed to place order');
     } finally {
       setSubmitting(false);

@@ -8,6 +8,7 @@ import {
   Store, ArrowLeft, Upload, FileText, CheckCircle2, XCircle, Clock, ChevronRight,
   Send, X, Eye, Trash2, AlertTriangle, Activity
 } from 'lucide-react';
+import logger from '../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -66,7 +67,7 @@ const OnboardingDetail = () => {
       ]);
       setData(d.data);
       setAudit(a.data.audit_trail || []);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, [onbId]);
 

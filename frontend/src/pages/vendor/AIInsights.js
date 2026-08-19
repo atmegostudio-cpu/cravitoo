@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Sparkles, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -17,7 +18,7 @@ const VendorAIInsights = () => {
       const { data } = await axios.post(`${API}/ai/demand-forecast`, {}, { withCredentials: true });
       setForecast(data);
     } catch (error) {
-      console.error('Forecast error:', error);
+      logger.error('Forecast error:', error);
     } finally {
       setLoadingForecast(false);
     }
@@ -29,7 +30,7 @@ const VendorAIInsights = () => {
       const { data } = await axios.post(`${API}/ai/wastage-analysis`, {}, { withCredentials: true });
       setWastage(data);
     } catch (error) {
-      console.error('Wastage error:', error);
+      logger.error('Wastage error:', error);
     } finally {
       setLoadingWastage(false);
     }

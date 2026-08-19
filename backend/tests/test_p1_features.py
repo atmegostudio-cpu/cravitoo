@@ -35,7 +35,7 @@ def _read_base():
 BASE = _read_base()
 
 CREDS = {
-    "master": {"email": "admin@cravitoo.com", "password": "admin123"},
+    "master": {"email": os.environ.get("ADMIN_EMAIL"), "password": os.environ.get("ADMIN_PASSWORD")},
     "site_admin": {"email": "siteadmin@techcorp.com", "password": "site123"},
     "vendor": {"email": "vendor@spicekitchen.com", "password": "vendor123"},
     "employee": {"email": "employee@techcorp.com", "password": "employee123"},

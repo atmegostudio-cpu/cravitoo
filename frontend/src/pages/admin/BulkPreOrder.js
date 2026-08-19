@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { ClipboardList, AlertCircle, CheckCircle2, Clock, Store, Send } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -70,7 +71,7 @@ const CorporateBulkPreOrder = () => {
       setSites(data || []);
       if (data?.length) setSiteId((cur) => cur || data[0].id);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setLoading(false);
     }

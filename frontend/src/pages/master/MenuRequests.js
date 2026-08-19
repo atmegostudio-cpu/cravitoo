@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Check, X, Clock, CheckCircle, XCircle, Plus, Edit3, Trash2, Filter, Store, Loader2 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -20,19 +21,19 @@ const AdminMenuRequests = () => {
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectRemarks, setRejectRemarks] = useState('');
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await axios.get(`${API}/menu-change-requests?status=${filter}`, { withCredentials: true });
       setRequests(data);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
 
-  useEffect(() => { fetchRequests(); }, [filter]);
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
   const handleApprove = async (id) => {
     setDecidingId(id);

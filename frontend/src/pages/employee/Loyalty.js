@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Award, Star, TrendingUp, Gift } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -25,7 +26,7 @@ const EmployeeLoyalty = () => {
       const { data } = await axios.get(`${API}/loyalty`, { withCredentials: true });
       setLoyalty(data);
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     } finally {
       setLoading(false);
     }
@@ -49,8 +50,8 @@ const EmployeeLoyalty = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
             Loyalty Rewards
           </h1>
           <p className="text-text-secondary text-lg mb-8">
@@ -89,21 +90,21 @@ const EmployeeLoyalty = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div data-testid="total-spent-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="total-spent-card" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="bg-primary-light rounded-xl p-3 w-fit mb-3">
                 <TrendingUp className="h-6 w-6 text-primary" />
               </div>
               <p className="text-3xl font-heading font-semibold text-text-primary">₹{loyalty?.total_spent?.toFixed(2) || 0}</p>
               <p className="text-text-secondary text-sm">Total Spent</p>
             </div>
-            <div data-testid="points-earned-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="points-earned-card" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="bg-accent-light rounded-xl p-3 w-fit mb-3">
                 <Star className="h-6 w-6 text-accent-hover" />
               </div>
               <p className="text-3xl font-heading font-semibold text-text-primary">{loyalty?.points_earned || 0}</p>
               <p className="text-text-secondary text-sm">Total Points Earned</p>
             </div>
-            <div data-testid="orders-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="orders-card" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="bg-blue-100 rounded-xl p-3 w-fit mb-3">
                 <Gift className="h-6 w-6 text-blue-600" />
               </div>
@@ -112,7 +113,7 @@ const EmployeeLoyalty = () => {
             </div>
           </div>
 
-          <div className="bg-card border border-border-light rounded-2xl p-6">
+          <div className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
             <h2 className="font-heading text-2xl font-medium text-text-primary mb-4">How it works</h2>
             <div className="space-y-4">
               <div className="flex items-start space-x-4">

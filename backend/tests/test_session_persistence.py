@@ -26,11 +26,21 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+if not BASE_URL:
+    pytest.skip(
+        "REACT_APP_BACKEND_URL env var is required to run test_session_persistence.py",
+        allow_module_level=True,
+    )
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+    pytest.skip(
+        "ADMIN_EMAIL / ADMIN_PASSWORD env vars are required to run test_session_persistence.py",
+        allow_module_level=True,
+    )
 
 # Load JWT/Mongo config from /app/backend/.env
 def _load_env():

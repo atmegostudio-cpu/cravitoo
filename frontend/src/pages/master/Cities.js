@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { MapPin, Plus, X, Trash2, UserCog, Archive, RotateCcw, Edit3, Eye, EyeOff } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -24,7 +25,7 @@ const MasterCities = () => {
     try {
       const { data } = await axios.get(`${API}/cities?include_archived=${includeArchived}`, { withCredentials: true });
       setCities(data);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, [includeArchived]);
 

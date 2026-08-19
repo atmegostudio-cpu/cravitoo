@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Upload, Users, FileText, Download, AlertCircle, CheckCircle2 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -19,7 +20,7 @@ const BulkOnboard = () => {
         setCompanies(data);
         if (data.length === 1) setCompanyId(data[0].id);
       } catch (e) {
-        console.warn('Could not load companies list:', e?.message || e);
+        logger.warn('Could not load companies list:', e?.message || e);
       }
     })();
   }, []);

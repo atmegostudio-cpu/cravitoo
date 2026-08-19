@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Calendar, CheckCircle, Plus } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -36,7 +37,7 @@ const EmployeeSubscriptions = () => {
         setSelectedVendor(vendorsRes.data[0].id);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      logger.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -79,8 +80,8 @@ const EmployeeSubscriptions = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
             Meal Subscriptions
           </h1>
           <p className="text-text-secondary text-lg mb-8">
@@ -98,7 +99,7 @@ const EmployeeSubscriptions = () => {
               <h2 className="font-heading text-2xl font-medium text-text-primary mb-4">Active Subscriptions</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {subscriptions.filter(s => s.status === 'active').map((sub) => (
-                  <div key={sub.id} data-testid={`active-sub-${sub.id}`} className="bg-gradient-to-br from-primary-light to-accent-light border border-primary/20 rounded-2xl p-6">
+                  <div key={sub.id} data-testid={`active-sub-${sub.id}`} className="bg-gradient-to-br from-primary-light to-accent-light border border-primary/20 rounded-2xl p-4 sm:p-6">
                     <div className="flex items-center justify-between mb-4">
                       <CheckCircle className="h-8 w-8 text-primary" />
                       <span className="text-xs bg-white px-3 py-1 rounded-full text-primary font-medium">Active</span>
@@ -140,7 +141,7 @@ const EmployeeSubscriptions = () => {
           </div>
 
           {selectedPlan && (
-            <div data-testid="subscribe-section" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="subscribe-section" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <h3 className="font-heading text-xl font-medium text-text-primary mb-4">Configure Your Subscription</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

@@ -236,9 +236,9 @@ const EmployeeReservations = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary">
               Reserve Tomorrow's Meals
             </h1>
             <div className="flex items-center gap-2 mt-2 text-text-secondary">

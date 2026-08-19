@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Bell, CheckCheck } from 'lucide-react';
+import logger from '../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -33,7 +34,7 @@ const NotificationBell = () => {
       // 401 is expected when unauthenticated — silently swallowed by the global axios interceptor.
       // Other errors logged for debugging without breaking the UI.
       if (error?.response?.status !== 401) {
-        console.warn('Could not fetch notifications:', error?.message || error);
+        logger.warn('Could not fetch notifications:', error?.message || error);
       }
     }
   };
@@ -43,7 +44,7 @@ const NotificationBell = () => {
       await axios.post(`${API}/notifications/mark-all-read`, {}, { withCredentials: true });
       fetchNotifications();
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     }
   };
 
@@ -52,7 +53,7 @@ const NotificationBell = () => {
       await axios.patch(`${API}/notifications/${notifId}/read`, {}, { withCredentials: true });
       fetchNotifications();
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     }
   };
 

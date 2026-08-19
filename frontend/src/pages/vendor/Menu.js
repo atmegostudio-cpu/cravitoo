@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Leaf, ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -98,7 +99,7 @@ const VendorMenu = () => {
       const { data } = await axios.get(`${API}/menu/vendor/all`, { withCredentials: true });
       setItems(data);
     } catch (error) {
-      console.error('Error fetching menu:', error);
+      logger.error('Error fetching menu:', error);
     } finally {
       setLoading(false);
     }

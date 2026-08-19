@@ -27,8 +27,8 @@ assert _BASE, "REACT_APP_BACKEND_URL not set"
 BASE_URL = _BASE.rstrip("/")
 API = f"{BASE_URL}/api"
 
-MASTER_EMAIL = "admin@cravitoo.com"
-MASTER_PASS = "admin123"
+MASTER_EMAIL = os.environ.get("ADMIN_EMAIL")
+MASTER_PASS = os.environ.get("ADMIN_PASSWORD")
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "cravitoo_db")

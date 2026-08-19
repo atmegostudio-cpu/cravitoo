@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Users, Plus, Trash2, Send, Sparkles } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -22,9 +23,18 @@ const BulkOrder = () => {
     fetchVendors();
   }, []);
 
+  const fetchMenu = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/menu/${selectedVendor}`, { withCredentials: true });
+      setMenuItems(data);
+    } catch (error) {
+      logger.error('Error:', error);
+    }
+  }, [selectedVendor]);
+
   useEffect(() => {
     if (selectedVendor) fetchMenu();
-  }, [selectedVendor]);
+  }, [selectedVendor, fetchMenu]);
 
   const fetchVendors = async () => {
     try {
@@ -32,16 +42,7 @@ const BulkOrder = () => {
       setVendors(data);
       if (data.length > 0) setSelectedVendor(data[0].id);
     } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
-  const fetchMenu = async () => {
-    try {
-      const { data } = await axios.get(`${API}/menu/${selectedVendor}`, { withCredentials: true });
-      setMenuItems(data);
-    } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     }
   };
 
@@ -119,10 +120,10 @@ const BulkOrder = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex items-center space-x-3 mb-2">
             <Users className="h-8 w-8 text-primary" />
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary">
               Bulk Team Order
             </h1>
           </div>

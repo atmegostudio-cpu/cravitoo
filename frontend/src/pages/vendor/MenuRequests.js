@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Plus, X, Edit3, Trash2, Clock, CheckCircle, XCircle, Send, Image as ImageIcon, MessageSquare, Upload, Camera } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -41,7 +42,7 @@ const VendorMenuRequests = () => {
       setRequests(reqRes.data);
       setMenuItems(menuRes.data);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setLoading(false);
     }
@@ -146,7 +147,7 @@ const VendorMenuRequests = () => {
           });
         } catch (upErr) {
           // Note: don't block the user — request was created, photo upload can be retried later
-          console.warn('Photo upload failed:', upErr);
+          logger.warn('Photo upload failed:', upErr);
         }
       }
       setShowForm(false);

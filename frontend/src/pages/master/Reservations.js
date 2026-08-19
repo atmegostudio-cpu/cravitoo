@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import ExportButtons from '../../components/ExportButtons';
 import { Calendar, Users, Sunrise, Sun, Coffee, Moon, Settings, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_META = {
@@ -21,41 +22,42 @@ const AdminReservations = () => {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  const fetchSummary = async () => {
+  const fetchSummary = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/reservations/admin/summary`, { withCredentials: true });
       setSummary(data);
-    } catch (e) { console.error(e); }
-  };
+    } catch (e) { logger.error(e); }
+  }, []);
 
-  const fetchSites = async () => {
+  const fetchSites = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/sites`, { withCredentials: true });
       setSites(data);
       if (data.length > 0 && !selectedSiteId) setSelectedSiteId(data[0].id);
-    } catch (e) { console.error(e); }
-  };
+    } catch (e) { logger.error(e); }
+  }, [selectedSiteId]);
 
-  const fetchSiteSettings = async (siteId) => {
+  const fetchSiteSettings = useCallback(async (siteId) => {
     if (!siteId) return;
     setSettingsLoading(true);
     try {
       const { data } = await axios.get(`${API}/sites/${siteId}/reservation-settings`, { withCredentials: true });
       setSiteSettings(data);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setSettingsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     Promise.all([fetchSummary(), fetchSites()]).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (selectedSiteId) fetchSiteSettings(selectedSiteId);
-  }, [selectedSiteId]);
+  }, [selectedSiteId, fetchSiteSettings]);
 
   const handleToggle = async (meal) => {
     const currentEnabled = siteSettings?.settings?.[meal]?.enabled;

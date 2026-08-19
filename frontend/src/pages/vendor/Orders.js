@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Package } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -18,7 +19,7 @@ const VendorOrders = () => {
       const { data } = await axios.get(`${API}/orders`, { withCredentials: true });
       setOrders(data);
     } catch (error) {
-      console.error('Error fetching orders:', error);
+      logger.error('Error fetching orders:', error);
     } finally {
       setLoading(false);
     }
@@ -29,7 +30,7 @@ const VendorOrders = () => {
       await axios.patch(`${API}/orders/${orderId}?status=${newStatus}`, {}, { withCredentials: true });
       fetchOrders();
     } catch (error) {
-      console.error('Error updating order:', error);
+      logger.error('Error updating order:', error);
     }
   };
 

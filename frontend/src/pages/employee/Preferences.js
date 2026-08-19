@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Heart, AlertTriangle, Utensils, Save } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -28,7 +29,7 @@ const EmployeePreferences = () => {
       const { data } = await axios.get(`${API}/preferences`, { withCredentials: true });
       setPreferences(data);
     } catch (error) {
-      console.error('Error fetching preferences:', error);
+      logger.error('Error fetching preferences:', error);
     } finally {
       setLoading(false);
     }
@@ -72,11 +73,11 @@ const EmployeePreferences = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
             My Preferences
           </h1>
-          <p className="text-text-secondary text-lg mb-8">
+          <p className="text-text-secondary text-base sm:text-lg mb-6 sm:mb-8">
             Tell us your preferences to get personalized meal recommendations
           </p>
 
@@ -87,7 +88,7 @@ const EmployeePreferences = () => {
           )}
 
           <div className="space-y-6">
-            <div data-testid="dietary-section" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="dietary-section" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="bg-primary-light rounded-xl p-2">
                   <Utensils className="h-5 w-5 text-primary" />
@@ -112,7 +113,7 @@ const EmployeePreferences = () => {
               </div>
             </div>
 
-            <div data-testid="allergies-section" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="allergies-section" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="bg-red-50 rounded-xl p-2">
                   <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -137,7 +138,7 @@ const EmployeePreferences = () => {
               </div>
             </div>
 
-            <div data-testid="cuisines-section" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="cuisines-section" className="bg-card border border-border-light rounded-2xl p-4 sm:p-6">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="bg-accent-light rounded-xl p-2">
                   <Heart className="h-5 w-5 text-accent-hover" />

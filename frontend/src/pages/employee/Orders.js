@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Package, Clock, CheckCircle, QrCode, Star, XCircle } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -23,7 +24,7 @@ const EmployeeOrders = () => {
       const { data } = await axios.get(`${API}/orders`, { withCredentials: true });
       setOrders(data);
     } catch (error) {
-      console.error('Error fetching orders:', error);
+      logger.error('Error fetching orders:', error);
     } finally {
       setLoading(false);
     }
@@ -98,8 +99,8 @@ const EmployeeOrders = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-6 sm:mb-8">
             My Orders
           </h1>
 
@@ -125,14 +126,14 @@ const EmployeeOrders = () => {
           ) : (
             <div className="space-y-4">
               {orders.map((order) => (
-                <div key={order.id} data-testid={`order-${order.id}`} className="bg-card border border-border-light rounded-xl p-6 hover:shadow-md transition-all duration-200">
-                  <div className="flex justify-between items-start mb-4">
+                <div key={order.id} data-testid={`order-${order.id}`} className="bg-card border border-border-light rounded-xl p-4 sm:p-6 hover:shadow-md transition-all duration-200">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
                     <div>
                       <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="font-heading text-lg font-medium text-text-primary">Order #{order.id.slice(-8)}</h3>
+                        <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary">Order #{order.id.slice(-8)}</h3>
                         {getStatusIcon(order.status)}
                       </div>
-                      <p className="text-text-secondary text-sm">
+                      <p className="text-text-secondary text-xs sm:text-sm">
                         {new Date(order.created_at).toLocaleDateString('en-IN', {
                           year: 'numeric',
                           month: 'long',
@@ -142,8 +143,8 @@ const EmployeeOrders = () => {
                         })}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-heading text-2xl font-semibold text-primary mb-1">₹{order.total_amount.toFixed(2)}</p>
+                    <div className="sm:text-right flex sm:flex-col items-baseline sm:items-end justify-between gap-2 sm:gap-1">
+                      <p className="font-heading text-xl sm:text-2xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
                         order.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
                         'bg-yellow-100 text-yellow-700'
@@ -166,8 +167,8 @@ const EmployeeOrders = () => {
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-border-light">
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                      <span className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-wrap gap-3">
+                      <span className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-fit ${
                         order.status === 'confirmed' ? 'bg-green-100 text-green-700' :
                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                         order.status === 'ready' ? 'bg-primary-light text-primary' :
@@ -182,12 +183,12 @@ const EmployeeOrders = () => {
                          'Processing'}
                       </span>
                       
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         {(order.status === 'ready' || order.status === 'confirmed') && order.pickup_qr && (
                           <button
                             onClick={() => setShowQRFor(showQRFor === order.id ? null : order.id)}
                             data-testid={`qr-btn-${order.id}`}
-                            className="flex items-center space-x-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                            className="flex items-center space-x-2 bg-primary hover:bg-primary-hover text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 touch-manipulation"
                           >
                             <QrCode className="h-4 w-4" />
                             <span>Pickup QR</span>
@@ -197,7 +198,7 @@ const EmployeeOrders = () => {
                           <button
                             onClick={() => setReviewFor(reviewFor === order.id ? null : order.id)}
                             data-testid={`review-btn-${order.id}`}
-                            className="flex items-center space-x-2 bg-accent-hover hover:bg-accent text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                            className="flex items-center space-x-2 bg-accent-hover hover:bg-accent text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 touch-manipulation"
                           >
                             <Star className="h-4 w-4" />
                             <span>Review</span>
@@ -207,7 +208,7 @@ const EmployeeOrders = () => {
                           <button
                             onClick={() => cancelOrder(order)}
                             data-testid={`cancel-btn-${order.id}`}
-                            className="flex items-center space-x-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                            className="flex items-center space-x-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 touch-manipulation"
                           >
                             <XCircle className="h-4 w-4" />
                             <span>Cancel</span>

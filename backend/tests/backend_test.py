@@ -6,7 +6,7 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
 
 CREDS = {
-    "master_admin": ("admin@cravitoo.com", "admin123"),
+    "master_admin": (os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD")),
     "corporate_admin": ("demo@techcorp.com", "demo123"),
     "vendor": ("vendor@spicekitchen.com", "vendor123"),
     "employee": ("employee@techcorp.com", "employee123"),

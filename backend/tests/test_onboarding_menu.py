@@ -16,8 +16,8 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 CHECKLIST_FIELDS = [
     "gst_verified", "pan_verified", "fssai_verified", "bank_verified",

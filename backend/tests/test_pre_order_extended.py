@@ -29,7 +29,7 @@ def H(t): return {"Authorization": f"Bearer {t}"}
 
 
 @pytest.fixture(scope="module")
-def master_token(): return _login("admin@cravitoo.com", "admin123")
+def master_token(): return _login(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
 
 
 @pytest.fixture(scope="module")

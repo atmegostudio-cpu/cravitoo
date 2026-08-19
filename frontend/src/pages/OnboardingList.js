@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { ClipboardList, Plus, ChevronRight, Search, Filter, Trash2, AlertTriangle } from 'lucide-react';
+import logger from '../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -26,7 +27,7 @@ const OnboardingList = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [d, l] = await Promise.all([
         axios.get(`${API}/onboarding/dashboard`, { withCredentials: true }),
@@ -34,11 +35,11 @@ const OnboardingList = () => {
       ]);
       setDashboard(d.data);
       setItems(l.data);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error(e); }
     finally { setLoading(false); }
-  };
+  }, [statusFilter]);
 
-  useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => { load(); }, [load]);
 
   const deleteRow = async (it, e) => {
     e?.preventDefault();

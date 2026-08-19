@@ -3,6 +3,7 @@ import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import ExportButtons from '../../components/ExportButtons';
 import { TrendingUp, Users, DollarSign } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -19,7 +20,7 @@ const CorporateAdminDashboard = () => {
       const { data } = await axios.get(`${API}/analytics/corporate`, { withCredentials: true });
       setAnalytics(data);
     } catch (error) {
-      console.error('Error fetching analytics:', error);
+      logger.error('Error fetching analytics:', error);
     } finally {
       setLoading(false);
     }

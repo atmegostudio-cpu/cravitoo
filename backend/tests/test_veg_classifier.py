@@ -29,8 +29,8 @@ BASE_URL = os.environ.get(
     "https://corporate-feast.preview.emergentagent.com",
 ).rstrip("/")
 API = f"{BASE_URL}/api"
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 
 # ---------------------------------------------------------------------------

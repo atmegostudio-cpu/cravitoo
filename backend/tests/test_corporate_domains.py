@@ -26,7 +26,7 @@ def _login(email: str, password: str) -> str:
 
 @pytest.fixture(scope="module")
 def master_token():
-    return _login("admin@cravitoo.com", "admin123")
+    return _login(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
 
 
 def H(tok):

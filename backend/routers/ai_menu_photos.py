@@ -5,8 +5,10 @@ Master Admin generates food photos via OpenAI gpt-image-1
 when vendors haven't supplied their own photos.
 
 Endpoints:
-  POST /api/ai/menu-photos/suggest      — generate 1-3 photo variants for a prompt
-  POST /api/ai/menu-photos/apply        — pick a generated photo and save as menu_item.image_url
+  POST /api/ai/menu-photos/suggest       — generate 1-3 photo variants for a prompt
+  POST /api/ai/menu-photos/suggest-free  — free variant (Unsplash + Pollinations)
+  POST /api/ai/menu-photos/apply         — pick a generated photo and save as menu_item.image_url
+  POST /api/ai/menu-photos/bulk-fill     — bulk generate + attach for items missing photos
 
 Built as a make_router(...) factory.
 """
@@ -15,20 +17,32 @@ from __future__ import annotations
 
 import logging
 import os
-import requests
+import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from storage import path_to_url, put_object
 
 logger = logging.getLogger(__name__)
 
+# ── Constants ───────────────────────────────────────────────────────────────
+COST_PER_IMAGE_INR = 3.5  # ~$0.04 × ~₹85/USD (gpt-image-1 pricing)
+STYLING_SUFFIX = (
+    ", overhead 45° angle, soft natural daylight from the left, "
+    "shallow depth of field, garnish in focus, restaurant quality, "
+    "vibrant true colours, no text, no watermark, no logo, no people, "
+    "no plastic packaging, square 1:1 aspect"
+)
 
+
+# ── Request models ──────────────────────────────────────────────────────────
 class MenuPhotoSuggestRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     prompt_override: Optional[str] = Field(None, max_length=500)
@@ -40,32 +54,6 @@ class MenuPhotoSuggestRequest(BaseModel):
 class MenuPhotoApplyRequest(BaseModel):
     menu_item_id: str
     photo_filename: str  # one of the filenames returned by /suggest
-
-
-def _build_default_prompt(data: MenuPhotoSuggestRequest) -> str:
-    """Compose a high-quality photorealistic food prompt.
-
-    The brief comes from menu metadata so the photo actually matches the dish.
-    """
-    if data.prompt_override:
-        # Even with override, append the canonical styling so output stays usable.
-        base = data.prompt_override.strip()
-    else:
-        veg_tag = ""
-        if data.is_vegetarian is True:
-            veg_tag = " vegetarian"
-        elif data.is_vegetarian is False:
-            veg_tag = " non-vegetarian"
-        cuisine_tag = f" {data.cuisine_hint.strip()}" if data.cuisine_hint else ""
-        base = f"Photorealistic{cuisine_tag}{veg_tag} dish of {data.name}, plated on a clean white ceramic plate"
-
-    styling = (
-        ", overhead 45° angle, soft natural daylight from the left, "
-        "shallow depth of field, garnish in focus, restaurant quality, "
-        "vibrant true colours, no text, no watermark, no logo, no people, "
-        "no plastic packaging, square 1:1 aspect"
-    )
-    return f"{base}{styling}"
 
 
 class BulkFillRequest(BaseModel):
@@ -83,47 +71,124 @@ class MenuPhotoFreeRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=4)
 
 
+# ── Prompt helpers ──────────────────────────────────────────────────────────
+def _build_default_prompt(data: MenuPhotoSuggestRequest) -> str:
+    """Compose a high-quality photorealistic food prompt.
+
+    The brief comes from menu metadata so the photo actually matches the dish.
+    """
+    if data.prompt_override:
+        base = data.prompt_override.strip()
+    else:
+        veg_tag = ""
+        if data.is_vegetarian is True:
+            veg_tag = " vegetarian"
+        elif data.is_vegetarian is False:
+            veg_tag = " non-vegetarian"
+        cuisine_tag = f" {data.cuisine_hint.strip()}" if data.cuisine_hint else ""
+        base = f"Photorealistic{cuisine_tag}{veg_tag} dish of {data.name}, plated on a clean white ceramic plate"
+    return f"{base}{STYLING_SUFFIX}"
+
+
+# ── Storage helpers ─────────────────────────────────────────────────────────
+async def _save_image_to_storage(
+    img_bytes: bytes,
+    prefix: str,
+    ext: str = "png",
+    content_type: str = "image/png",
+) -> Dict[str, Any]:
+    """Persist bytes to Emergent Object Storage and return {filename, storage_path, url, size}."""
+    fname = f"{prefix}_{uuid.uuid4().hex}.{ext}"
+    storage_path = f"cravitoo/ai-menu-photos/{fname}" if prefix == "ai" else f"cravitoo/menu-photos-free/{fname}"
+    result = await run_in_threadpool(put_object, storage_path, img_bytes, content_type)
+    return {
+        "filename": os.path.basename(result["path"]),
+        "storage_path": result["path"],
+        "url": path_to_url(result["path"]),
+        "size": len(img_bytes),
+    }
+
+
+def _load_image_gen_or_raise():
+    """Return an OpenAIImageGeneration instance or raise a well-typed HTTPException."""
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="AI image generation is not configured. Please contact platform admin.",
+        )
+    try:
+        from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
+    except ImportError as e:
+        logger.error(f"emergentintegrations import failed: {e}")
+        raise HTTPException(status_code=500, detail="Image generation library not available.")
+    return OpenAIImageGeneration(api_key=api_key)
+
+
+async def _generate_one_image(image_gen, prompt: str) -> Optional[bytes]:
+    """Best-effort single-image generation. Returns None on failure (caller decides)."""
+    try:
+        imgs = await image_gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1)
+        return imgs[0] if imgs else None
+    except Exception as e:
+        logger.warning(f"AI image gen failed for one item: {e}")
+        return None
+
+
+def _free_photo_urls(body: MenuPhotoFreeRequest) -> List[tuple]:
+    """Build the ordered fallback list of (source_label, url) for the free photo path."""
+    veg_hint = "vegetarian" if body.is_vegetarian else ""
+    cuisine = (body.cuisine_hint or "indian").lower()
+    query = ",".join(filter(None, [body.name.strip(), veg_hint, cuisine, "food", "plated"]))
+    prompt = f"appetizing {body.name}, {cuisine} food, professional food photography"
+    return [
+        ("unsplash", f"https://source.unsplash.com/800x600/?{urllib.parse.quote(query)}"),
+        ("pollinations",
+         f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=600&nologo=true"),
+    ]
+
+
+async def _try_fetch_free_photo(url: str) -> Optional[bytes]:
+    """Return image bytes from a free source, or None on failure."""
+    try:
+        resp = await run_in_threadpool(lambda: requests.get(url, timeout=30, allow_redirects=True))
+        if resp.status_code != 200 or len(resp.content) < 1024:
+            return None
+        if not resp.headers.get("Content-Type", "image/jpeg").startswith("image/"):
+            return None
+        return resp.content
+    except Exception as e:
+        logger.warning(f"Free photo fetch failed for {url[:80]}: {e}")
+        return None
+
+
+def _menu_photo_url(fname: str) -> str:
+    """Build the public URL for a stored menu photo filename token."""
+    base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
+    return f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+
+
+# ── Router factory ──────────────────────────────────────────────────────────
 def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
     r = APIRouter()
 
-    async def _generate_one_image(image_gen, prompt: str) -> Optional[bytes]:
-        try:
-            imgs = await image_gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1)
-            return imgs[0] if imgs else None
-        except Exception as e:
-            logger.warning(f"AI image gen failed for one item: {e}")
-            return None
+    def _require_admin(user: dict, roles=("master_admin", "site_admin")):
+        if user.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Only Cravitoo admins can generate menu photos.")
 
     @r.post("/ai/menu-photos/suggest")
     async def suggest_menu_photos(data: MenuPhotoSuggestRequest, user: dict = Depends(get_current_user)):
         """Generate 1-3 photo variants for the given dish.
-        Saves each to UPLOAD_DIR and returns their URLs (not yet attached to any menu item)."""
-        if user.get("role") not in ("master_admin", "site_admin"):
-            raise HTTPException(status_code=403, detail="Only Cravitoo admins can generate menu photos.")
+        Saves each to Emergent Object Storage and returns their URLs (not yet attached to any menu item)."""
+        _require_admin(user)
 
-        api_key = os.environ.get("EMERGENT_LLM_KEY")
-        if not api_key:
-            raise HTTPException(
-                status_code=500,
-                detail="AI image generation is not configured. Please contact platform admin.",
-            )
-
-        # Lazy import — keeps server boot fast and isolates the failure mode if SDK breaks.
-        try:
-            from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
-        except ImportError as e:
-            logger.error(f"emergentintegrations import failed: {e}")
-            raise HTTPException(status_code=500, detail="Image generation library not available.")
-
+        image_gen = _load_image_gen_or_raise()
         prompt = _build_default_prompt(data)
         logger.info(f"AI menu-photo prompt (n={data.count}) by {user.get('email')}: {prompt[:120]}")
 
-        image_gen = OpenAIImageGeneration(api_key=api_key)
         try:
             images = await image_gen.generate_images(
-                prompt=prompt,
-                model="gpt-image-1",
-                number_of_images=data.count,
+                prompt=prompt, model="gpt-image-1", number_of_images=data.count,
             )
         except Exception as e:
             logger.error(f"Image generation failed: {e}")
@@ -132,48 +197,27 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         if not images:
             raise HTTPException(status_code=502, detail="No image was generated. Please retry.")
 
-        base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
         suggestions = []
         for img_bytes in images:
-            fname = f"ai_{uuid.uuid4().hex}.png"
-            # Persist to Emergent Object Storage so the photo survives
-            # redeploys — local /tmp is ephemeral in Kubernetes.
             try:
-                from starlette.concurrency import run_in_threadpool
-                storage_path = f"cravitoo/ai-menu-photos/{fname}"
-                result = await run_in_threadpool(put_object, storage_path, img_bytes, "image/png")
-                url = path_to_url(result["path"])
-                suggestions.append({
-                    "filename": os.path.basename(result["path"]),
-                    "storage_path": result["path"],
-                    "url": url,
-                    "size": len(img_bytes),
-                })
+                suggestions.append(await _save_image_to_storage(img_bytes, "ai"))
             except Exception as e:
-                logger.error(f"Object storage save failed for AI image {fname}: {e}")
+                logger.error(f"Object storage save failed for AI image: {e}")
                 continue
 
         if not suggestions:
             raise HTTPException(status_code=500, detail="Could not save generated images to storage.")
 
-        # Persist a log so we can audit AI usage (cost control)
         await db.ai_image_generations.insert_one({
-            "user_id": user["id"],
-            "user_email": user["email"],
-            "user_role": user["role"],
-            "prompt": prompt,
-            "menu_item_name": data.name,
-            "count_requested": data.count,
-            "count_generated": len(suggestions),
+            "user_id": user["id"], "user_email": user["email"], "user_role": user["role"],
+            "prompt": prompt, "menu_item_name": data.name,
+            "count_requested": data.count, "count_generated": len(suggestions),
             "filenames": [s["filename"] for s in suggestions],
+            "cost_inr": round(len(suggestions) * COST_PER_IMAGE_INR, 2),
             "created_at": datetime.now(timezone.utc),
         })
 
-        return {
-            "prompt_used": prompt,
-            "count": len(suggestions),
-            "suggestions": suggestions,
-        }
+        return {"prompt_used": prompt, "count": len(suggestions), "suggestions": suggestions}
 
     @r.post("/ai/menu-photos/suggest-free")
     async def suggest_free_menu_photo(body: MenuPhotoFreeRequest, user: dict = Depends(get_current_user)):
@@ -184,58 +228,35 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         Pollinations.ai (FLUX under the hood, keyless). Bytes get uploaded
         to Emergent Object Storage so the URL survives redeploys.
         """
-        if user.get("role") not in ("master_admin", "site_admin"):
-            raise HTTPException(status_code=403, detail="Only Cravitoo admins can generate menu photos.")
+        _require_admin(user)
 
-        from starlette.concurrency import run_in_threadpool
-        import urllib.parse
-
-        veg_hint = "vegetarian" if body.is_vegetarian else ""
-        cuisine = (body.cuisine_hint or "indian").lower()
-        query = ",".join(filter(None, [body.name.strip(), veg_hint, cuisine, "food", "plated"]))
-        # Two sources — first that succeeds wins.
-        candidates = [
-            ("unsplash", f"https://source.unsplash.com/800x600/?{urllib.parse.quote(query)}"),
-            ("pollinations", f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f'appetizing {body.name}, {cuisine} food, professional food photography')}?width=800&height=600&nologo=true"),
-        ]
-
-        for source, url in candidates:
+        for source, url in _free_photo_urls(body):
+            content = await _try_fetch_free_photo(url)
+            if content is None:
+                continue
             try:
-                resp = await run_in_threadpool(lambda: requests.get(url, timeout=30, allow_redirects=True))
-                if resp.status_code != 200 or len(resp.content) < 1024:
-                    continue
-                content_type = resp.headers.get("Content-Type", "image/jpeg")
-                if not content_type.startswith("image/"):
-                    continue
-                fname = f"free_{uuid.uuid4().hex}.jpg"
-                from storage import path_to_url, put_object
-                storage_path = f"cravitoo/menu-photos-free/{fname}"
-                result = await run_in_threadpool(put_object, storage_path, resp.content, "image/jpeg")
-                photo_url = path_to_url(result["path"])
-                # Audit — reuse the same collection as paid AI for the spend card.
-                await db.ai_image_generations.insert_one({
-                    "created_at": datetime.now(timezone.utc),
-                    "user_id": user.get("id"),
-                    "user_email": user.get("email"),
-                    "source": source,
-                    "cost_inr": 0,  # free path
-                    "count_generated": 1,
-                    "item_name": body.name,
-                })
-                return {
-                    "source": source,
-                    "suggestions": [{
-                        "url": photo_url,
-                        "storage_path": result["path"],
-                        "size": len(resp.content),
-                    }],
-                }
+                saved = await _save_image_to_storage(content, "free", ext="jpg", content_type="image/jpeg")
             except Exception as e:
-                logger.warning(f"Free photo source '{source}' failed: {e}")
+                logger.warning(f"Free source '{source}' storage save failed: {e}")
                 continue
 
-        raise HTTPException(status_code=502, detail="All free photo sources are unavailable right now. Try again or use the paid AI button.")
+            await db.ai_image_generations.insert_one({
+                "created_at": datetime.now(timezone.utc),
+                "user_id": user.get("id"), "user_email": user.get("email"),
+                "source": source, "cost_inr": 0, "count_generated": 1,
+                "item_name": body.name,
+            })
+            return {
+                "source": source,
+                "suggestions": [{"url": saved["url"], "storage_path": saved["storage_path"], "size": saved["size"]}],
+            }
 
+        raise HTTPException(
+            status_code=502,
+            detail="All free photo sources are unavailable right now. Try again or use the paid AI button.",
+        )
+
+    @r.post("/ai/menu-photos/apply")
     async def apply_menu_photo(data: MenuPhotoApplyRequest, user: dict = Depends(get_current_user)):
         """Save the chosen AI photo as the menu item's image_url. Master Admin only
         (matches the existing menu lock-down policy)."""
@@ -243,12 +264,10 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
             raise HTTPException(status_code=403, detail="Only Master Admin can update menu photos.")
 
         fname = data.photo_filename.strip()
-        # Guard against path traversal.
         if "/" in fname or "\\" in fname or ".." in fname:
             raise HTTPException(status_code=400, detail="Invalid photo filename")
         # Accept either the legacy `ai_<hex>.png` filename OR the new
-        # object-storage token (`s_<b64>`). Both are safe strings after
-        # the traversal guard above.
+        # object-storage token (`s_<b64>`). Both are safe after the traversal guard.
         if not (fname.startswith("ai_") or fname.startswith("s_")):
             raise HTTPException(status_code=400, detail="Invalid photo filename")
 
@@ -256,9 +275,7 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         if not item:
             raise HTTPException(status_code=404, detail="Menu item not found")
 
-        base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
-        url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
-
+        url = _menu_photo_url(fname)
         await db.menu_items.update_one(
             {"_id": item["_id"]},
             {"$set": {
@@ -268,11 +285,57 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
                 "image_updated_by": user["email"],
             }},
         )
-        return {
-            "menu_item_id": data.menu_item_id,
-            "image_url": url,
-            "message": "Menu photo updated.",
+        return {"menu_item_id": data.menu_item_id, "image_url": url, "message": "Menu photo updated."}
+
+    async def _bulk_candidates(data: BulkFillRequest) -> List[Dict[str, Any]]:
+        """Return the list of menu_items eligible for bulk-fill (respecting scope + cap)."""
+        query: Dict[str, Any] = {
+            "$or": [{"image_url": None}, {"image_url": ""}, {"image_url": {"$exists": False}}],
         }
+        if data.vendor_id:
+            query["vendor_id"] = data.vendor_id
+        if data.site_id:
+            mapping_cursor = db.vendor_site_mappings.find(
+                {"site_id": data.site_id, "status": "active"}, {"vendor_id": 1},
+            )
+            vendor_ids = [m["vendor_id"] async for m in mapping_cursor]
+            if not vendor_ids:
+                return []
+            query["vendor_id"] = {"$in": vendor_ids}
+        return [it async for it in db.menu_items.find(query).limit(data.max_items)]
+
+    async def _bulk_fill_one(image_gen, item: Dict[str, Any], user_email: str) -> Dict[str, Any]:
+        """Generate + attach an AI photo for a single menu item. Returns a status dict."""
+        name = item.get("name", "")
+        item_id = str(item["_id"])
+        if not name:
+            return {"ok": False, "id": item_id, "error": "missing name"}
+
+        req = MenuPhotoSuggestRequest(
+            name=name,
+            is_vegetarian=item.get("is_vegetarian"),
+            cuisine_hint=item.get("category") or None,
+            count=1,
+        )
+        img_bytes = await _generate_one_image(image_gen, _build_default_prompt(req))
+        if not img_bytes:
+            return {"ok": False, "id": item_id, "name": name, "error": "generation failed"}
+
+        try:
+            saved = await _save_image_to_storage(img_bytes, "ai")
+        except Exception as e:
+            return {"ok": False, "id": item_id, "name": name, "error": f"storage failed: {e}"}
+
+        await db.menu_items.update_one(
+            {"_id": item["_id"]},
+            {"$set": {
+                "image_url": saved["url"],
+                "image_source": "ai_generated_bulk",
+                "image_updated_at": datetime.now(timezone.utc),
+                "image_updated_by": user_email,
+            }},
+        )
+        return {"ok": True, "id": item_id, "name": name, "image_url": saved["url"]}
 
     @r.post("/ai/menu-photos/bulk-fill")
     async def bulk_fill_menu_photos(data: BulkFillRequest, user: dict = Depends(get_current_user)):
@@ -284,118 +347,52 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         if user.get("role") != "master_admin":
             raise HTTPException(status_code=403, detail="Only Master Admin can bulk-fill menu photos.")
 
-        # Build the filter
-        query: Dict[str, Any] = {
-            "$or": [{"image_url": None}, {"image_url": ""}, {"image_url": {"$exists": False}}],
-        }
-        if data.vendor_id:
-            query["vendor_id"] = data.vendor_id
-        if data.site_id:
-            # Find vendors mapped to this site, then filter menu items by those vendors
-            mapping_cursor = db.vendor_site_mappings.find({"site_id": data.site_id, "status": "active"}, {"vendor_id": 1})
-            vendor_ids = [m["vendor_id"] async for m in mapping_cursor]
-            if not vendor_ids:
-                return {"filled": 0, "skipped": 0, "errors": [], "total_candidates": 0, "dry_run": data.dry_run, "message": "No vendors mapped to this site"}
-            query["vendor_id"] = {"$in": vendor_ids}
-
-        # Find candidates (capped)
-        candidates_cursor = db.menu_items.find(query).limit(data.max_items)
-        candidates: List[Dict[str, Any]] = []
-        async for it in candidates_cursor:
-            candidates.append(it)
+        candidates = await _bulk_candidates(data)
 
         if data.dry_run:
             return {
-                "filled": 0,
-                "skipped": 0,
-                "errors": [],
+                "filled": 0, "skipped": 0, "errors": [],
                 "total_candidates": len(candidates),
                 "candidate_names": [c.get("name", "?") for c in candidates[:30]],
                 "dry_run": True,
-                "estimated_cost_inr": round(len(candidates) * 3.5, 1),  # ~$0.04 each × ~₹85/USD
-                "message": f"Would generate AI photos for {len(candidates)} item(s) at ~₹{round(len(candidates) * 3.5, 1)}",
+                "estimated_cost_inr": round(len(candidates) * COST_PER_IMAGE_INR, 1),
+                "message": f"Would generate AI photos for {len(candidates)} item(s) at ~₹{round(len(candidates) * COST_PER_IMAGE_INR, 1)}",
             }
 
         if not candidates:
-            return {"filled": 0, "skipped": 0, "errors": [], "total_candidates": 0, "message": "All menu items already have photos."}
+            return {"filled": 0, "skipped": 0, "errors": [], "total_candidates": 0,
+                    "message": "All menu items already have photos."}
 
-        api_key = os.environ.get("EMERGENT_LLM_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="AI image generation is not configured.")
-        try:
-            from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
-        except ImportError:
-            raise HTTPException(status_code=500, detail="Image generation library not available.")
+        image_gen = _load_image_gen_or_raise()
 
-        image_gen = OpenAIImageGeneration(api_key=api_key)
-        base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
-
-        filled = 0
-        skipped = 0
+        filled, skipped = 0, 0
         errors: List[Dict[str, Any]] = []
         items_filled: List[Dict[str, Any]] = []
 
         for it in candidates:
-            name = it.get("name", "")
-            if not name:
+            result = await _bulk_fill_one(image_gen, it, user["email"])
+            if result["ok"]:
+                filled += 1
+                items_filled.append({"id": result["id"], "name": result["name"], "image_url": result["image_url"]})
+            else:
                 skipped += 1
-                errors.append({"id": str(it["_id"]), "error": "missing name"})
-                continue
-            req = MenuPhotoSuggestRequest(
-                name=name,
-                is_vegetarian=it.get("is_vegetarian"),
-                cuisine_hint=it.get("category") or None,
-                count=1,
-            )
-            prompt = _build_default_prompt(req)
-            img_bytes = await _generate_one_image(image_gen, prompt)
-            if not img_bytes:
-                skipped += 1
-                errors.append({"id": str(it["_id"]), "name": name, "error": "generation failed"})
-                continue
-            fname = f"ai_{uuid.uuid4().hex}.png"
-            try:
-                from starlette.concurrency import run_in_threadpool
-                storage_path = f"cravitoo/ai-menu-photos/{fname}"
-                result = await run_in_threadpool(put_object, storage_path, img_bytes, "image/png")
-                url = path_to_url(result["path"])
-            except Exception as e:
-                skipped += 1
-                errors.append({"id": str(it["_id"]), "name": name, "error": f"storage failed: {e}"})
-                continue
-            await db.menu_items.update_one(
-                {"_id": it["_id"]},
-                {"$set": {
-                    "image_url": url,
-                    "image_source": "ai_generated_bulk",
-                    "image_updated_at": datetime.now(timezone.utc),
-                    "image_updated_by": user["email"],
-                }},
-            )
-            filled += 1
-            items_filled.append({"id": str(it["_id"]), "name": name, "image_url": url})
+                errors.append({k: v for k, v in result.items() if k != "ok"})
 
-        # Audit log
         await db.ai_image_generations.insert_one({
-            "user_id": user["id"],
-            "user_email": user["email"],
-            "user_role": user["role"],
+            "user_id": user["id"], "user_email": user["email"], "user_role": user["role"],
             "operation": "bulk_fill",
-            "site_id": data.site_id,
-            "vendor_id": data.vendor_id,
+            "site_id": data.site_id, "vendor_id": data.vendor_id,
             "max_items_requested": data.max_items,
-            "filled": filled,
-            "skipped": skipped,
+            "filled": filled, "skipped": skipped,
+            "cost_inr": round(filled * COST_PER_IMAGE_INR, 2),
             "created_at": datetime.now(timezone.utc),
         })
 
         return {
-            "filled": filled,
-            "skipped": skipped,
-            "errors": errors,
+            "filled": filled, "skipped": skipped, "errors": errors,
             "total_candidates": len(candidates),
             "items_filled": items_filled,
-            "estimated_cost_inr": round(filled * 3.5, 1),
+            "estimated_cost_inr": round(filled * COST_PER_IMAGE_INR, 1),
             "dry_run": False,
         }
 

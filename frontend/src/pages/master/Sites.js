@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -49,7 +50,7 @@ const MasterSites = () => {
       const { data } = await axios.get(`${API}/sites`, { withCredentials: true });
       setSites(data);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setLoading(false);
     }

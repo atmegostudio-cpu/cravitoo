@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { Store, Save, ArrowLeft } from 'lucide-react';
+import logger from '../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -34,7 +35,7 @@ const OnboardingNew = () => {
         } else if (data.length === 1) {
           setForm((f) => ({ ...f, site_id: data[0].id }));
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { logger.error(e); }
     })();
   }, [user]);
 

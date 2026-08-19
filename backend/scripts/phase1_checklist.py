@@ -54,7 +54,7 @@ def H(t):
 def main() -> int:
     print(f"\n=== Phase 1 Pre-Deploy Checklist · target={BASE} ===\n")
 
-    master_token = login("admin@cravitoo.com", "admin123")
+    master_token = login(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
     if not master_token:
         print("Could not log in as master admin — aborting checklist")
         return 1
@@ -138,7 +138,7 @@ def main() -> int:
         r = requests.get(f"{API}/admin/demo/enabled", timeout=10)
         record("E.production.demo-enabled-flag-false",
                r.status_code == 200 and r.json()["demo_enabled"] is False, f"body={r.text[:80]}")
-        mt = login("admin@cravitoo.com", "admin123")
+        mt = login(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
         for endpoint, method in (("/admin/demo/status", "get"), ("/admin/demo/setup", "post"), ("/admin/demo/teardown", "post")):
             fn = getattr(requests, method)
             r = fn(f"{API}{endpoint}", headers=H(mt), timeout=10)
@@ -158,7 +158,7 @@ def main() -> int:
     finally:
         _flip("preview")
         # re-login under the restored env
-        master_token = login("admin@cravitoo.com", "admin123")
+        master_token = login(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
 
     # ──────────────────────────── F. Order lifecycle exhaustive matrix ───────
     print("\nF. Order lifecycle — every valid + invalid transition")

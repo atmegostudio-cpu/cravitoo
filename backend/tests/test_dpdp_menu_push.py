@@ -17,7 +17,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
 CREDS = {
-    "master_admin":   ("admin@cravitoo.com",        "admin123"),
+    "master_admin":   (os.environ.get("ADMIN_EMAIL"),        os.environ.get("ADMIN_PASSWORD")),
     "site_admin":     ("siteadmin@techcorp.com",    "site123"),
     "vendor":         ("vendor@spicekitchen.com",   "vendor123"),
     "employee":       ("employee@techcorp.com",     "employee123"),

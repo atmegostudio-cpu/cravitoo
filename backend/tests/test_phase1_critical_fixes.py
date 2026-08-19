@@ -37,8 +37,8 @@ API = f"{BASE_URL}/api"
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "cravitoo_db")
 
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@cravitoo.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 
 # ───────────────────────── helpers ──────────────────────────────────────────

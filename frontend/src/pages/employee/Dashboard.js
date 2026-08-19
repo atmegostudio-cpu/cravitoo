@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import { Sparkles, TrendingUp, ShoppingBag, Clock } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -26,7 +27,7 @@ const EmployeeDashboard = () => {
       setVendors(vendorsRes.data);
       setRecentOrders(ordersRes.data.slice(0, 3));
     } catch (error) {
-      console.error('Error fetching data:', error);
+      logger.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -45,7 +46,7 @@ const EmployeeDashboard = () => {
         }
       } catch (e) {
         // Preferences fetch is non-critical; fall back to defaults (intentional best-effort)
-        if (e?.response?.status !== 401) console.warn('Preferences fetch failed:', e?.message || e);
+        if (e?.response?.status !== 401) logger.warn('Preferences fetch failed:', e?.message || e);
       }
       const { data } = await axios.post(
         `${API}/ai/recommendations`,
@@ -54,7 +55,7 @@ const EmployeeDashboard = () => {
       );
       setRecommendations(data.recommendations);
     } catch (error) {
-      console.error('Error getting recommendations:', error);
+      logger.error('Error getting recommendations:', error);
     }
   };
 
@@ -73,9 +74,9 @@ const EmployeeDashboard = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
+            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
               Welcome back, {user?.name}!
             </h1>
             <p className="text-text-secondary text-lg">What would you like to eat today?</p>

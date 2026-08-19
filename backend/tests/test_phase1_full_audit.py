@@ -30,7 +30,7 @@ os.environ.setdefault("DB_NAME", "cravitoo_db")
 API = f"{BASE_URL}/api"
 
 CREDS = {
-    "master_admin":    ("admin@cravitoo.com",        "admin123"),
+    "master_admin":    (os.environ.get("ADMIN_EMAIL"),        os.environ.get("ADMIN_PASSWORD")),
     "corporate_admin": ("demo@techcorp.com",         "demo123"),
     "site_admin":      ("siteadmin@techcorp.com",    "site123"),
     "vendor":          ("vendor@spicekitchen.com",   "vendor123"),

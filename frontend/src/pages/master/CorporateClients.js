@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Building2, Plus, Mail, ArrowRight, Trash2, X, CheckCircle2, Edit3 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -41,7 +42,7 @@ const CorporateClients = () => {
       const { data } = await axios.get(`${API}/master/corporate-clients`, { withCredentials: true });
       setClients(data || []);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally { setLoading(false); }
   }, []);
 

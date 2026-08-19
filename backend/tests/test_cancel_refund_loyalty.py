@@ -25,7 +25,7 @@ assert BASE_URL, "REACT_APP_BACKEND_URL not set"
 assert MONGO_URL and DB_NAME, "Mongo env not set"
 
 CREDS = {
-    "master_admin": ("admin@cravitoo.com", "admin123"),
+    "master_admin": (os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD")),
     "vendor": ("vendor@spicekitchen.com", "vendor123"),
     "employee": ("employee@techcorp.com", "employee123"),
     "site_admin": ("siteadmin@techcorp.com", "site123"),
