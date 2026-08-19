@@ -3,6 +3,26 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Free AI Menu Photos (Unsplash + Pollinations) (COMPLETED)
+- **Zero-cost photo path** for menu items — new endpoint
+  `POST /api/ai/menu-photos/suggest-free` tries Unsplash Source first,
+  falls back to Pollinations.ai (both keyless, no rate-limit for
+  Cravitoo's volume). Bytes are downloaded server-side, persisted to
+  Emergent Object Storage, and returned as a `/api/uploads/s_...` URL.
+- **UI**: emerald **ImageIcon** button (`data-testid="menu-free-photo-*"`)
+  next to the existing violet Sparkles paid button on the Vendor
+  Onboarding Menu tab. One-tap generation, animate-pulse while busy,
+  single-row busy invariant enforced.
+- **Spend-counter integrity**: the `/api/admin/ai-photos/spend`
+  aggregator now filters `cost_inr: {$ne: 0}`, so free-source rows
+  (Unsplash / Pollinations) don't inflate the paid-image dashboard.
+  Row still audited in `ai_image_generations` with source tag +
+  `cost_inr=0` for analytics.
+- **Regression suite** `/app/backend/tests/test_free_menu_photos.py`
+  (9 tests, all green) — auth 401/403, validation 422 x3, happy path
+  with byte-size delta, spend-non-inflation, paid endpoint
+  non-regression.
+
 ## Feb 2026 — Veg / Non-Veg Classification Fix (COMPLETED)
 - **Bug:** In the Vendor Onboarding Menu tab (and any menu built from
   Excel bulk-upload), every item was rendering with a red dot (non-veg)

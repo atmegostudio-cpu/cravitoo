@@ -1,0 +1,42 @@
+{
+  "summary": "Tested new FREE menu-photo path (POST /api/ai/menu-photos/suggest-free) end-to-end. Backend: 8/9 pytest cases pass in /app/backend/tests/test_free_menu_photos.py (auth 401/403, validation 422 x3, happy-path 200 with real JPEG from Pollinations verified via GET, paid /suggest regression). Frontend smoke on live preview confirmed the emerald ImageIcon renders per row with data-testid=menu-free-photo-{item_id}, correct title, animate-pulse during request, both row buttons disable together (single-row busy invariant), and the click chain FREE→PATCH→reload updates the item image (FREE_API 200, PATCH 200). BUG FOUND: free-photo rows DO inflate the ₹ spend dashboard because the aggregator in server.py:_sum sums count_generated regardless of cost_inr. Spec requirement violated.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/admin/ai-photos/spend",
+        "issue": "Free-photo rows inserted by /suggest-free (cost_inr=0, count_generated=1) INFLATE the ₹ totals by ₹3.5 per row. The aggregator's $sum on count_generated does not filter cost_inr==0 rows. Verified by test_free_rows_do_not_inflate_spend which fails with delta_spend=₹3.5. Fix: in server.py:762 add `{cost_inr: {$ne: 0}}` to the $match (or use `$ifNull cost_inr` differently), OR change /suggest-free to store count_generated=0 for free rows.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_free_menu_photos.py",
+    "/app/test_reports/pytest/pytest_iter21_free_photos.xml"
+  ],
+  "action_items": [
+    "Fix spend-inflation bug: filter cost_inr==0 rows out of the /api/admin/ai-photos/spend aggregation (server.py ai_photo_spend._sum). Re-run test_free_rows_do_not_inflate_spend to confirm."
+  ],
+  "critical_code_review_comments": [
+    "server.py:762 _sum() aggregates count_generated + filled without checking cost_inr — free rows leak into paid spend totals. Add `cost_inr: {$ne: 0}` (or `$or: [cost_inr null, cost_inr > 0]`) to each $match.",
+    "ai_menu_photos.py:198 Unsplash Source URL is used but Unsplash Source has been deprecated (Jun 2024) — every request 302→ a generic-looking image or returns HTML. In practice only Pollinations serves real bytes here; the code correctly falls through. Consider removing the Unsplash tier or replacing with Unsplash API + key.",
+    "ai_menu_photos.py:204 requests.get inside lambda is fine, but a per-source timeout of 30s means a completely stalled Unsplash call blocks the request path for 30s before falling back. Consider dropping to 10s for the first source.",
+    "MenuTab.js correctly gates click via aiBusyId so only one row is busy at a time. Verified live.",
+    "MenuPhotoFreeRequest has min_length=1 for name but the /suggest paid variant enforces min_length=2 — inconsistency, though not spec-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_free_menu_photos.py (new)"
+  ],
+  "success_rate": {"backend": "89% (8/9)", "frontend": "100% smoke pass"},
+  "test_credentials": "admin@cravitoo.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Seeded 1 corporate client (TEST_Corp_*), 1 site (TEST_Site_*), 1 vendor_onboarding (TEST_ui_*) with 2 draft_menu items (Paneer Masala, Chicken Biryani). Onboarding + site DELETED after test. Corporate client + city TEST rows left behind (preview DB had no cascade endpoint for corp deletion in this session).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regression suite is /app/backend/tests/test_free_menu_photos.py. The test test_free_rows_do_not_inflate_spend currently FAILS by design — it will pass once the aggregator filters cost_inr==0. Everything else (auth 401/403, validation 422 x3, happy path with byte-size delta check, GET-image content-type check, paid endpoint regression) passes. Frontend UI is fully wired: data-testids `menu-free-photo-{item_id}` (emerald) and `menu-ai-photo-{item_id}` (violet) with animate-pulse and mutual-exclusion via aiBusyId.",
+  "rca of the issue": "Root cause: server.py ai_photo_spend uses `$sum: {$ifNull: [count_generated, {$ifNull: [filled, 0]}]}` and multiplies by fixed PRICE_PER_IMAGE_INR=3.5. When the new /suggest-free path was added, it also writes to ai_image_generations with count_generated=1 (and cost_inr=0), so the aggregator picks it up as if it were a paid gpt-image-1 call. Reproduction: master POST /api/ai/menu-photos/suggest-free {name:'Paneer'} → row inserted → GET /api/admin/ai-photos/spend shows +₹3.5 in month_to_date. Mitigation options: (a) filter `cost_inr: {$ne: 0}` in each $match, OR (b) sum a computed field `count_generated * (cost_inr>0 ? 1 : 0)`, OR (c) write source='free' rows to a distinct collection. Option (a) is smallest diff."
+}

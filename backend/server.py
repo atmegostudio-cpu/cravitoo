@@ -758,9 +758,15 @@ async def ai_photo_spend(user: dict = Depends(get_current_user)):
     last_30 = now - timedelta(days=30)
 
     async def _sum(match: dict) -> tuple[int, int]:
-        """Return (rows, images) for the given match filter."""
+        """Return (rows, images) for the given match filter.
+
+        Excludes free-source rows (cost_inr = 0) so the ₹ counter reflects
+        only actual paid gpt-image-1 spend, not the free Unsplash /
+        Pollinations path.
+        """
+        paid_match = {**match, "cost_inr": {"$ne": 0}}
         pipeline = [
-            {"$match": match},
+            {"$match": paid_match},
             {"$group": {
                 "_id": None,
                 "rows": {"$sum": 1},

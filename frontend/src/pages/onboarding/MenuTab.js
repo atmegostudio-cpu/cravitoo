@@ -8,7 +8,7 @@
  */
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf } from 'lucide-react';
+import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
@@ -101,6 +101,37 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
   };
 
   const [aiBusyId, setAiBusyId] = useState(null);
+
+  const generateFreePhoto = async (it) => {
+    if (aiBusyId) return;
+    setAiBusyId(it.item_id);
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/suggest-free`,
+        {
+          name: it.name,
+          description: it.description || null,
+          is_vegetarian: !!it.is_vegetarian,
+          cuisine_hint: it.category || null,
+          count: 1,
+        },
+        { withCredentials: true },
+      );
+      const url = data?.suggestions?.[0]?.url;
+      if (!url) throw new Error('No image returned');
+      await axios.patch(
+        `${API}/onboarding/vendors/${onbId}/menu/${it.item_id}`,
+        { image_url: url },
+        { withCredentials: true },
+      );
+      await reload();
+    } catch (e) {
+      alert(e?.response?.data?.detail || e.message || 'Free photo lookup failed — try the paid AI button.');
+    } finally {
+      setAiBusyId(null);
+    }
+  };
+
   const generateAiPhoto = async (it) => {
     if (aiBusyId) return;
     if (!window.confirm(
@@ -424,6 +455,15 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                     {canEdit && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => generateFreePhoto(it)}
+                            disabled={aiBusyId === it.item_id}
+                            data-testid={`menu-free-photo-${it.item_id}`}
+                            className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 rounded transition-colors disabled:opacity-40"
+                            title="Free real photo (Unsplash + Pollinations, ₹0)"
+                          >
+                            <ImageIcon className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
+                          </button>
                           <button
                             onClick={() => generateAiPhoto(it)}
                             disabled={aiBusyId === it.item_id}

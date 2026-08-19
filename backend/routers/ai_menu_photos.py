@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import requests
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +73,14 @@ class BulkFillRequest(BaseModel):
     vendor_id: Optional[str] = None
     max_items: int = Field(20, ge=1, le=50, description="Hard cap to control cost — defaults to 20 (~$0.80)")
     dry_run: bool = False
+
+
+class MenuPhotoFreeRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=300)
+    is_vegetarian: bool = False
+    cuisine_hint: Optional[str] = None
+    count: int = Field(default=1, ge=1, le=4)
 
 
 def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
@@ -166,7 +175,67 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
             "suggestions": suggestions,
         }
 
-    @r.post("/ai/menu-photos/apply")
+    @r.post("/ai/menu-photos/suggest-free")
+    async def suggest_free_menu_photo(body: MenuPhotoFreeRequest, user: dict = Depends(get_current_user)):
+        """Free menu photo (no LLM key spend).
+
+        Strategy: try Unsplash Source (real food photography, always high
+        quality) first; on failure or empty response, fall back to
+        Pollinations.ai (FLUX under the hood, keyless). Bytes get uploaded
+        to Emergent Object Storage so the URL survives redeploys.
+        """
+        if user.get("role") not in ("master_admin", "site_admin"):
+            raise HTTPException(status_code=403, detail="Only Cravitoo admins can generate menu photos.")
+
+        from starlette.concurrency import run_in_threadpool
+        import urllib.parse
+
+        veg_hint = "vegetarian" if body.is_vegetarian else ""
+        cuisine = (body.cuisine_hint or "indian").lower()
+        query = ",".join(filter(None, [body.name.strip(), veg_hint, cuisine, "food", "plated"]))
+        # Two sources — first that succeeds wins.
+        candidates = [
+            ("unsplash", f"https://source.unsplash.com/800x600/?{urllib.parse.quote(query)}"),
+            ("pollinations", f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f'appetizing {body.name}, {cuisine} food, professional food photography')}?width=800&height=600&nologo=true"),
+        ]
+
+        for source, url in candidates:
+            try:
+                resp = await run_in_threadpool(lambda: requests.get(url, timeout=30, allow_redirects=True))
+                if resp.status_code != 200 or len(resp.content) < 1024:
+                    continue
+                content_type = resp.headers.get("Content-Type", "image/jpeg")
+                if not content_type.startswith("image/"):
+                    continue
+                fname = f"free_{uuid.uuid4().hex}.jpg"
+                from storage import path_to_url, put_object
+                storage_path = f"cravitoo/menu-photos-free/{fname}"
+                result = await run_in_threadpool(put_object, storage_path, resp.content, "image/jpeg")
+                photo_url = path_to_url(result["path"])
+                # Audit — reuse the same collection as paid AI for the spend card.
+                await db.ai_image_generations.insert_one({
+                    "created_at": datetime.now(timezone.utc),
+                    "user_id": user.get("id"),
+                    "user_email": user.get("email"),
+                    "source": source,
+                    "cost_inr": 0,  # free path
+                    "count_generated": 1,
+                    "item_name": body.name,
+                })
+                return {
+                    "source": source,
+                    "suggestions": [{
+                        "url": photo_url,
+                        "storage_path": result["path"],
+                        "size": len(resp.content),
+                    }],
+                }
+            except Exception as e:
+                logger.warning(f"Free photo source '{source}' failed: {e}")
+                continue
+
+        raise HTTPException(status_code=502, detail="All free photo sources are unavailable right now. Try again or use the paid AI button.")
+
     async def apply_menu_photo(data: MenuPhotoApplyRequest, user: dict = Depends(get_current_user)):
         """Save the chosen AI photo as the menu item's image_url. Master Admin only
         (matches the existing menu lock-down policy)."""
