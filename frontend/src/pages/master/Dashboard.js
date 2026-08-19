@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
+import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2, Sparkles } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -10,6 +10,7 @@ const MasterDashboard = () => {
   const [data, setData] = useState(null);
   const [charts, setCharts] = useState(null);
   const [leaderboard, setLeaderboard] = useState(null);
+  const [aiSpend, setAiSpend] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sendingReport, setSendingReport] = useState(false);
   const [reportMessage, setReportMessage] = useState('');
@@ -31,14 +32,16 @@ const MasterDashboard = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [d, c, lb] = await Promise.all([
+        const [d, c, lb, ai] = await Promise.all([
           axios.get(`${API}/reports/master-dashboard`, { withCredentials: true }),
           axios.get(`${API}/reports/charts?days=14`, { withCredentials: true }),
           axios.get(`${API}/reports/city-leaderboard?days=30`, { withCredentials: true }),
+          axios.get(`${API}/admin/ai-photos/spend`, { withCredentials: true }).catch(() => null),
         ]);
         setData(d.data);
         setCharts(c.data);
         setLeaderboard(lb.data);
+        if (ai) setAiSpend(ai.data);
       } catch (e) {
         console.error(e);
       } finally {
@@ -124,6 +127,43 @@ const MasterDashboard = () => {
               </div>
             ) : null;
           })()}
+
+          {/* AI photo spend tracker — only shown once at least one AI image has been generated */}
+          {aiSpend && (aiSpend.all_time?.images || 0) > 0 && (
+            <div
+              data-testid="ai-spend-card"
+              className="mb-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="bg-violet-100 rounded-xl p-2.5">
+                  <Sparkles className="h-5 w-5 text-violet-600" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-semibold text-text-primary">AI photo spend</h3>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    gpt-image-1 · ~₹{aiSpend.price_per_image_inr}/image · runaway usage = LLM key balance drop
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-6 text-right">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-text-muted">Month to date</p>
+                  <p className="font-heading text-xl font-semibold text-violet-700" data-testid="ai-spend-mtd">
+                    ₹{aiSpend.month_to_date.spend_inr.toLocaleString('en-IN')}
+                  </p>
+                  <p className="text-[11px] text-text-muted">{aiSpend.month_to_date.images} images</p>
+                </div>
+                <div className="hidden sm:block border-l border-violet-200" />
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-text-muted">Last 30 days</p>
+                  <p className="font-heading text-xl font-semibold text-violet-700" data-testid="ai-spend-30d">
+                    ₹{aiSpend.last_30_days.spend_inr.toLocaleString('en-IN')}
+                  </p>
+                  <p className="text-[11px] text-text-muted">{aiSpend.last_30_days.images} images</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quick actions row */}
           <div className="bg-card border border-border-light rounded-2xl p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

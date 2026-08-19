@@ -742,6 +742,68 @@ async def get_companies(user: dict = Depends(get_current_user)):
     return companies
 
 # Vendor Routes
+@api_router.get("/admin/ai-photos/spend")
+async def ai_photo_spend(user: dict = Depends(get_current_user)):
+    """Master Admin cost tracker for AI-generated menu photos.
+
+    Aggregates rows in `ai_image_generations` and multiplies by the
+    per-image price (~₹3.5 = OpenAI gpt-image-1 low-quality × ₹85/USD).
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    PRICE_PER_IMAGE_INR = 3.5
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_30 = now - timedelta(days=30)
+
+    async def _sum(match: dict) -> tuple[int, int]:
+        """Return (rows, images) for the given match filter."""
+        pipeline = [
+            {"$match": match},
+            {"$group": {
+                "_id": None,
+                "rows": {"$sum": 1},
+                "images": {
+                    "$sum": {
+                        "$ifNull": [
+                            "$count_generated",   # /suggest path stores this
+                            {"$ifNull": ["$filled", 0]},  # /bulk-fill path stores 'filled'
+                        ]
+                    },
+                },
+            }},
+        ]
+        agg = await db.ai_image_generations.aggregate(pipeline).to_list(1)
+        if not agg:
+            return 0, 0
+        return int(agg[0].get("rows", 0)), int(agg[0].get("images", 0))
+
+    mtd_rows, mtd_images = await _sum({"created_at": {"$gte": month_start}})
+    l30_rows, l30_images = await _sum({"created_at": {"$gte": last_30}})
+    all_rows, all_images = await _sum({})
+
+    return {
+        "price_per_image_inr": PRICE_PER_IMAGE_INR,
+        "month_to_date": {
+            "rows": mtd_rows,
+            "images": mtd_images,
+            "spend_inr": round(mtd_images * PRICE_PER_IMAGE_INR, 2),
+            "since": month_start.isoformat(),
+        },
+        "last_30_days": {
+            "rows": l30_rows,
+            "images": l30_images,
+            "spend_inr": round(l30_images * PRICE_PER_IMAGE_INR, 2),
+        },
+        "all_time": {
+            "rows": all_rows,
+            "images": all_images,
+            "spend_inr": round(all_images * PRICE_PER_IMAGE_INR, 2),
+        },
+    }
+
+
 @api_router.post("/admin/users/{user_id}/deactivate")
 async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
     """Immediately end the target user's session and prevent future logins.

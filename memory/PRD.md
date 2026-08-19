@@ -3,6 +3,20 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — AI Photo Spend Card on Master Dashboard (COMPLETED)
+- **New endpoint** `GET /api/admin/ai-photos/spend` (master admin only)
+  aggregates `ai_image_generations` rows and multiplies by ₹3.5/image.
+  Returns MTD, last-30-days, and all-time buckets (rows + images + spend).
+  Handles both event shapes (`count_generated` from /suggest and `filled`
+  from /bulk-fill) via `$ifNull` fallback.
+- **Master Dashboard card**: violet-bordered card between the orphan-
+  warning and weekly-email cards. Shows Sparkles icon, MTD spend, and
+  last-30-days spend with image counts. Hidden entirely on fresh installs
+  where all_time.images = 0 so new admins don't see a "₹0" card.
+- **Regression suite**: `/app/backend/tests/test_ai_photo_spend.py`
+  (5 tests, all green). Covers schema+math, auth (401/403), both-shape
+  aggregation via scratch rows, and empty-collection zeros.
+
 ## Feb 2026 — AI Menu Photos + Agreement Doc + Persistent Storage (COMPLETED)
 - **AI menu-photo endpoints migrated to Emergent Object Storage.** Previously
   `/api/ai/menu-photos/{suggest,apply,bulk-fill}` wrote generated PNGs to
