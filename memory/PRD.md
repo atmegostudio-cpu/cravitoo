@@ -3,6 +3,28 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — AI Menu Photos + Agreement Doc + Persistent Storage (COMPLETED)
+- **AI menu-photo endpoints migrated to Emergent Object Storage.** Previously
+  `/api/ai/menu-photos/{suggest,apply,bulk-fill}` wrote generated PNGs to
+  `/tmp/cravitoo_uploads` — same ephemeral-disk class of bug as iter-16.
+  Now they `put_object` to `cravitoo/ai-menu-photos/` and return
+  `s_<b64>`-encoded URLs that persist across pod restarts / redeploys.
+- `/api/ai/menu-photos/apply` relaxed to accept BOTH the legacy
+  `ai_<hex>.png` filenames AND the new `s_<b64>` tokens.
+- **New DOC_TYPE `agreement`** in `models.py` — the signed Vendor Agreement
+  PDF. Frontend `OnboardingDetail.js` now shows 9 doc cards, with
+  "Vendor Agreement (signed) *" as a required upload.
+- **Per-row AI-photo button** on the Vendor Onboarding Menu tab
+  (`MenuTab.js`): a violet Sparkles icon next to Edit/Delete. Clicking
+  it generates one AI image via gpt-image-1 and auto-attaches it to
+  the draft menu item — perfect for replacing broken photos or
+  bootstrapping images for vendors who don't supply their own.
+- Master Menu Management already had bulk-fill + per-item Sparkles;
+  those now benefit from the same persistent-storage backend.
+- **Regression suite:** `/app/backend/tests/test_ai_photos_and_agreement.py`
+  (9 tests) + iter-16's `test_storage_upload.py` (11 tests). All 20 green,
+  including the cross-restart persistence assertion.
+
 ## Feb 2026 — Vendor Onboarding "File not found" Bug Fixed (COMPLETED)
 - **Bug (production):** clicking View on any Vendor Onboarding document
   returned `{"detail":"File not found"}`. Uploads were being stored on the

@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 17 covers: (a) AI menu-photo endpoints migrated to Emergent Object Storage (previously wrote to /tmp — same class of bug as iter-16); (b) new 'agreement' entry in DOC_TYPES (Vendor Agreement signed PDF); (c) per-row Sparkles AI-photo button on Vendor Onboarding Menu tab. Wrote /app/backend/tests/test_ai_photos_and_agreement.py with 9 tests. Combined with iter-16 test_storage_upload.py: 20/20 tests pass (the earlier restart-persistence regression still holds). Live AI /suggest worked in preview: returned storage_path prefix 'cravitoo/ai-menu-photos/', url '/api/uploads/s_<b64>', and the image downloaded 200 image/png. Frontend smoke: master admin -> onboarding detail shows 9 doc cards including 'Vendor Agreement (signed) *' as the last (visible in screenshot); Menu tab renders violet Sparkles button with data-testid 'menu-ai-photo-<item_id>' and title 'Generate AI photo (≈ ₹3.5)'. Sparkles NOT clicked in test (cost control), as instructed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_ai_photos_and_agreement.py",
+    "/app/backend/tests/test_storage_upload.py",
+    "/app/test_reports/pytest/pytest_iter17_all.xml",
+    "/app/test_reports/pytest/pytest_iter17_ai.xml",
+    "/app/test_reports/iter17_docs.png",
+    "/app/test_reports/iter17_menu.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_menu_photos.py::apply_menu_photo builds image_url from EITHER the legacy `ai_<hex>.png` OR the new `s_<b64>` filename, but only /suggest and /bulk-fill now upload to object storage. If any historical ai_<hex>.png filenames were saved to disk before this migration (unlikely in preview but possible in prod), they would 404. Consider a migration note or a soft-fallback that maps ai_<hex>.png -> attempt object storage lookup first, then 410 with 're-generate' guidance.",
+    "ai_menu_photos.py::_generate_one_image logs the exception at WARNING; no user-facing error surfaces from /bulk-fill beyond a per-item 'generation failed'. Consider surfacing rate-limit/quota errors distinctly so admins know to retry vs give up.",
+    "bulk-fill scans db.menu_items, not onboarding draft_menu items. Draft menu items on a Vendor Onboarding record cannot be bulk-filled by the /bulk-fill endpoint — the per-row Sparkles button on OnboardingDetail is currently the ONLY path for draft items. Worth documenting in an ADR.",
+    "put_object is called with run_in_threadpool (good) but the LLM image generation itself (image_gen.generate_images) is awaited on the main event loop; if the SDK blocks on network, this still stalls the worker. Consider running it in a threadpool or offloading via a background task for /bulk-fill.",
+    "Auth on /ai/menu-photos/suggest allows both master_admin AND site_admin, but /apply and /bulk-fill are master_admin only. Inconsistent — either every step should be master_admin or /suggest can drop site_admin. Also 'site_admin' scope has no site restriction inside /suggest (a site admin could generate photos for any dish name).",
+    "MenuTab.js Sparkles button uses `title` attribute (not aria-label) — accessibility scanners flag this. Non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_photos_and_agreement.py (new)"
+  ],
+  "success_rate": {"backend": "100% (20/20 across storage + AI/agreement suites; 1 test SKIP-safe if LLM quota exhausted — LIVE in this run: passed)", "frontend": "100% smoke (9 doc cards incl 'Vendor Agreement (signed)', Sparkles button renders with correct data-testid and title)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin, from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Backend suite creates and tears down a TEST_ City -> Corporate Client -> Site -> Vendor Onboarding -> draft menu item chain per module. Frontend smoke seeds the same chain via API from the logged-in browser context and cleans up on teardown (all 4 DELETEs returned 200). Object-storage objects (agreement PDF + AI-menu-photo PNG) remain in storage by soft-delete design.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "DOC_TYPES now has 9 entries (added 'agreement'). AI menu photo endpoints (/api/ai/menu-photos/{suggest,apply,bulk-fill}) now put_object under 'cravitoo/ai-menu-photos/' and return `/api/uploads/s_<b64>` URLs. /apply accepts BOTH legacy 'ai_<hex>.png' and new 's_<b64>' filenames after the path-traversal guard. /register is corporate-domain-restricted, so the non-admin-forbidden test falls back to unauthenticated (401) — that's expected behaviour in this preview env.",
+  "rca of the issue": "N/A — this iteration is a proactive migration extending iter-16's fix to the AI-photo code path. No production regression re-observed; the earlier restart-persistence test (upload -> supervisorctl restart backend -> re-GET returns 200 + identical bytes) still passes."
+}

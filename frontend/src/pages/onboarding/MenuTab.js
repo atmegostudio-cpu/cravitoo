@@ -8,7 +8,7 @@
  */
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle } from 'lucide-react';
+import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
@@ -82,6 +82,41 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
       await axios.delete(`${API}/onboarding/vendors/${onbId}/menu/${it.item_id}`, { withCredentials: true });
       await reload();
     } catch (e) { alert(e?.response?.data?.detail || 'Delete failed'); }
+  };
+
+  const [aiBusyId, setAiBusyId] = useState(null);
+  const generateAiPhoto = async (it) => {
+    if (aiBusyId) return;
+    if (!window.confirm(
+      `Generate an AI photo for "${it.name}"?\n\n` +
+      `This uses OpenAI gpt-image-1 (≈ ₹3.50 per photo). The result will replace ` +
+      `the current image on this item.`
+    )) return;
+    setAiBusyId(it.item_id);
+    try {
+      const { data: suggest } = await axios.post(
+        `${API}/ai/menu-photos/suggest`,
+        {
+          name: it.name,
+          is_vegetarian: !!it.is_vegetarian,
+          cuisine_hint: it.category || null,
+          count: 1,
+        },
+        { withCredentials: true },
+      );
+      const url = suggest?.suggestions?.[0]?.url;
+      if (!url) throw new Error('AI returned no image');
+      await axios.patch(
+        `${API}/onboarding/vendors/${onbId}/menu/${it.item_id}`,
+        { image_url: url },
+        { withCredentials: true },
+      );
+      await reload();
+    } catch (e) {
+      alert(e?.response?.data?.detail || e.message || 'AI photo generation failed');
+    } finally {
+      setAiBusyId(null);
+    }
   };
 
   const toggleAvailability = async (it) => {
@@ -362,6 +397,15 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                     {canEdit && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => generateAiPhoto(it)}
+                            disabled={aiBusyId === it.item_id}
+                            data-testid={`menu-ai-photo-${it.item_id}`}
+                            className="p-1.5 text-violet-600 hover:text-white hover:bg-violet-600 rounded transition-colors disabled:opacity-40"
+                            title="Generate AI photo (≈ ₹3.5)"
+                          >
+                            <Sparkles className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
+                          </button>
                           <button
                             onClick={() => openEdit(it)}
                             data-testid={`menu-edit-${it.item_id}`}

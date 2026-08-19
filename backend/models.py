@@ -319,6 +319,7 @@ CHECKLIST_FIELDS = [
 DOC_TYPES = [
     "gst_certificate", "pan_card", "fssai_license", "shop_establishment",
     "bank_details", "cancelled_cheque", "msme_certificate", "insurance",
+    "agreement",
 ]
 
 ONBOARDING_STATUSES = [

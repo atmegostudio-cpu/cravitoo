@@ -31,6 +31,7 @@ const DOC_TYPES = [
   { key: 'cancelled_cheque', label: 'Cancelled Cheque', required: true },
   { key: 'msme_certificate', label: 'MSME Certificate', required: false },
   { key: 'insurance', label: 'Insurance Documents', required: false },
+  { key: 'agreement', label: 'Vendor Agreement (signed)', required: true },
 ];
 
 const CHECKLIST = [

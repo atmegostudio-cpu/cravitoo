@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from storage import path_to_url, put_object
+
 logger = logging.getLogger(__name__)
 
 
@@ -125,19 +127,22 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         suggestions = []
         for img_bytes in images:
             fname = f"ai_{uuid.uuid4().hex}.png"
-            fpath = UPLOAD_DIR / fname
+            # Persist to Emergent Object Storage so the photo survives
+            # redeploys — local /tmp is ephemeral in Kubernetes.
             try:
-                with open(fpath, "wb") as f:
-                    f.write(img_bytes)
+                from starlette.concurrency import run_in_threadpool
+                storage_path = f"cravitoo/ai-menu-photos/{fname}"
+                result = await run_in_threadpool(put_object, storage_path, img_bytes, "image/png")
+                url = path_to_url(result["path"])
+                suggestions.append({
+                    "filename": os.path.basename(result["path"]),
+                    "storage_path": result["path"],
+                    "url": url,
+                    "size": len(img_bytes),
+                })
             except Exception as e:
-                logger.error(f"Failed to save AI image {fname}: {e}")
+                logger.error(f"Object storage save failed for AI image {fname}: {e}")
                 continue
-            url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
-            suggestions.append({
-                "filename": fname,
-                "url": url,
-                "size": len(img_bytes),
-            })
 
         if not suggestions:
             raise HTTPException(status_code=500, detail="Could not save generated images to storage.")
@@ -168,14 +173,15 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         if user.get("role") != "master_admin":
             raise HTTPException(status_code=403, detail="Only Master Admin can update menu photos.")
 
-        # Validate filename pattern (defence-in-depth — paths must be just the filename, no traversal)
         fname = data.photo_filename.strip()
-        if not fname.startswith("ai_") or "/" in fname or "\\" in fname or ".." in fname:
+        # Guard against path traversal.
+        if "/" in fname or "\\" in fname or ".." in fname:
             raise HTTPException(status_code=400, detail="Invalid photo filename")
-
-        fpath = UPLOAD_DIR / fname
-        if not fpath.exists():
-            raise HTTPException(status_code=404, detail="Generated photo not found — it may have expired. Regenerate.")
+        # Accept either the legacy `ai_<hex>.png` filename OR the new
+        # object-storage token (`s_<b64>`). Both are safe strings after
+        # the traversal guard above.
+        if not (fname.startswith("ai_") or fname.startswith("s_")):
+            raise HTTPException(status_code=400, detail="Invalid photo filename")
 
         item = await db.menu_items.find_one({"_id": safe_objectid(data.menu_item_id, "Menu item")})
         if not item:
@@ -280,14 +286,14 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
                 continue
             fname = f"ai_{uuid.uuid4().hex}.png"
             try:
-                fpath = UPLOAD_DIR / fname
-                with open(fpath, "wb") as f:
-                    f.write(img_bytes)
+                from starlette.concurrency import run_in_threadpool
+                storage_path = f"cravitoo/ai-menu-photos/{fname}"
+                result = await run_in_threadpool(put_object, storage_path, img_bytes, "image/png")
+                url = path_to_url(result["path"])
             except Exception as e:
                 skipped += 1
-                errors.append({"id": str(it["_id"]), "name": name, "error": f"save failed: {e}"})
+                errors.append({"id": str(it["_id"]), "name": name, "error": f"storage failed: {e}"})
                 continue
-            url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
             await db.menu_items.update_one(
                 {"_id": it["_id"]},
                 {"$set": {
