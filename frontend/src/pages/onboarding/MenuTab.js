@@ -8,7 +8,7 @@
  */
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles } from 'lucide-react';
+import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
@@ -82,6 +82,22 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
       await axios.delete(`${API}/onboarding/vendors/${onbId}/menu/${it.item_id}`, { withCredentials: true });
       await reload();
     } catch (e) { alert(e?.response?.data?.detail || 'Delete failed'); }
+  };
+
+  const reclassifyVeg = async () => {
+    try {
+      const { data } = await axios.post(
+        `${API}/onboarding/vendors/${onbId}/menu/reclassify-veg`,
+        {},
+        { withCredentials: true },
+      );
+      alert(data.changed
+        ? `Updated ${data.changed} of ${data.total} items based on their names.`
+        : `Every item already looks correctly classified (${data.total} checked).`);
+      if (data.changed) await reload();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Auto-classify failed');
+    }
   };
 
   const [aiBusyId, setAiBusyId] = useState(null);
@@ -195,6 +211,17 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
             />
             <Upload className="h-4 w-4" /> Bulk upload Excel
           </label>
+          {items.length > 0 && (
+            <button
+              onClick={reclassifyVeg}
+              data-testid="reclassify-veg-btn"
+              disabled={busy}
+              title="Auto-detect veg / non-veg from item names (paneer, chicken, etc.)"
+              className="flex items-center gap-2 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <Leaf className="h-4 w-4" /> Auto-classify Veg
+            </button>
+          )}
           <a
             href="data:text/csv;charset=utf-8,name,category,price,description,meal_period,is_vegetarian,is_available,image_url%0AVeg%20Thali,Main,180,Full%20meal%20with%20rice%20and%20roti,lunch%20snacks,yes,yes,%0AMasala%20Chai,Beverage,25,Hot%20milk%20tea,breakfast%20snacks,yes,yes,"
             download="cravitoo-menu-template.csv"

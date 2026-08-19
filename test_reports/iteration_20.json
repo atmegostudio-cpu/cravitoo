@@ -1,0 +1,40 @@
+{
+  "summary": "Tested the new Veg / Non-Veg classifier (backend module + two reclassify endpoints + Vendor Onboarding Menu UI). Wrote /app/backend/tests/test_veg_classifier.py — 25/25 pytest cases pass. Frontend smoke test on the live preview confirmed the emerald 'Auto-classify Veg' button renders with correct data-testid, is hidden when draft_menu is empty, calls the API, and shows the browser alert with the changed count. The reported production bug ('Veg column red for every item') is verified fixed: Paneer Masala shows a green dot, Chicken Biryani shows a red dot.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/onboarding/vendors/{onb_id}/menu/{item_id}", "issue": "Pre-existing (unrelated to this task): the handler `onboarding_menu_delete` at routers/onboarding.py:376 is defined without an @r.delete(...) decorator, so the route is not wired. Not exercised by this task but should be fixed in a follow-up."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_veg_classifier.py",
+    "/app/test_reports/pytest/pytest_iter20_veg.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: The pytest leaves ~50 TEST_ vendor_onboarding rows behind on the preview DB (no teardown fixture). Consider a manual /api/admin/reset-to-blank or a purge before shipping.",
+    "OPTIONAL cleanup unrelated to this task: wire the missing @r.delete decorator on onboarding_menu_delete at routers/onboarding.py:376."
+  ],
+  "critical_code_review_comments": [
+    "veg_classifier.py uses proper \\b word boundaries — verified 'Peach Melba' and 'Orange Juice' are correctly classified as veg (they do not accidentally trigger 'prawn' / any non-veg substring).",
+    "Veg-first ordering in classify_veg() correctly keeps 'Paneer Tikka Kebab' veg even though 'seekh' is a non-veg token (VEG_RE runs before NON_VEG_RE).",
+    "Excel upload correctly distinguishes missing/empty is_vegetarian (→ auto-classify) vs explicit values ('yes','no','veg','NON-VEG' → honoured verbatim).",
+    "/api/admin/menu-items/reclassify-veg properly enforces master admin role and honours vendor_id / site_id scope filters (nonexistent vendor_id → {changed:0,total:0,scope:{...}}).",
+    "Onboarding reclassify endpoint uses _load_editable_onboarding — inherits role & status guards. Verified rejected status → 400 (menu not editable).",
+    "MenuTab.js correctly hides the reclassify-veg-btn when items.length===0 (verified live on a Menu(0) onboarding)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_veg_classifier.py (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% smoke pass"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master admin) — used from /app/memory/test_credentials.md",
+  "seed_data_creation": "Backend tests create TEST_ prefixed city/corporate/site/vendor_onboarding rows on the preview DB. No teardown was added — ~50 TEST_vendor_* onboarding rows now visible on /onboarding list. Frontend smoke reused these.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pytest at /app/backend/tests/test_veg_classifier.py is the canonical regression suite for the veg classifier. Includes: 16 unit cases + 2 Excel upload (auto vs explicit) + 4 onboarding reclassify (happy, no-op, unauth, rejected-status 400) + 2 live menu_items endpoint (auth + scope). Master admin dashboard has ~50 TEST_ onboardings — safe to purge via /api/admin/reset-to-blank if noise becomes an issue.",
+  "rca of the issue": "Original bug: Excel bulk-upload treated missing `is_vegetarian` column as False for every row → whole menu appeared red (non-veg) in UI. Fix (already implemented by main agent): veg_classifier.classify_veg auto-labels rows when column is missing/empty using name+description keyword heuristics (paneer/aloo/dal/veg → veg; chicken/mutton/fish/egg/prawn/... → non-veg; unknown → veg). Two remediation endpoints (draft onboarding + live menu_items) let admins rerun the classifier on historic data. Verified end-to-end."
+}

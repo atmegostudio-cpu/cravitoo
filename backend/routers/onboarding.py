@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from storage import path_to_url, put_object
+from veg_classifier import classify_veg, reclassify_batch
 from typing import Optional
 
 import openpyxl
@@ -246,13 +247,25 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                 is_avail_raw = rec.get("is_available")
                 is_available = True if is_avail_raw is None else \
                     str(is_avail_raw).strip().lower() in ("true", "yes", "1", "available", "y")
+                # Veg detection with sensible defaults:
+                #   1. If the Excel column has an explicit value, honour it.
+                #   2. If empty / column missing, auto-classify from name +
+                #      description (`veg_classifier.classify_veg`) — no more
+                #      "everything defaults to non-veg" surprises.
+                raw_veg = rec.get("is_vegetarian")
+                if raw_veg is None or str(raw_veg).strip() == "":
+                    is_vegetarian = classify_veg(name, str(rec.get("description") or ""))
+                else:
+                    is_vegetarian = str(raw_veg).strip().lower() in (
+                        "true", "yes", "1", "veg", "vegetarian", "y", "green",
+                    )
                 items.append({
                     "item_id": str(uuid.uuid4()),
                     "name": name,
                     "description": str(rec.get("description") or ""),
                     "category": str(rec.get("category") or "Main").strip(),
                     "price": price,
-                    "is_vegetarian": str(rec.get("is_vegetarian", "")).lower() in ("true", "yes", "1", "veg"),
+                    "is_vegetarian": is_vegetarian,
                     "image_url": str(rec.get("image_url") or "") or None,
                     "is_available": is_available,
                     "meal_periods": _parse_meal_periods(rec.get("meal_period")),
@@ -334,6 +347,31 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         await audit_log(user, "vendor_onboarding", onb_id, "menu_item_updated",
                         {"item_id": item_id, "fields": list(updates.keys())})
         return {"message": "Item updated", "item": current}
+
+    @r.post("/onboarding/vendors/{onb_id}/menu/reclassify-veg")
+    async def onboarding_menu_reclassify_veg(
+        onb_id: str,
+        user: dict = Depends(get_current_user),
+    ):
+        """Re-run the veg / non-veg classifier over every draft menu item.
+
+        Useful after a bulk Excel upload where the `is_vegetarian` column
+        was missing or set to `false` for every row. The classifier looks
+        at name + description and flips the flag using Indian corporate
+        menu conventions (paneer/aloo/dal/veg = veg; chicken/mutton/fish/
+        egg/prawn = non-veg; anything else = veg default).
+        """
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        updated, changed = reclassify_batch(draft)
+        if changed:
+            await db.vendor_onboarding.update_one(
+                {"_id": o["_id"]},
+                {"$set": {"draft_menu": updated, "updated_at": datetime.now(timezone.utc)}},
+            )
+            await audit_log(user, "vendor_onboarding", onb_id, "menu_reclassified_veg",
+                            {"changed": changed, "total": len(updated)})
+        return {"changed": changed, "total": len(updated)}
 
     @r.delete("/onboarding/vendors/{onb_id}/menu/{item_id}")
     async def onboarding_menu_delete(

@@ -3,6 +3,35 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Veg / Non-Veg Classification Fix (COMPLETED)
+- **Bug:** In the Vendor Onboarding Menu tab (and any menu built from
+  Excel bulk-upload), every item was rendering with a red dot (non-veg)
+  even for obvious veg dishes like "Paneer Masala" or "Veg Sandwich".
+  Root cause — the Excel parser treated a missing / empty
+  `is_vegetarian` column as `False`.
+- **New module** `/app/backend/veg_classifier.py` — heuristic name+
+  description classifier. Word-boundary regex: paneer/aloo/dal/veg/
+  sabzi/mushroom/tofu (+ many more) → veg; chicken/mutton/fish/egg/
+  prawn/keema/etc → non-veg; unknown → veg (Indian corporate default
+  matches FSSAI green-dot convention).
+- **Excel parser** now auto-classifies when the column is missing or
+  blank; explicit user values ("yes"/"no"/"veg"/"non-veg") are still
+  honoured verbatim.
+- **Two remediation endpoints** for historic data:
+  - `POST /api/onboarding/vendors/{id}/menu/reclassify-veg`
+    (draft menus, master/site/city admin)
+  - `POST /api/admin/menu-items/reclassify-veg?vendor_id=&site_id=`
+    (live menu_items collection, master admin only)
+- **UI**: emerald *"Auto-classify Veg"* button on the Vendor Onboarding
+  Menu tab (`data-testid="reclassify-veg-btn"`). Hidden when the menu
+  is empty.
+- **Side-fix**: `DELETE /api/onboarding/vendors/{id}/menu/{item_id}` was
+  missing its `@r.delete(...)` decorator (regression from an earlier
+  edit). Restored; menu-item deletion works again.
+- **Regression suite** `/app/backend/tests/test_veg_classifier.py` — 25
+  tests, all green (16 unit + 2 Excel upload + 4 onboarding reclassify +
+  2 live menu_items reclassify + 1 word-boundary safety test).
+
 ## Feb 2026 — Code-Review Cleanup Pass (COMPLETED)
 - **Env-driven test credentials.** `ADMIN_EMAIL` / `ADMIN_PASSWORD` in
   `test_storage_upload.py`, `test_onboarding_menu.py`,

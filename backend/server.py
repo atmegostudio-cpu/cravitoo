@@ -804,6 +804,43 @@ async def ai_photo_spend(user: dict = Depends(get_current_user)):
     }
 
 
+@api_router.post("/admin/menu-items/reclassify-veg")
+async def menu_items_reclassify_veg(
+    vendor_id: str | None = None,
+    site_id: str | None = None,
+    user: dict = Depends(get_current_user),
+):
+    """Re-run the veg / non-veg classifier over live menu_items rows.
+
+    Master admin only. Scope filters:
+      - `vendor_id` — restrict to one vendor's menu
+      - `site_id`   — restrict to one site's menu
+    Omit both to reclassify EVERY menu item.
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    from veg_classifier import classify_veg
+    q: dict = {}
+    if vendor_id:
+        q["vendor_id"] = vendor_id
+    if site_id:
+        q["site_id"] = site_id
+    changed = 0
+    total = 0
+    async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "is_vegetarian": 1}):
+        total += 1
+        predicted = classify_veg(row.get("name", ""), row.get("description", ""))
+        if bool(row.get("is_vegetarian", False)) != predicted:
+            await db.menu_items.update_one(
+                {"_id": row["_id"]},
+                {"$set": {"is_vegetarian": predicted}},
+            )
+            changed += 1
+    await audit_log(user, "menu_items", "bulk", "reclassified_veg",
+                    {"scope": q, "changed": changed, "total": total})
+    return {"changed": changed, "total": total, "scope": q}
+
+
 @api_router.post("/admin/users/{user_id}/deactivate")
 async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
     """Immediately end the target user's session and prevent future logins.
