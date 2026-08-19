@@ -61,6 +61,21 @@ import VendorReservations from './pages/vendor/Reservations';
 import AdminReservations from './pages/master/Reservations';
 import MasterBroadcasts from './pages/master/Broadcasts';
 
+// Stable role arrays — extracted from inline props to avoid churning React
+// reconciler on every render (each inline `[...]` was a fresh reference).
+const ROLES_EMPLOYEE = ['employee'];
+const ROLES_VENDOR = ['vendor'];
+const ROLES_CORPORATE = ['corporate_admin'];
+const ROLES_SUPER = ['super_admin'];
+const ROLES_MASTER = ['master_admin'];
+const ROLES_SITE = ['site_admin'];
+const ROLES_MASTER_CORPORATE = ['master_admin', 'corporate_admin'];
+const ROLES_MASTER_SUPER = ['master_admin', 'super_admin'];
+const ROLES_SITE_MASTER_SUPER = ['site_admin', 'master_admin', 'super_admin'];
+const ROLES_ONBOARDING_STAFF = ['master_admin', 'city_admin', 'site_admin'];
+const ROLES_ADMIN_ALL = ['master_admin', 'super_admin', 'site_admin', 'city_admin'];
+const ROLES_ANY = ['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin'];
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -94,184 +109,184 @@ function AppRoutes() {
       
       {/* Employee Routes */}
       <Route path="/employee/dashboard" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeDashboard />
         </ProtectedRoute>
       } />
       <Route path="/employee/menu" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeMenu />
         </ProtectedRoute>
       } />
       <Route path="/employee/orders" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeOrders />
         </ProtectedRoute>
       } />
       <Route path="/employee/preferences" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeePreferences />
         </ProtectedRoute>
       } />
       <Route path="/employee/subscriptions" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeSubscriptions />
         </ProtectedRoute>
       } />
       <Route path="/employee/loyalty" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeLoyalty />
         </ProtectedRoute>
       } />
       <Route path="/employee/bulk-order" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <BulkOrder />
         </ProtectedRoute>
       } />
       <Route path="/employee/events" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EventCatering />
         </ProtectedRoute>
       } />
       
       {/* Vendor Routes */}
       <Route path="/vendor/dashboard" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorDashboard />
         </ProtectedRoute>
       } />
       <Route path="/vendor/orders" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorOrders />
         </ProtectedRoute>
       } />
       <Route path="/vendor/menu" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorMenu />
         </ProtectedRoute>
       } />
       <Route path="/vendor/verify-pickup" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorVerifyPickup />
         </ProtectedRoute>
       } />
       <Route path="/vendor/ai-insights" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorAIInsights />
         </ProtectedRoute>
       } />
       
       {/* Corporate Admin Routes */}
       <Route path="/admin/dashboard" element={
-        <ProtectedRoute allowedRoles={['corporate_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_CORPORATE}>
           <CorporateAdminDashboard />
         </ProtectedRoute>
       } />
       <Route path="/admin/employees" element={
-        <ProtectedRoute allowedRoles={['corporate_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_CORPORATE}>
           <CorporateAdminEmployees />
         </ProtectedRoute>
       } />
       <Route path="/admin/events" element={
-        <ProtectedRoute allowedRoles={['corporate_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_CORPORATE}>
           <EventCatering />
         </ProtectedRoute>
       } />
       <Route path="/admin/bulk-pre-order" element={
-        <ProtectedRoute allowedRoles={['corporate_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_CORPORATE}>
           <CorporateBulkPreOrder />
         </ProtectedRoute>
       } />
       
       {/* Super Admin Routes */}
       <Route path="/super-admin/dashboard" element={
-        <ProtectedRoute allowedRoles={['super_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_SUPER}>
           <SuperAdminDashboard />
         </ProtectedRoute>
       } />
 
       {/* Master Admin Routes */}
       <Route path="/master/dashboard" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterDashboard />
         </ProtectedRoute>
       } />
       <Route path="/master/sites" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterSites />
         </ProtectedRoute>
       } />
       <Route path="/master/sites/:siteId" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'super_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER_SUPER}>
           <SiteDetail />
         </ProtectedRoute>
       } />
       <Route path="/master/admins" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterAdmins />
         </ProtectedRoute>
       } />
       <Route path="/master/vendors" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterVendors />
         </ProtectedRoute>
       } />
       <Route path="/master/bulk-onboard" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'corporate_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER_CORPORATE}>
           <BulkOnboard />
         </ProtectedRoute>
       } />
       <Route path="/master/cities" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterCities />
         </ProtectedRoute>
       } />
       <Route path="/master/broadcasts" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterBroadcasts />
         </ProtectedRoute>
       } />
       <Route path="/master/allowed-domains" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterAllowedDomains />
         </ProtectedRoute>
       } />
       <Route path="/master/corporate-clients" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterCorporateClients />
         </ProtectedRoute>
       } />
       <Route path="/master/billing" element={
-        <ProtectedRoute allowedRoles={['master_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterBilling />
         </ProtectedRoute>
       } />
 
       {/* Vendor Onboarding (shared by site_admin / city_admin / master_admin) */}
       <Route path="/onboarding" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ONBOARDING_STAFF}>
           <OnboardingList />
         </ProtectedRoute>
       } />
       <Route path="/onboarding/new" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ONBOARDING_STAFF}>
           <OnboardingNew />
         </ProtectedRoute>
       } />
       <Route path="/onboarding/:onbId" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'city_admin', 'site_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ONBOARDING_STAFF}>
           <OnboardingDetail />
         </ProtectedRoute>
       } />
 
       {/* Site Admin Routes */}
       <Route path="/site-admin/dashboard" element={
-        <ProtectedRoute allowedRoles={['site_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_SITE}>
           <SiteAdminDashboard />
         </ProtectedRoute>
       } />
       <Route path="/site-admin/site/:siteId" element={
-        <ProtectedRoute allowedRoles={['site_admin', 'master_admin', 'super_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_SITE_MASTER_SUPER}>
           <SiteDetail />
         </ProtectedRoute>
       } />
@@ -280,46 +295,46 @@ function AppRoutes() {
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/settings/data" element={
-        <ProtectedRoute allowedRoles={['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ANY}>
           <DataSettings />
         </ProtectedRoute>
       } />
       <Route path="/settings/security" element={
-        <ProtectedRoute allowedRoles={['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ANY}>
           <ChangePassword />
         </ProtectedRoute>
       } />
       <Route path="/master/reset" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'super_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_MASTER_SUPER}>
           <ResetApp />
         </ProtectedRoute>
       } />
 
       {/* Menu change requests */}
       <Route path="/vendor/menu-requests" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorMenuRequests />
         </ProtectedRoute>
       } />
       <Route path="/admin/menu-requests" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'super_admin', 'site_admin', 'city_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ALL}>
           <AdminMenuRequests />
         </ProtectedRoute>
       } />
 
       {/* Meal reservations (pre-orders / head-count) */}
       <Route path="/employee/reservations" element={
-        <ProtectedRoute allowedRoles={['employee']}>
+        <ProtectedRoute allowedRoles={ROLES_EMPLOYEE}>
           <EmployeeReservations />
         </ProtectedRoute>
       } />
       <Route path="/vendor/reservations" element={
-        <ProtectedRoute allowedRoles={['vendor']}>
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorReservations />
         </ProtectedRoute>
       } />
       <Route path="/admin/reservations" element={
-        <ProtectedRoute allowedRoles={['master_admin', 'super_admin', 'site_admin', 'city_admin']}>
+        <ProtectedRoute allowedRoles={ROLES_ADMIN_ALL}>
           <AdminReservations />
         </ProtectedRoute>
       } />

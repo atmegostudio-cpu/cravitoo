@@ -3,6 +3,31 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Code-Review Cleanup Pass (COMPLETED)
+- **Env-driven test credentials.** `ADMIN_EMAIL` / `ADMIN_PASSWORD` in
+  `test_storage_upload.py`, `test_onboarding_menu.py`,
+  `test_ai_photos_and_agreement.py`, `test_session_persistence.py` now
+  read from `os.environ.get(...)` with the previous hard-coded values
+  as sensible fallbacks. Env-override behaviour verified.
+- **`/app/frontend/src/lib/logger.js`** — new dev-only logger util. In
+  production builds (`NODE_ENV=production`) every `logger.log/warn/error`
+  compiles to a no-op so debug traces don't leak to end-users' devtools.
+- **console.error/log calls replaced with `logger.*`** across
+  `master/Vendors.js`, `master/SiteDetail.js`, `superadmin/Dashboard.js`,
+  `siteadmin/Dashboard.js`, `shared/EventCatering.js`.
+- **`CookieConsent.js`** — silent `catch {}` blocks now `logger.warn(err)`.
+- **`App.js`** — 12 inline `allowedRoles={[...]}` arrays extracted into
+  module-scope constants (`ROLES_EMPLOYEE`, `ROLES_MASTER`, `ROLES_ANY`,
+  etc.). Stable references, no reconciler churn on every render.
+- **`useCallback` stabilisation** on `master/Vendors.js` and
+  `master/Sites.js` fetch loaders — `useEffect` dependencies now honest.
+- Skipped from this pass (out of scope, would risk regressions): large-
+  component refactors (`OnboardingDetail`, `LoginPage`, `App.js` routing
+  extraction), Python function-complexity refactors (email_service,
+  admin_reports, ai_menu_photos), gradual TypeScript migration.
+- Verified by testing agent (`iteration_19.json`, 42/42 pytest + 3
+  frontend pages, zero console errors).
+
 ## Feb 2026 — AI Photo Spend Card on Master Dashboard (COMPLETED)
 - **New endpoint** `GET /api/admin/ai-photos/spend` (master admin only)
   aggregates `ai_image_generations` rows and multiplies by ₹3.5/image.

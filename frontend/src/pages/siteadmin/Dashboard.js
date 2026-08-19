@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Building2, ShoppingBag, IndianRupee, Users, Store, ArrowRight } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -28,7 +29,7 @@ const SiteAdminDashboard = () => {
         ]);
         setSite(s.data);
         setReport(r.data);
-      } catch (e) { console.error(e); }
+      } catch (e) { logger.error(e); }
       finally { setLoading(false); }
     })();
   }, [user]);

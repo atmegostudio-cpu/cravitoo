@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2 } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -21,7 +22,7 @@ const SiteDetail = () => {
       const { data } = await axios.get(`${API}/sites/${siteId}`, { withCredentials: true });
       setSite(data);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
     } finally {
       setLoading(false);
     }
@@ -132,7 +133,7 @@ const VendorsTab = ({ siteId }) => {
       ]);
       setMapped(m.data);
       setAllVendors(all.data);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, [siteId]);
 
@@ -470,7 +471,7 @@ const MenuTab = ({ siteId }) => {
       setItems(m.data);
       setVendors(v.data);
       if (v.data.length > 0 && !selectedVendor) setSelectedVendor(v.data[0].id);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, [siteId, selectedVendor]);
 
@@ -682,7 +683,7 @@ const ScheduleTab = ({ siteId }) => {
           return existing || { meal_period: p, start_time: '12:00', end_time: '14:00', enabled: false };
         });
         setSchedules(filled);
-      } catch (e) { console.error(e); }
+      } catch (e) { logger.error(e); }
       finally { setLoading(false); }
     })();
   }, [siteId]);

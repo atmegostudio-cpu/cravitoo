@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
@@ -44,7 +44,7 @@ const MasterSites = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchSites = async () => {
+  const fetchSites = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/sites`, { withCredentials: true });
       setSites(data);
@@ -53,9 +53,9 @@ const MasterSites = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchSites(); }, []);
+  useEffect(() => { fetchSites(); }, [fetchSites]);
 
   const deleteSite = async (site, e) => {
     e.preventDefault();

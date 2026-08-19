@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logger from '../lib/logger';
 
 const STORAGE_KEY = 'cravitoo_cookie_consent_v1';
 
@@ -24,8 +25,11 @@ const CookieConsent = () => {
         const t = setTimeout(() => setVisible(true), 800);
         return () => clearTimeout(t);
       }
-    } catch {
-      // localStorage may be unavailable (incognito etc.) — just don't show banner
+    } catch (err) {
+      // localStorage may be unavailable (incognito, private mode, quota) —
+      // no user-facing action needed but we log so intermittent failures
+      // still show up in developer devtools during preview testing.
+      logger.warn('CookieConsent: read from localStorage failed', err);
     }
     return undefined;
   }, [user]);
@@ -36,8 +40,8 @@ const CookieConsent = () => {
         STORAGE_KEY,
         JSON.stringify({ choice, at: new Date().toISOString() })
       );
-    } catch {
-      /* ignore */
+    } catch (err) {
+      logger.warn('CookieConsent: write to localStorage failed', err);
     }
     setVisible(false);
   };

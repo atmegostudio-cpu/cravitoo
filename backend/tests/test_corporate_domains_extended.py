@@ -69,7 +69,7 @@ class TestRegisterAllowedDomain:
             json={"email": email, "password": "abcd1234", "name": "Reg Tester", "role": "employee"},
             timeout=15,
         )
-        # The site backing techcorp.com is 'live' (legacy default), so this should succeed.
+        # The site backing techcorp.com == 'live' (legacy default), so this should succeed.
         assert r.status_code in (200, 201), f"got {r.status_code} {r.text}"
 
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { CalendarDays, Users, Plus, CheckCircle, Clock, Send } from 'lucide-react';
+import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -41,7 +42,7 @@ const EventCatering = () => {
         setFormData(f => ({ ...f, vendor_id: vendorsRes.data[0].id }));
       }
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     } finally {
       setLoading(false);
     }
@@ -52,7 +53,7 @@ const EventCatering = () => {
       const { data } = await axios.get(`${API}/menu/${vendorId}`, { withCredentials: true });
       setMenuItems(data);
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error:', error);
     }
   };
 
