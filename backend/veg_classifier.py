@@ -44,18 +44,27 @@ VEG_TOKENS = (
 
 NON_VEG_RE = re.compile(r"\b(?:" + "|".join(NON_VEG_TOKENS) + r")\b", re.IGNORECASE)
 VEG_RE = re.compile(r"\b(?:" + "|".join(VEG_TOKENS) + r")\b", re.IGNORECASE)
+# Explicit "non-veg" / "non veg" / "nonveg" phrase — this MUST win over the
+# accidental \bveg\b match inside "Non-Veg". Handles "Non-Veg Thali",
+# "Non veg biryani", "nonveg combo".
+EXPLICIT_NON_VEG_RE = re.compile(r"\bnon[\s-]?veg(?:etarian)?\b", re.IGNORECASE)
 
 
 def classify_veg(name: str, description: str = "") -> bool:
     """Return True if the item should be tagged vegetarian.
 
     Rules (in order):
-      1. Explicit veg keyword anywhere → veg (True). Handles "paneer kebab",
+      1. Explicit "non-veg" / "non veg" / "nonveg" phrase → non-veg (False).
+         MUST be checked first, otherwise the \\bveg\\b regex below would
+         match the "Veg" inside "Non-Veg" and mis-classify.
+      2. Explicit veg keyword anywhere → veg (True). Handles "paneer kebab",
          "veg biryani", "aloo tikki" etc.
-      2. Explicit non-veg keyword → non-veg (False).
-      3. Nothing matched → veg (True). Indian corporate default.
+      3. Explicit non-veg keyword → non-veg (False).
+      4. Nothing matched → veg (True). Indian corporate default.
     """
     haystack = f"{name} {description}".strip()
+    if EXPLICIT_NON_VEG_RE.search(haystack):
+        return False
     if VEG_RE.search(haystack):
         return True
     if NON_VEG_RE.search(haystack):

@@ -48,6 +48,8 @@ class TestClassifyVegUnit:
     @pytest.mark.parametrize("name", [
         "Chicken Biryani", "Egg Bhurji", "Fish Curry", "Mutton Rogan Josh",
         "Prawn Koliwada", "Chicken 65",
+        # Regression: "Non-Veg" must beat the accidental \bveg\b substring match.
+        "Non-Veg Thali", "Non Veg Combo", "nonveg biryani", "NON-VEGETARIAN Special",
     ])
     def test_non_veg(self, name):
         assert classify_veg(name) is False, f"{name} should be non-veg"

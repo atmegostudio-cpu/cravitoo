@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Leaf, ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import logger from '../../lib/logger';
+import VegIndicator from '../../components/VegIndicator';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -218,7 +219,7 @@ const VendorMenu = () => {
                 <div className="p-4">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-heading text-lg font-medium text-text-primary">{item.name}</h3>
-                    {item.is_vegetarian && <Leaf className="h-5 w-5 text-green-600" />}
+                    <VegIndicator isVeg={!!item.is_vegetarian} size="md" />
                   </div>
                   <p className="text-text-secondary text-sm mb-3 line-clamp-2">{item.description}</p>
                   <div className="flex justify-between items-center mb-3">

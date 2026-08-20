@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { ShoppingCart, Leaf, Plus, Minus, Store, X, ChevronDown, ShieldAlert } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Store, X, ChevronDown, ShieldAlert } from 'lucide-react';
 import logger from '../../lib/logger';
+import VegIndicator from '../../components/VegIndicator';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -449,9 +450,7 @@ const EmployeeMenu = () => {
                     <div className="p-4 sm:p-6">
                       <div className="flex justify-between items-start mb-2 gap-2">
                         <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary leading-tight">{item.name}</h3>
-                        {item.is_vegetarian && (
-                          <Leaf className="h-5 w-5 text-green-600 flex-shrink-0" data-testid="vegetarian-icon" />
-                        )}
+                        <VegIndicator isVeg={!!item.is_vegetarian} size="md" />
                       </div>
                       <p className="text-text-secondary text-sm mb-3 line-clamp-2">{item.description}</p>
                       {allergens.length > 0 && (

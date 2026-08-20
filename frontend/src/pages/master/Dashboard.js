@@ -30,6 +30,28 @@ const MasterDashboard = () => {
     }
   };
 
+  const [reclassifying, setReclassifying] = useState(false);
+  const [reclassifyMessage, setReclassifyMessage] = useState('');
+  const handleReclassifyVeg = async () => {
+    if (!window.confirm('Re-run the veg / non-veg classifier over EVERY live menu item?\n\nThis fixes items that were mis-tagged. Vendor-set overrides that match the classifier are kept.')) return;
+    setReclassifying(true);
+    setReclassifyMessage('');
+    try {
+      const [veg, allergen] = await Promise.all([
+        axios.post(`${API}/admin/menu-items/reclassify-veg`, {}, { withCredentials: true }),
+        axios.post(`${API}/admin/menu-items/reclassify-allergens`, {}, { withCredentials: true }),
+      ]);
+      setReclassifyMessage(
+        `✓ Veg: ${veg.data.changed}/${veg.data.total} fixed · Allergens: ${allergen.data.changed}/${allergen.data.total} filled`,
+      );
+    } catch (e) {
+      setReclassifyMessage(`✗ ${e.response?.data?.detail || 'Reclassify failed'}`);
+    } finally {
+      setReclassifying(false);
+      setTimeout(() => setReclassifyMessage(''), 10000);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -90,6 +112,30 @@ const MasterDashboard = () => {
                 <p className="font-heading text-2xl font-semibold">₹{(data?.total_revenue || 0).toLocaleString('en-IN')}</p>
               </div>
             </div>
+          </div>
+
+          {/* One-click data-hygiene toolbar */}
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="data-hygiene-toolbar">
+            <div>
+              <h3 className="font-heading font-semibold text-amber-900 flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> Menu Data Hygiene
+              </h3>
+              <p className="text-sm text-amber-800 mt-0.5">
+                Re-run the Veg / Non-Veg + Allergen classifiers over every live menu item. Fixes mis-tagged rows and fills in missing allergens.
+              </p>
+              {reclassifyMessage && (
+                <p className="text-xs mt-2 font-medium" data-testid="reclassify-live-message">{reclassifyMessage}</p>
+              )}
+            </div>
+            <button
+              onClick={handleReclassifyVeg}
+              disabled={reclassifying}
+              data-testid="reclassify-live-menu-btn"
+              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap"
+            >
+              {reclassifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {reclassifying ? 'Reclassifying...' : 'Fix All Live Menus'}
+            </button>
           </div>
 
           {/* Quick actions row */}
