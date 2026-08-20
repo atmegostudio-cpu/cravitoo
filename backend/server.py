@@ -847,6 +847,48 @@ async def menu_items_reclassify_veg(
     return {"changed": changed, "total": total, "scope": q}
 
 
+@api_router.post("/admin/menu-items/reclassify-allergens")
+async def menu_items_reclassify_allergens(
+    vendor_id: str | None = None,
+    site_id: str | None = None,
+    overwrite: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    """Re-run the allergen classifier over live menu_items rows.
+
+    Master admin only. Scope filters mirror reclassify-veg.
+
+      - `overwrite=false` (default): only fill items that currently have
+        no `allergens` field or an empty list — respects vendor overrides.
+      - `overwrite=true`: force-refresh every row.
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    from allergen_classifier import classify_allergens
+    q: dict = {}
+    if vendor_id:
+        q["vendor_id"] = vendor_id
+    if site_id:
+        q["site_id"] = site_id
+    changed = 0
+    total = 0
+    async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "allergens": 1}):
+        total += 1
+        current = row.get("allergens") or []
+        if not overwrite and isinstance(current, list) and len(current) > 0:
+            continue
+        predicted = classify_allergens(row.get("name", ""), row.get("description", ""))
+        if list(current) != predicted:
+            await db.menu_items.update_one(
+                {"_id": row["_id"]},
+                {"$set": {"allergens": predicted}},
+            )
+            changed += 1
+    await audit_log(user, "menu_items", "bulk", "reclassified_allergens",
+                    {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
+    return {"changed": changed, "total": total, "scope": q}
+
+
 @api_router.post("/admin/users/{user_id}/deactivate")
 async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
     """Immediately end the target user's session and prevent future logins.
@@ -1115,9 +1157,11 @@ async def create_menu_item(data: MenuItemCreate, user: dict = Depends(get_curren
 
 @api_router.get("/menu/{vendor_id}")
 async def get_menu(vendor_id: str):
-    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1}).to_list(1000)
+    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1}).to_list(1000)
     for item in menu_items:
         item["id"] = str(item.pop("_id"))
+        if "allergens" not in item or item["allergens"] is None:
+            item["allergens"] = []
     return menu_items
 
 @api_router.patch("/menu/{item_id}")

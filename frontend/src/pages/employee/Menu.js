@@ -2,10 +2,35 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { ShoppingCart, Leaf, Plus, Minus, Store, X, ChevronDown } from 'lucide-react';
+import { ShoppingCart, Leaf, Plus, Minus, Store, X, ChevronDown, ShieldAlert } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Canonical allergen taxonomy — MUST match /app/backend/allergen_classifier.py
+const ALLERGEN_LABELS = {
+  milk: 'Milk / Dairy', nuts: 'Nuts', peanuts: 'Peanuts',
+  gluten: 'Gluten / Wheat', soy: 'Soy', sesame: 'Sesame',
+  egg: 'Egg', fish: 'Fish', shellfish: 'Shellfish', mustard: 'Mustard',
+};
+
+// Map the free-form labels Preferences.js stores into canonical keys.
+const PREF_TO_CANONICAL = {
+  'peanuts': 'peanuts',
+  'tree nuts': 'nuts',
+  'nuts': 'nuts',
+  'dairy': 'milk',
+  'milk': 'milk',
+  'eggs': 'egg',
+  'egg': 'egg',
+  'soy': 'soy',
+  'wheat': 'gluten',
+  'gluten': 'gluten',
+  'shellfish': 'shellfish',
+  'fish': 'fish',
+  'sesame': 'sesame',
+  'mustard': 'mustard',
+};
 
 // Razorpay checkout helper. Loads the script once, opens the popup, returns
 // a promise that resolves with the payment response or rejects on user cancel.
@@ -149,6 +174,27 @@ const EmployeeMenu = () => {
   // Mobile bottom-sheet cart drawer.
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const cartSectionRef = useRef(null);
+
+  // Employee's saved allergies (from Preferences page), normalised to canonical keys.
+  const [userAllergens, setUserAllergens] = useState([]);
+  const [hideAllergenItems, setHideAllergenItems] = useState(true);
+
+  const fetchPreferences = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/preferences`, { withCredentials: true });
+      const raw = data?.allergies || [];
+      const canonical = Array.from(new Set(
+        raw
+          .map((a) => PREF_TO_CANONICAL[String(a).trim().toLowerCase()])
+          .filter(Boolean),
+      ));
+      setUserAllergens(canonical);
+    } catch (e) {
+      logger.warn('Could not load allergen preferences:', e?.message || e);
+    }
+  }, []);
+
+  useEffect(() => { fetchPreferences(); }, [fetchPreferences]);
 
   const fetchVendors = useCallback(async () => {
     try {
@@ -350,12 +396,52 @@ const EmployeeMenu = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
             <div className="lg:col-span-2">
+              {userAllergens.length > 0 && (
+                <div
+                  data-testid="allergen-filter-banner"
+                  className="mb-4 flex flex-wrap items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3"
+                >
+                  <ShieldAlert className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-[140px]">
+                    <p className="text-sm font-medium text-amber-900">
+                      Your saved allergies:{' '}
+                      {userAllergens.map((a) => ALLERGEN_LABELS[a]).join(', ')}
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      {hideAllergenItems
+                        ? 'Items containing these are hidden.'
+                        : 'Items containing these are highlighted below — check ingredients before ordering.'}
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-amber-900 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      data-testid="hide-allergen-toggle"
+                      checked={hideAllergenItems}
+                      onChange={(e) => setHideAllergenItems(e.target.checked)}
+                      className="accent-amber-500 h-4 w-4"
+                    />
+                    Hide items with my allergies
+                  </label>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                {menuItems.map((item) => (
+                {menuItems
+                  .filter((item) => {
+                    if (!hideAllergenItems || userAllergens.length === 0) return true;
+                    const allergens = item.allergens || [];
+                    return !allergens.some((a) => userAllergens.includes(a));
+                  })
+                  .map((item) => {
+                    const allergens = item.allergens || [];
+                    const conflicts = allergens.filter((a) => userAllergens.includes(a));
+                    return (
                   <div
                     key={item.id}
                     data-testid={`menu-item-${item.id}`}
-                    className="bg-card border border-border-light rounded-xl overflow-hidden hover:shadow-md transition-shadow"
+                    className={`bg-card border rounded-xl overflow-hidden hover:shadow-md transition-shadow ${
+                      conflicts.length > 0 ? 'border-red-300 ring-1 ring-red-200' : 'border-border-light'
+                    }`}
                   >
                     {item.image_url && (
                       <img src={item.image_url} alt={item.name} className="w-full h-40 sm:h-48 object-cover" />
@@ -368,6 +454,32 @@ const EmployeeMenu = () => {
                         )}
                       </div>
                       <p className="text-text-secondary text-sm mb-3 line-clamp-2">{item.description}</p>
+                      {allergens.length > 0 && (
+                        <div
+                          data-testid={`menu-item-allergens-${item.id}`}
+                          className="flex items-start gap-1.5 mb-3 flex-wrap"
+                        >
+                          <ShieldAlert className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${conflicts.length ? 'text-red-600' : 'text-amber-600'}`} />
+                          <div className="flex flex-wrap gap-1">
+                            {allergens.map((a) => {
+                              const isConflict = userAllergens.includes(a);
+                              return (
+                                <span
+                                  key={a}
+                                  className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                    isConflict
+                                      ? 'bg-red-100 border-red-300 text-red-800 font-medium'
+                                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                                  }`}
+                                  title={ALLERGEN_LABELS[a]}
+                                >
+                                  {ALLERGEN_LABELS[a] || a}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center">
                         <p className="text-text-primary font-semibold text-lg">₹{item.price.toFixed(2)}</p>
                         <button
@@ -381,7 +493,8 @@ const EmployeeMenu = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                    );
+                  })}
               </div>
             </div>
 

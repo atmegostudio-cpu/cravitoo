@@ -1,7 +1,42 @@
 # Cravitoo - Product Requirements Document
 
 ## Original Problem Statement
-Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
+Build a production-ready, scalable, enterprise-grade full-tack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
+
+## Feb 2026 — Food Allergen Tagging + AI Auto-Classify (COMPLETED)
+- **Canonical taxonomy** on every menu item (`allergens: string[]`, values from
+  `milk, nuts, peanuts, gluten, soy, sesame, egg, fish, shellfish, mustard`).
+- **New module** `/app/backend/allergen_classifier.py` — dictionary-based
+  Indian-cuisine heuristic (paneer/ghee/curd→milk, kaju/badam→nuts,
+  moongfali/groundnut→peanuts, atta/maida/roti/naan→gluten,
+  soya/tofu→soy, til/tahini→sesame, anda/omelette→egg,
+  salmon/rohu→fish, prawn/crab→shellfish, sarson/rai→mustard).
+  Word-boundary regex, canonical-order preserving.
+- **Auto-classify on Excel bulk-upload** when the new `allergens` column
+  is missing or empty. Explicit comma-separated values are still honoured.
+- **Two remediation endpoints**:
+  - `POST /api/onboarding/vendors/{id}/menu/reclassify-allergens?overwrite=`
+    (draft menus).
+  - `POST /api/admin/menu-items/reclassify-allergens?vendor_id=&site_id=&overwrite=`
+    (live menu_items, master admin only).
+- **Vendor Onboarding Menu tab UI**: amber chip picker for all 10 allergens
+  in the Add/Edit modal (`menu-form-allergen-{key}`), new **Allergens** table
+  column with chip badges, and a **Auto-classify Allergens** toolbar button
+  next to Auto-classify Veg (`reclassify-allergens-btn`).
+- **Employee Menu safety UX**: allergen chip badges under every dish. If
+  the employee has saved allergies in Preferences, a top banner surfaces
+  their allergies with a **"Hide items with my allergies"** toggle (ON by
+  default). Matching items get red border + red chips when the toggle is
+  OFF, and are hidden entirely when ON. New `PREF_TO_CANONICAL` mapping
+  translates the free-form Preferences labels (Peanuts, Tree nuts, Dairy,
+  Eggs, Soy, Wheat, Shellfish, Fish, plus sesame/mustard) into canonical
+  keys.
+- **Regression suite** `/app/backend/tests/test_allergen_classifier.py` —
+  20 tests (13 unit + 7 HTTP integration). Full regression suites
+  (`test_onboarding_menu`, `test_free_menu_photos`,
+  `test_ai_photos_and_agreement`, `test_ai_photo_spend`,
+  `test_storage_upload`, `test_session_persistence`) all still green:
+  85/85 total.
 
 ## Feb 2026 — Code Quality Report Fixes (P0) + Complexity Refactor (P1) + Mobile Responsive Pass (COMPLETED)
 

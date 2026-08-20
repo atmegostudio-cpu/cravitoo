@@ -31,6 +31,11 @@ from pathlib import Path
 
 from storage import path_to_url, put_object
 from veg_classifier import classify_veg, reclassify_batch
+from allergen_classifier import (
+    classify_allergens,
+    normalize_allergens,
+    reclassify_batch as reclassify_allergens_batch,
+)
 from typing import Optional
 
 import openpyxl
@@ -259,6 +264,17 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                     is_vegetarian = str(raw_veg).strip().lower() in (
                         "true", "yes", "1", "veg", "vegetarian", "y", "green",
                     )
+                # Allergen detection with sensible defaults:
+                #   1. If the Excel column has an explicit comma-separated list, honour it
+                #      (normalised to canonical keys, unknown values dropped).
+                #   2. If empty / column missing, auto-classify from name + description.
+                raw_allergens = rec.get("allergens")
+                if raw_allergens is None or str(raw_allergens).strip() == "":
+                    allergens = classify_allergens(name, str(rec.get("description") or ""))
+                else:
+                    allergens = normalize_allergens(
+                        [t.strip() for t in str(raw_allergens).split(",") if t.strip()]
+                    )
                 items.append({
                     "item_id": str(uuid.uuid4()),
                     "name": name,
@@ -266,6 +282,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                     "category": str(rec.get("category") or "Main").strip(),
                     "price": price,
                     "is_vegetarian": is_vegetarian,
+                    "allergens": allergens,
                     "image_url": str(rec.get("image_url") or "") or None,
                     "is_available": is_available,
                     "meal_periods": _parse_meal_periods(rec.get("meal_period")),
@@ -305,6 +322,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             "is_available": bool(body.is_available),
             "meal_periods": [p for p in (body.meal_periods or []) if p in VALID_MEAL_PERIODS],
             "image_url": body.image_url,
+            "allergens": normalize_allergens(body.allergens or []),
         }
         draft = list(o.get("draft_menu", [])) + [item]
         await db.vendor_onboarding.update_one(
@@ -338,6 +356,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             raise HTTPException(status_code=400, detail="Price must be > 0")
         if "meal_periods" in updates and updates["meal_periods"] is not None:
             updates["meal_periods"] = [p for p in updates["meal_periods"] if p in VALID_MEAL_PERIODS]
+        if "allergens" in updates and updates["allergens"] is not None:
+            updates["allergens"] = normalize_allergens(updates["allergens"])
         current.update(updates)
         draft[target] = current
         await db.vendor_onboarding.update_one(
@@ -371,6 +391,30 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             )
             await audit_log(user, "vendor_onboarding", onb_id, "menu_reclassified_veg",
                             {"changed": changed, "total": len(updated)})
+        return {"changed": changed, "total": len(updated)}
+
+    @r.post("/onboarding/vendors/{onb_id}/menu/reclassify-allergens")
+    async def onboarding_menu_reclassify_allergens(
+        onb_id: str,
+        overwrite: bool = False,
+        user: dict = Depends(get_current_user),
+    ):
+        """Re-run the allergen classifier over every draft menu item.
+
+        Default behaviour (`overwrite=false`) only fills in items that
+        currently have no allergen list — vendor's manual selections are
+        preserved. Pass `?overwrite=true` to force-refresh every row.
+        """
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        updated, changed = reclassify_allergens_batch(draft, only_missing=not overwrite)
+        if changed:
+            await db.vendor_onboarding.update_one(
+                {"_id": o["_id"]},
+                {"$set": {"draft_menu": updated, "updated_at": datetime.now(timezone.utc)}},
+            )
+            await audit_log(user, "vendor_onboarding", onb_id, "menu_reclassified_allergens",
+                            {"changed": changed, "total": len(updated), "overwrite": overwrite})
         return {"changed": changed, "total": len(updated)}
 
     @r.delete("/onboarding/vendors/{onb_id}/menu/{item_id}")
@@ -767,6 +811,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                             p for p in (m.get("meal_periods") or [])
                             if p in {"breakfast", "lunch", "snacks", "dinner"}
                         ],
+                        "allergens": normalize_allergens(m.get("allergens") or []),
                         "onboarding_id": str(o["_id"]),
                         "created_at": now,
                     })

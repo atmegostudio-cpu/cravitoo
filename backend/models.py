@@ -108,6 +108,7 @@ class MenuItemCreate(BaseModel):
     image_url: Optional[str] = None
     is_vegetarian: bool = False
     is_available: bool = True
+    allergens: List[str] = []  # canonical keys — see allergen_classifier.ALLERGEN_KEYS
     vendor_id: Optional[str] = None  # master_admin must supply; vendors cannot create menu items
 
 
@@ -122,6 +123,7 @@ class MenuItemResponse(BaseModel):
     image_url: Optional[str] = None
     is_vegetarian: bool
     is_available: bool
+    allergens: List[str] = []
     created_at: datetime
 
 
@@ -145,6 +147,7 @@ class OnboardingMenuItemCreate(BaseModel):
     is_available: bool = True
     meal_periods: List[str] = []  # subset of VALID_MEAL_PERIODS
     image_url: Optional[str] = None
+    allergens: List[str] = []
 
 
 class OnboardingMenuItemUpdate(BaseModel):
@@ -156,6 +159,7 @@ class OnboardingMenuItemUpdate(BaseModel):
     is_available: Optional[bool] = None
     meal_periods: Optional[List[str]] = None
     image_url: Optional[str] = None
+    allergens: Optional[List[str]] = None
 
 
 

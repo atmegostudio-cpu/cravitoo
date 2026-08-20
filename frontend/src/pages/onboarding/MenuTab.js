@@ -8,14 +8,30 @@
  */
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon } from 'lucide-react';
+import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon, ShieldAlert } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
 
+// Canonical allergen taxonomy — MUST match /app/backend/allergen_classifier.py ALLERGEN_KEYS
+const ALLERGEN_OPTIONS = [
+  { key: 'milk',      label: 'Milk / Dairy' },
+  { key: 'nuts',      label: 'Nuts' },
+  { key: 'peanuts',   label: 'Peanuts' },
+  { key: 'gluten',    label: 'Gluten / Wheat' },
+  { key: 'soy',       label: 'Soy' },
+  { key: 'sesame',    label: 'Sesame' },
+  { key: 'egg',       label: 'Egg' },
+  { key: 'fish',      label: 'Fish' },
+  { key: 'shellfish', label: 'Shellfish' },
+  { key: 'mustard',   label: 'Mustard' },
+];
+const allergenLabel = (key) => ALLERGEN_OPTIONS.find((a) => a.key === key)?.label || key;
+
 const emptyForm = {
   name: '', description: '', category: 'Main', price: '',
   is_vegetarian: false, is_available: true, meal_periods: [], image_url: '',
+  allergens: [],
 };
 
 const toNum = (v) => {
@@ -42,6 +58,7 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
       is_available: it.is_available !== false,
       meal_periods: it.meal_periods || [],
       image_url: it.image_url || '',
+      allergens: it.allergens || [],
     });
     setEditId(it.item_id);
     setShowAdd(true);
@@ -54,6 +71,15 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
       meal_periods: f.meal_periods.includes(mp)
         ? f.meal_periods.filter((x) => x !== mp)
         : [...f.meal_periods, mp],
+    }));
+  };
+
+  const toggleAllergen = (key) => {
+    setForm((f) => ({
+      ...f,
+      allergens: f.allergens.includes(key)
+        ? f.allergens.filter((x) => x !== key)
+        : [...f.allergens, key],
     }));
   };
 
@@ -94,6 +120,33 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
       alert(data.changed
         ? `Updated ${data.changed} of ${data.total} items based on their names.`
         : `Every item already looks correctly classified (${data.total} checked).`);
+      if (data.changed) await reload();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Auto-classify failed');
+    }
+  };
+
+  const reclassifyAllergens = async () => {
+    const overwrite = window.confirm(
+      'Auto-detect allergens for every menu item?\n\n' +
+      'OK  → fill only items with NO allergens set (safe, preserves your manual selections)\n' +
+      'Cancel → skip. Choose "OK & override" from the next prompt to overwrite everything.'
+    );
+    if (!overwrite) return;
+    const forceOverwrite = window.confirm(
+      'Overwrite EVERY item, including ones you already tagged manually?\n\n' +
+      'OK → overwrite (destructive)\n' +
+      'Cancel → only fill missing items (recommended)'
+    );
+    try {
+      const { data } = await axios.post(
+        `${API}/onboarding/vendors/${onbId}/menu/reclassify-allergens?overwrite=${forceOverwrite ? 'true' : 'false'}`,
+        {},
+        { withCredentials: true },
+      );
+      alert(data.changed
+        ? `Updated ${data.changed} of ${data.total} items with detected allergens.`
+        : `No changes — allergens already look correct (${data.total} checked).`);
       if (data.changed) await reload();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Auto-classify failed');
@@ -253,8 +306,19 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
               <Leaf className="h-4 w-4" /> Auto-classify Veg
             </button>
           )}
+          {items.length > 0 && (
+            <button
+              onClick={reclassifyAllergens}
+              data-testid="reclassify-allergens-btn"
+              disabled={busy}
+              title="Auto-detect allergens (milk, nuts, gluten, egg, fish, etc.) from item names + descriptions"
+              className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-100 disabled:opacity-50"
+            >
+              <ShieldAlert className="h-4 w-4" /> Auto-classify Allergens
+            </button>
+          )}
           <a
-            href="data:text/csv;charset=utf-8,name,category,price,description,meal_period,is_vegetarian,is_available,image_url%0AVeg%20Thali,Main,180,Full%20meal%20with%20rice%20and%20roti,lunch%20snacks,yes,yes,%0AMasala%20Chai,Beverage,25,Hot%20milk%20tea,breakfast%20snacks,yes,yes,"
+            href="data:text/csv;charset=utf-8,name,category,price,description,meal_period,is_vegetarian,is_available,image_url,allergens%0AVeg%20Thali,Main,180,Full%20meal%20with%20rice%20and%20roti,lunch%20snacks,yes,yes,,gluten%0AMasala%20Chai,Beverage,25,Hot%20milk%20tea,breakfast%20snacks,yes,yes,,milk"
             download="cravitoo-menu-template.csv"
             className="text-xs text-primary hover:underline"
           >
@@ -354,6 +418,32 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                 ))}
               </div>
             </div>
+            <div className="md:col-span-2">
+              <label className="text-xs text-text-secondary flex items-center gap-1 mb-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                Allergens contained (required for FSSAI compliance)
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {ALLERGEN_OPTIONS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleAllergen(key)}
+                    data-testid={`menu-form-allergen-${key}`}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      form.allergens.includes(key)
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-card text-text-secondary border-border-light hover:border-amber-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-text-muted mt-1">
+                Tip: leave empty and use "Auto-classify Allergens" to have the system suggest based on the dish name.
+              </p>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -407,6 +497,7 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                   <th className="text-right px-4 py-3">Price</th>
                   <th className="text-left px-4 py-3">Meal Period</th>
                   <th className="text-left px-4 py-3">Veg</th>
+                  <th className="text-left px-4 py-3">Allergens</th>
                   <th className="text-left px-4 py-3">Available</th>
                   {canEdit && <th className="text-right px-4 py-3">Actions</th>}
                 </tr>
@@ -432,6 +523,22 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block w-2.5 h-2.5 rounded-full ${it.is_vegetarian ? 'bg-emerald-500' : 'bg-red-500'}`} title={it.is_vegetarian ? 'Veg' : 'Non-veg'} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 flex-wrap max-w-[180px]" data-testid={`menu-row-allergens-${it.item_id}`}>
+                        {(it.allergens && it.allergens.length > 0)
+                          ? it.allergens.map((a) => (
+                              <span
+                                key={a}
+                                className="px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-800 border border-amber-200"
+                                title={allergenLabel(a)}
+                              >
+                                {allergenLabel(a)}
+                              </span>
+                            ))
+                          : <span className="text-xs text-text-muted">—</span>
+                        }
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {canEdit ? (
