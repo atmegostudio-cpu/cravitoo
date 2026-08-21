@@ -225,6 +225,66 @@ def is_master_admin(user: dict) -> bool:
 def is_master_or_super(user: dict) -> bool:
     return user.get("role") in ("master_admin", "super_admin")
 
+
+# ─── Email deliverability probe (Master-Admin real send) ──────────────
+class _TestEmailBody(BaseModel):
+    to: EmailStr
+
+
+@api_router.post("/admin/email/send-test")
+async def send_test_email(body: _TestEmailBody, user: dict = Depends(get_current_user)):
+    """Master-Admin-only real send probe.
+
+    Sends a small "Cravitoo email health check" message via Resend and
+    surfaces the provider's error verbatim. Purpose: prove end-to-end
+    that the ``RESEND_API_KEY``, verified domain, DKIM/SPF DNS records
+    and the recipient's mailbox allowlist all cooperate BEFORE
+    onboarding a new corporate client. Role-guarded — do not open to
+    non-admins (would allow authenticated spam through our verified
+    sender).
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin can send test emails")
+
+    from email_service import send_email
+    subject = "Cravitoo — Email health check"
+    html = f"""
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: auto; padding: 24px;">
+      <h2 style="color:#DC5A2E;">Cravitoo Email Delivery Confirmed ✓</h2>
+      <p>If you're reading this in your inbox (not spam), the following are working end-to-end:</p>
+      <ul>
+        <li><strong>Resend API key</strong> — accepted</li>
+        <li><strong>Sender domain</strong> — <code>{os.environ.get("RESEND_FROM_EMAIL", "unset")}</code></li>
+        <li><strong>SPF + DKIM</strong> — passed (else this mail would be in spam)</li>
+        <li><strong>Recipient allowlist</strong> — corporate email gateway is not blocking Cravitoo</li>
+      </ul>
+      <p style="color:#666;font-size:13px;margin-top:24px;">
+        Triggered by <strong>{user.get("email")}</strong> at
+        {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.
+      </p>
+    </div>
+    """
+    text_fallback = (
+        "Cravitoo Email Delivery Confirmed. "
+        f"Sender: {os.environ.get('RESEND_FROM_EMAIL')}. "
+        f"Triggered by {user.get('email')}."
+    )
+    ok, err = send_email(body.to, subject, html, text=text_fallback)
+    if not ok:
+        raise HTTPException(status_code=502, detail=f"Resend rejected the send: {err}")
+    from_email = os.environ.get("RESEND_FROM_EMAIL") or ""
+    from_domain = from_email.split("@", 1)[-1] if "@" in from_email else from_email
+    return {
+        "sent": True,
+        "to": body.to,
+        "from": from_email,
+        "message": (
+            f"Sent from {from_email}. Check inbox in ~30 seconds. "
+            f"If it lands in Spam, ask the recipient's IT to allowlist "
+            f"the sender and the domain '{from_domain}'."
+        ),
+    }
+
 def can_access_site(user: dict, site_id: str) -> bool:
     role = user.get("role")
     if role == "master_admin":

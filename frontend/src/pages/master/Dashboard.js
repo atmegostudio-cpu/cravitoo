@@ -65,6 +65,33 @@ const MasterDashboard = () => {
 
   const [filling, setFilling] = useState(false);
   const [fillMessage, setFillMessage] = useState('');
+  const [testEmailSending, setTestEmailSending] = useState(false);
+  const [testEmailMsg, setTestEmailMsg] = useState('');
+
+  const sendTestEmail = async () => {
+    const to = window.prompt(
+      'Send a Cravitoo email health-check to which address?\n\n' +
+      'Tip: use your personal Gmail first (arrives in inbox = OK), ' +
+      'then repeat with a corporate address to prove that mailbox allowlisted us.'
+    );
+    if (!to || !to.includes('@')) return;
+    setTestEmailSending(true);
+    setTestEmailMsg('');
+    try {
+      const { data } = await axios.post(
+        `${API}/admin/email/send-test`,
+        { to: to.trim() },
+        { withCredentials: true, timeout: 30000 },
+      );
+      setTestEmailMsg(`✓ Sent from ${data.from} → ${data.to}. Check inbox in ~30s (not spam). If it's in spam, the recipient's IT needs to allowlist us.`);
+    } catch (e) {
+      const detail = e.response?.data?.detail || e.message;
+      setTestEmailMsg(`✗ ${detail}`);
+    } finally {
+      setTestEmailSending(false);
+      setTimeout(() => setTestEmailMsg(''), 20000);
+    }
+  };
   const runBulkFill = async (source) => {
     const label = source === 'free' ? 'FREE (Unsplash + Pollinations, ₹0)' : 'PAID AI (gpt-image-1, ~₹3.5/item)';
     // 1. Dry-run first to show the cost + candidate list
@@ -243,6 +270,33 @@ const MasterDashboard = () => {
                 <Sparkles className="h-4 w-4" /> Fill AI (paid)
               </button>
             </div>
+          </div>
+
+          {/* Email deliverability probe */}
+          <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3" data-testid="email-health-toolbar">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-heading font-semibold text-sky-900 flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> Email deliverability
+              </h3>
+              <p className="text-sm text-sky-800 mt-0.5">
+                Send a real OTP-style test email to prove Resend + DKIM + SPF + the recipient's corporate allowlist all work together. Do this <strong>before</strong> onboarding each new corporate client.
+              </p>
+              {testEmailMsg && (
+                <p className="text-xs mt-2 font-medium text-sky-900" data-testid="test-email-message">
+                  {testEmailSending && <Loader2 className="inline h-3.5 w-3.5 animate-spin mr-1" />}
+                  {testEmailMsg}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={sendTestEmail}
+              disabled={testEmailSending}
+              data-testid="send-test-email-btn"
+              className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap"
+            >
+              {testEmailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Send Test Email
+            </button>
           </div>
 
           {/* Quick actions row */}
