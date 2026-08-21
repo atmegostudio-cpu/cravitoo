@@ -1,9 +1,28 @@
 # Cravitoo - Product Requirements Document
 
 ## Original Problem Statement
-Build a production-ready, scalable, enterprise-grade full-tack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
+Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
-## Feb 2026 — Food Allergen Tagging + AI Auto-Classify (COMPLETED)
+## Feb 2026 — Code Review Fixes: 3 HIGH-severity defects (COMPLETED)
+
+### P0-1: AI Photo Apply endpoint saved a broken image URL
+- **Symptom**: Master Admin clicked "Use this photo" in the AI picker modal, the item's `image_url` was set to `/api/uploads/ai_<hex>.png`, and every customer viewing the item saw a 404 broken-image icon. `serve_upload` only resolves `s_`-prefixed Object-Storage tokens.
+- **Fix**: `MenuPhotoApplyRequest` now accepts `photo_url` (preferred) and rejects the legacy `ai_*` basenames with a 400 pointing to Regenerate. Frontend `SiteDetail.js:300` sends the full `photo_url` returned by `/suggest`.
+- **Regression tests**: 9 new cases in `test_apply_endpoint.py` (legacy rejection, path traversal, bogus schemes, missing fields, non-admin 403).
+
+### P0-2: Reclassify-Veg silently flipped meat dishes to vegetarian (dietary safety)
+- **Symptom**: `classify_veg("Chicken Corn Soup")` returned True (veg) because `\bcorn\b` was in the strong-veg override list. The bulk endpoint also overwrote `is_vegetarian` on every row unconditionally, destroying manual vendor overrides.
+- **Fix**: Split tokens into `DEFINITE_NON_VEG_TOKENS` (chicken, mutton, fish, beef, pork, keema, prawn, crab, tuna, salmon, bacon, sausage, meat, turkey, duck) which ALWAYS win, `AMBIGUOUS_NON_VEG_TOKENS` (kebab, tikka, egg, anda, seekh) which lose to `STRONG_VEG_TOKENS` (paneer, aloo, dal, tofu, dosa, idli — no vegetables like corn/peas/mushroom). Endpoint now defaults `overwrite=false`; Dashboard button double-confirms safe vs overwrite mode.
+- **Regression tests**: `TestClassifyVegUnit.test_meat_beats_ambiguous_vegetables` (15 new cases) + `test_reclassify_batch_only_missing_preserves_manual`.
+
+### P0-3: Multi-vendor checkout only charged the first order
+- **Symptom**: If an employee had items from 2+ vendors, the loop created N orders but only paid `orderIds[0]`. Cart was cleared for all vendors → orders 2..N were pending forever, revenue lost.
+- **Fix**: `placeOrdersForAllVendors` now loops create-order → open Razorpay → verify sequentially per vendor. `paidVendors[]` drives selective cart-clear; failed vendors stay in cart for retry. Cancel intent short-circuits the loop.
+
+### Regression suite (iter24)
+124/124 backend tests green (test_veg_classifier 44, test_apply_endpoint 9, test_free_menu_photos 9, test_allergen_classifier 20, test_onboarding_menu 15, test_storage_upload 11, test_session_persistence 16). Paid AI live-gen tests intentionally skipped to preserve LLM budget.
+
+## Feb 2026 — Bulk AI Photo-Fill (Free + Paid) + Per-Item Regenerate (COMPLETED)
 - **Canonical taxonomy** on every menu item (`allergens: string[]`, values from
   `milk, nuts, peanuts, gluten, soy, sesame, egg, fish, shellfish, mustard`).
 - **New module** `/app/backend/allergen_classifier.py` — dictionary-based

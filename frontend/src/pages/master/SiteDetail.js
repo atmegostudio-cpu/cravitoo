@@ -297,7 +297,7 @@ const AIPhotoModal = ({ item, onClose, onApplied }) => {
     try {
       await axios.post(
         `${API}/ai/menu-photos/apply`,
-        { menu_item_id: item.id, photo_filename: suggestions[selectedIdx].filename },
+        { menu_item_id: item.id, photo_url: suggestions[selectedIdx].url },
         { withCredentials: true }
       );
       onApplied();

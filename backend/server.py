@@ -814,14 +814,21 @@ async def ai_photo_spend(user: dict = Depends(get_current_user)):
 async def menu_items_reclassify_veg(
     vendor_id: str | None = None,
     site_id: str | None = None,
+    overwrite: bool = False,
     user: dict = Depends(get_current_user),
 ):
     """Re-run the veg / non-veg classifier over live menu_items rows.
 
     Master admin only. Scope filters:
-      - `vendor_id` — restrict to one vendor's menu
-      - `site_id`   — restrict to one site's menu
-    Omit both to reclassify EVERY menu item.
+      - ``vendor_id`` — restrict to one vendor's menu
+      - ``site_id`` — restrict to one site's menu
+      - ``overwrite`` — default False. When False, only items whose
+        ``is_vegetarian`` field is missing get updated. When True, EVERY
+        item is reclassified — use this to fix bad legacy data, but
+        note it will overwrite any manual vendor overrides that happen
+        to disagree with the classifier.
+
+    Omit both scope filters to reclassify EVERY menu item.
     """
     if not is_master_admin(user):
         raise HTTPException(status_code=403, detail="Only master admin")
@@ -835,16 +842,19 @@ async def menu_items_reclassify_veg(
     total = 0
     async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "is_vegetarian": 1}):
         total += 1
+        current = row.get("is_vegetarian")
+        if not overwrite and current is not None:
+            continue
         predicted = classify_veg(row.get("name", ""), row.get("description", ""))
-        if bool(row.get("is_vegetarian", False)) != predicted:
+        if bool(current) != predicted:
             await db.menu_items.update_one(
                 {"_id": row["_id"]},
                 {"$set": {"is_vegetarian": predicted}},
             )
             changed += 1
     await audit_log(user, "menu_items", "bulk", "reclassified_veg",
-                    {"scope": q, "changed": changed, "total": total})
-    return {"changed": changed, "total": total, "scope": q}
+                    {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
+    return {"changed": changed, "total": total, "scope": q, "overwrite": overwrite}
 
 
 @api_router.post("/admin/menu-items/reclassify-allergens")

@@ -270,57 +270,91 @@ const EmployeeMenu = () => {
     try {
       const allVendorIds = Object.keys(cartByVendor);
       if (allVendorIds.length === 0) return;
-      const orderIds = [];
-      for (const vId of allVendorIds) {
-        const vendorCart = cartByVendor[vId];
-        const orderData = {
-          vendor_id: vId,
-          items: vendorCart.items.map(item => ({
-            menu_item_id: item.id,
-            quantity: item.quantity,
-            price: item.price,
-          })),
-          delivery_type: 'pickup',
-        };
-        const { data } = await axios.post(`${API}/orders`, orderData, { withCredentials: true });
-        orderIds.push(data.id);
-      }
+
+      // Lazy-load Razorpay ONCE, before we start creating orders.
       const scriptOk = await loadRazorpayScript();
       if (!scriptOk) {
         alert('Could not load the payment gateway. Please check your internet and try again.');
         return;
       }
-      const { data: rzpOrder } = await axios.post(
-        `${API}/payments/razorpay/create-order`,
-        { order_id: orderIds[0] },
-        { withCredentials: true },
-      );
-      setCartByVendor({});
-      localStorage.removeItem('cravitoo_cart');
+
+      const paidVendors = [];
+      const failures = [];
+
+      for (const vId of allVendorIds) {
+        const vendorCart = cartByVendor[vId];
+        let orderId;
+        try {
+          const orderData = {
+            vendor_id: vId,
+            items: vendorCart.items.map((item) => ({
+              menu_item_id: item.id,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            delivery_type: 'pickup',
+          };
+          const { data: created } = await axios.post(`${API}/orders`, orderData, { withCredentials: true });
+          orderId = created.id;
+
+          const { data: rzpOrder } = await axios.post(
+            `${API}/payments/razorpay/create-order`,
+            { order_id: orderId },
+            { withCredentials: true },
+          );
+          const payResp = await openRazorpayCheckout({
+            keyId: rzpOrder.key_id,
+            razorpayOrderId: rzpOrder.razorpay_order_id,
+            amount: rzpOrder.amount,
+            currency: rzpOrder.currency,
+            description: `Cravitoo Order #${orderId.slice(-8)}`,
+          });
+          await axios.post(
+            `${API}/payments/razorpay/verify`,
+            {
+              razorpay_order_id: payResp.razorpay_order_id,
+              razorpay_payment_id: payResp.razorpay_payment_id,
+              razorpay_signature: payResp.razorpay_signature,
+            },
+            { withCredentials: true },
+          );
+          paidVendors.push(vId);
+        } catch (payErr) {
+          logger.error('Payment failed for vendor', vId, payErr);
+          const label = vendorCart.vendor?.name || vId.slice(-6);
+          failures.push({ vId, label, message: payErr?.message || 'unknown' });
+          // If user cancelled, abort the whole loop to respect their intent.
+          if (payErr?.message === 'Payment cancelled') break;
+        }
+      }
+
+      // Clear ONLY the successfully-paid vendor carts. Failed ones stay
+      // in the cart so the user can retry without re-picking items.
+      setCartByVendor((prev) => {
+        const next = { ...prev };
+        for (const vId of paidVendors) delete next[vId];
+        try {
+          localStorage.setItem('cravitoo_cart', JSON.stringify(next));
+        } catch (_) { /* localStorage full — ignore */ }
+        return next;
+      });
       setCartSheetOpen(false);
-      try {
-        const payResp = await openRazorpayCheckout({
-          keyId: rzpOrder.key_id,
-          razorpayOrderId: rzpOrder.razorpay_order_id,
-          amount: rzpOrder.amount,
-          currency: rzpOrder.currency,
-          description: `Cravitoo Order #${orderIds[0].slice(-8)}`,
-        });
-        await axios.post(
-          `${API}/payments/razorpay/verify`,
-          {
-            razorpay_order_id: payResp.razorpay_order_id,
-            razorpay_payment_id: payResp.razorpay_payment_id,
-            razorpay_signature: payResp.razorpay_signature,
-          },
-          { withCredentials: true },
+
+      if (failures.length === 0 && paidVendors.length > 0) {
+        window.location.href = '/employee/orders';
+      } else if (paidVendors.length > 0) {
+        const failedLabels = failures.map((f) => f.label).join(', ');
+        alert(
+          `${paidVendors.length} order(s) placed successfully.\n` +
+          `${failures.length} vendor cart(s) still pending (${failedLabels}). ` +
+          `You can retry them from the cart.`
         );
-        window.location.href = '/employee/orders';
-      } catch (payErr) {
-        alert(payErr?.message === 'Payment cancelled'
-          ? 'Payment cancelled. You can retry from your Orders page.'
-          : `Payment failed: ${payErr?.message || 'please try again'}`);
-        window.location.href = '/employee/orders';
+      } else {
+        // 0 paid, some failures
+        const first = failures[0];
+        alert(first?.message === 'Payment cancelled'
+          ? 'Payment cancelled. Your cart is still saved.'
+          : `Payment failed: ${first?.message || 'please try again'}. Your cart is still saved.`);
       }
     } catch (error) {
       logger.error('Error:', error);

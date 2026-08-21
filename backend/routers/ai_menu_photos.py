@@ -53,7 +53,11 @@ class MenuPhotoSuggestRequest(BaseModel):
 
 class MenuPhotoApplyRequest(BaseModel):
     menu_item_id: str
-    photo_filename: str  # one of the filenames returned by /suggest
+    # Either photo_url (preferred, the full Object-Storage URL returned by
+    # /suggest) or photo_filename (legacy: the basename inside the URL).
+    # We accept both for backward compat but always store the URL.
+    photo_url: Optional[str] = None
+    photo_filename: Optional[str] = None
 
 
 class BulkFillRequest(BaseModel):
@@ -263,24 +267,47 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
 
     @r.post("/ai/menu-photos/apply")
     async def apply_menu_photo(data: MenuPhotoApplyRequest, user: dict = Depends(get_current_user)):
-        """Save the chosen AI photo as the menu item's image_url. Master Admin only
-        (matches the existing menu lock-down policy)."""
+        """Save the chosen AI photo as the menu item's image_url.
+
+        Master Admin only (matches the existing menu lock-down policy).
+
+        The client should send the full ``photo_url`` returned by
+        ``/suggest`` (or ``/suggest-free``). We also accept the legacy
+        ``photo_filename`` argument, in which case we rebuild the URL —
+        but the file MUST be an ``s_``-prefixed Object-Storage token,
+        otherwise the resulting URL would 404 on ``serve_upload``.
+        """
         if user.get("role") != "master_admin":
             raise HTTPException(status_code=403, detail="Only Master Admin can update menu photos.")
 
-        fname = data.photo_filename.strip()
-        if "/" in fname or "\\" in fname or ".." in fname:
-            raise HTTPException(status_code=400, detail="Invalid photo filename")
-        # Accept either the legacy `ai_<hex>.png` filename OR the new
-        # object-storage token (`s_<b64>`). Both are safe after the traversal guard.
-        if not (fname.startswith("ai_") or fname.startswith("s_")):
-            raise HTTPException(status_code=400, detail="Invalid photo filename")
+        # 1. Prefer photo_url — most robust across storage backends.
+        url: Optional[str] = None
+        if data.photo_url:
+            url = data.photo_url.strip()
+            # Basic sanity: only allow same-app URLs or object-storage paths.
+            if not (url.startswith("/api/uploads/") or url.startswith("http://") or url.startswith("https://")):
+                raise HTTPException(status_code=400, detail="Invalid photo URL")
+
+        # 2. Fall back to filename for backward compatibility.
+        elif data.photo_filename:
+            fname = data.photo_filename.strip()
+            if "/" in fname or "\\" in fname or ".." in fname:
+                raise HTTPException(status_code=400, detail="Invalid photo filename")
+            # Only object-storage tokens are actually serveable; the old
+            # ``ai_<hex>.png`` local-disk names would 404 for customers.
+            if not fname.startswith("s_"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Legacy photo filename cannot be applied — please regenerate this photo.",
+                )
+            url = _menu_photo_url(fname)
+        else:
+            raise HTTPException(status_code=400, detail="Provide either photo_url or photo_filename")
 
         item = await db.menu_items.find_one({"_id": safe_objectid(data.menu_item_id, "Menu item")})
         if not item:
             raise HTTPException(status_code=404, detail="Menu item not found")
 
-        url = _menu_photo_url(fname)
         await db.menu_items.update_one(
             {"_id": item["_id"]},
             {"$set": {

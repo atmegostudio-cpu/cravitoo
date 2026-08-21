@@ -33,22 +33,33 @@ const MasterDashboard = () => {
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyMessage, setReclassifyMessage] = useState('');
   const handleReclassifyVeg = async () => {
-    if (!window.confirm('Re-run the veg / non-veg classifier over EVERY live menu item?\n\nThis fixes items that were mis-tagged. Vendor-set overrides that match the classifier are kept.')) return;
+    const proceed = window.confirm(
+      'Re-run classifiers over EVERY live menu item?\n\n' +
+      'OK  → SAFE mode (only fills items that have no veg / allergen tag yet — vendor overrides preserved)\n' +
+      'Cancel → do nothing'
+    );
+    if (!proceed) return;
+    const overwrite = window.confirm(
+      'ALSO overwrite items that already have manual tags?\n\n' +
+      'OK  → OVERWRITE mode (fixes mis-tagged items — vendor manual overrides WILL be replaced)\n' +
+      'Cancel → keep manual overrides (safer)'
+    );
     setReclassifying(true);
     setReclassifyMessage('');
     try {
+      const q = overwrite ? '?overwrite=true' : '';
       const [veg, allergen] = await Promise.all([
-        axios.post(`${API}/admin/menu-items/reclassify-veg`, {}, { withCredentials: true }),
-        axios.post(`${API}/admin/menu-items/reclassify-allergens`, {}, { withCredentials: true }),
+        axios.post(`${API}/admin/menu-items/reclassify-veg${q}`, {}, { withCredentials: true }),
+        axios.post(`${API}/admin/menu-items/reclassify-allergens${q}`, {}, { withCredentials: true }),
       ]);
       setReclassifyMessage(
-        `✓ Veg: ${veg.data.changed}/${veg.data.total} fixed · Allergens: ${allergen.data.changed}/${allergen.data.total} filled`,
+        `✓ ${overwrite ? 'OVERWRITE' : 'SAFE'} — Veg: ${veg.data.changed}/${veg.data.total} · Allergens: ${allergen.data.changed}/${allergen.data.total}`,
       );
     } catch (e) {
       setReclassifyMessage(`✗ ${e.response?.data?.detail || 'Reclassify failed'}`);
     } finally {
       setReclassifying(false);
-      setTimeout(() => setReclassifyMessage(''), 10000);
+      setTimeout(() => setReclassifyMessage(''), 12000);
     }
   };
 

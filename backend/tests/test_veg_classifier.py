@@ -75,6 +75,46 @@ class TestClassifyVegUnit:
         assert updated[1]["is_vegetarian"] is False
         assert updated[2]["is_vegetarian"] is True
 
+    # ------------------------------------------------------------------
+    # Safety regressions from the Feb 2026 code review — meat words MUST
+    # beat vegetable ingredient words. "Chicken Corn Soup" was previously
+    # returning True (veg) because `\bcorn\b` was a strong-veg override.
+    # ------------------------------------------------------------------
+    @pytest.mark.parametrize("name,expected", [
+        # Ambiguous vegetables next to meat: meat MUST win.
+        ("Chicken Corn Soup",             False),
+        ("Chicken Mushroom Soup",         False),
+        ("Chicken with Palak",            False),
+        ("Palak Chicken Curry",           False),
+        ("Mutton with Peas",              False),
+        ("Chicken Corn and Mushroom Soup", False),
+        ("Chicken Dal",                   False),
+        # Truly veg dishes named after their vegetable stay veg.
+        ("Sweet Corn Soup",               True),
+        ("Mushroom Soup",                 True),
+        ("Palak Paneer",                  True),
+        ("Corn Chaat",                    True),
+        # Paneer/aloo/dal override ambiguous meaty modifiers.
+        ("Paneer Tikka",                  True),
+        ("Paneer Tikka Kebab",            True),
+        ("Aloo Tikki",                    True),
+        ("Vegetable Fried Rice",          True),
+    ])
+    def test_meat_beats_ambiguous_vegetables(self, name, expected):
+        assert classify_veg(name) is expected, f"{name} expected={expected}"
+
+    def test_reclassify_batch_only_missing_preserves_manual(self):
+        items = [
+            {"name": "Chicken Biryani", "is_vegetarian": True},   # bad manual tag
+            {"name": "Paneer Masala"},                             # no field → fill
+        ]
+        updated, changed = reclassify_batch(items, only_missing=True)
+        # In only_missing mode the manually-tagged chicken row is preserved,
+        # only the missing one is filled.
+        assert changed == 1
+        assert updated[0]["is_vegetarian"] is True     # preserved (still wrong)
+        assert updated[1]["is_vegetarian"] is True     # filled correctly
+
 
 # ---------------------------------------------------------------------------
 # Backend integration — needs a live server. Auto-skips if login fails.
