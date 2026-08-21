@@ -59,8 +59,9 @@ class MenuPhotoApplyRequest(BaseModel):
 class BulkFillRequest(BaseModel):
     site_id: Optional[str] = None
     vendor_id: Optional[str] = None
-    max_items: int = Field(20, ge=1, le=50, description="Hard cap to control cost — defaults to 20 (~$0.80)")
+    max_items: int = Field(200, ge=1, le=500, description="Hard cap to control cost (paid) or runtime (free). Defaults to 200.")
     dry_run: bool = False
+    source: str = Field("paid", description="'paid' → gpt-image-1 (₹3.5/item). 'free' → Unsplash + Pollinations (₹0).")
 
 
 class MenuPhotoFreeRequest(BaseModel):
@@ -337,17 +338,65 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         )
         return {"ok": True, "id": item_id, "name": name, "image_url": saved["url"]}
 
+    async def _bulk_fill_one_free(item: Dict[str, Any], user_email: str) -> Dict[str, Any]:
+        """Zero-cost variant of _bulk_fill_one — uses Unsplash + Pollinations."""
+        name = item.get("name", "")
+        item_id = str(item["_id"])
+        if not name:
+            return {"ok": False, "id": item_id, "error": "missing name"}
+
+        req = MenuPhotoFreeRequest(
+            name=name,
+            description=item.get("description") or "",
+            is_vegetarian=bool(item.get("is_vegetarian")),
+            cuisine_hint=item.get("category") or None,
+            count=1,
+        )
+        used_source = None
+        content = None
+        for source, url in _free_photo_urls(req):
+            content = await _try_fetch_free_photo(url)
+            if content is not None:
+                used_source = source
+                break
+        if not content:
+            return {"ok": False, "id": item_id, "name": name, "error": "all free sources failed"}
+
+        try:
+            saved = await _save_image_to_storage(content, "free", ext="jpg", content_type="image/jpeg")
+        except Exception as e:
+            return {"ok": False, "id": item_id, "name": name, "error": f"storage failed: {e}"}
+
+        await db.menu_items.update_one(
+            {"_id": item["_id"]},
+            {"$set": {
+                "image_url": saved["url"],
+                "image_source": f"free_bulk_{used_source}",
+                "image_updated_at": datetime.now(timezone.utc),
+                "image_updated_by": user_email,
+            }},
+        )
+        return {"ok": True, "id": item_id, "name": name, "image_url": saved["url"], "source": used_source}
+
     @r.post("/ai/menu-photos/bulk-fill")
     async def bulk_fill_menu_photos(data: BulkFillRequest, user: dict = Depends(get_current_user)):
-        """Generate AI photos for ALL menu items that don't have one. Master Admin only.
+        """Generate photos for ALL menu items that don't have one. Master Admin only.
 
-        Cost-capped via `max_items` (default 20 = ~$0.80 USD = ~₹70). Use `dry_run=true`
-        to preview which items would be filled without spending credit.
+        Two modes:
+          - ``source="paid"`` (default): gpt-image-1 via Emergent LLM key,
+            capped at ~₹3.5/item. Best quality, but costs money.
+          - ``source="free"``: Unsplash + Pollinations.ai fallback chain,
+            ₹0 cost. Slower and lower fidelity but great for MVP launches.
+
+        Cost-capped via ``max_items``. Use ``dry_run=true`` to preview which
+        items would be filled without spending credit.
         """
         if user.get("role") != "master_admin":
             raise HTTPException(status_code=403, detail="Only Master Admin can bulk-fill menu photos.")
 
         candidates = await _bulk_candidates(data)
+        is_free = (data.source or "paid").lower() == "free"
+        per_item_cost = 0.0 if is_free else COST_PER_IMAGE_INR
 
         if data.dry_run:
             return {
@@ -355,22 +404,31 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
                 "total_candidates": len(candidates),
                 "candidate_names": [c.get("name", "?") for c in candidates[:30]],
                 "dry_run": True,
-                "estimated_cost_inr": round(len(candidates) * COST_PER_IMAGE_INR, 1),
-                "message": f"Would generate AI photos for {len(candidates)} item(s) at ~₹{round(len(candidates) * COST_PER_IMAGE_INR, 1)}",
+                "source": "free" if is_free else "paid",
+                "estimated_cost_inr": round(len(candidates) * per_item_cost, 1),
+                "message": (
+                    f"Would fetch FREE photos for {len(candidates)} item(s) at ₹0."
+                    if is_free else
+                    f"Would generate AI photos for {len(candidates)} item(s) at ~₹{round(len(candidates) * COST_PER_IMAGE_INR, 1)}"
+                ),
             }
 
         if not candidates:
             return {"filled": 0, "skipped": 0, "errors": [], "total_candidates": 0,
+                    "source": "free" if is_free else "paid",
                     "message": "All menu items already have photos."}
 
-        image_gen = _load_image_gen_or_raise()
+        image_gen = None if is_free else _load_image_gen_or_raise()
 
         filled, skipped = 0, 0
         errors: List[Dict[str, Any]] = []
         items_filled: List[Dict[str, Any]] = []
 
         for it in candidates:
-            result = await _bulk_fill_one(image_gen, it, user["email"])
+            if is_free:
+                result = await _bulk_fill_one_free(it, user["email"])
+            else:
+                result = await _bulk_fill_one(image_gen, it, user["email"])
             if result["ok"]:
                 filled += 1
                 items_filled.append({"id": result["id"], "name": result["name"], "image_url": result["image_url"]})
@@ -381,18 +439,20 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         await db.ai_image_generations.insert_one({
             "user_id": user["id"], "user_email": user["email"], "user_role": user["role"],
             "operation": "bulk_fill",
+            "source": "free" if is_free else "paid",
             "site_id": data.site_id, "vendor_id": data.vendor_id,
             "max_items_requested": data.max_items,
             "filled": filled, "skipped": skipped,
-            "cost_inr": round(filled * COST_PER_IMAGE_INR, 2),
+            "cost_inr": round(filled * per_item_cost, 2),
             "created_at": datetime.now(timezone.utc),
         })
 
         return {
-            "filled": filled, "skipped": skipped, "errors": errors,
+            "filled": filled, "skipped": skipped, "errors": errors[:20],
             "total_candidates": len(candidates),
-            "items_filled": items_filled,
-            "estimated_cost_inr": round(filled * COST_PER_IMAGE_INR, 1),
+            "items_filled": items_filled[:20],  # cap payload
+            "source": "free" if is_free else "paid",
+            "estimated_cost_inr": round(filled * per_item_cost, 1),
             "dry_run": False,
         }
 

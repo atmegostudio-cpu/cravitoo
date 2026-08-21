@@ -52,6 +52,64 @@ const MasterDashboard = () => {
     }
   };
 
+  const [filling, setFilling] = useState(false);
+  const [fillMessage, setFillMessage] = useState('');
+  const runBulkFill = async (source) => {
+    const label = source === 'free' ? 'FREE (Unsplash + Pollinations, ₹0)' : 'PAID AI (gpt-image-1, ~₹3.5/item)';
+    // 1. Dry-run first to show the cost + candidate list
+    let dry;
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/bulk-fill`,
+        { source, dry_run: true, max_items: 500 },
+        { withCredentials: true },
+      );
+      dry = data;
+    } catch (e) {
+      setFillMessage(`✗ ${e.response?.data?.detail || 'Preview failed'}`);
+      setTimeout(() => setFillMessage(''), 10000);
+      return;
+    }
+
+    if (!dry.total_candidates) {
+      setFillMessage('✓ Every menu item already has a photo — nothing to fill.');
+      setTimeout(() => setFillMessage(''), 10000);
+      return;
+    }
+
+    const preview = (dry.candidate_names || []).slice(0, 8).join(', ');
+    const ok = window.confirm(
+      `Bulk-fill photos with ${label}?\n\n` +
+      `${dry.total_candidates} item(s) will get a photo.\n` +
+      `Estimated cost: ₹${dry.estimated_cost_inr}.\n\n` +
+      `Preview: ${preview}${dry.total_candidates > 8 ? '…' : ''}\n\n` +
+      `OK to proceed.`,
+    );
+    if (!ok) return;
+
+    setFilling(true);
+    setFillMessage(source === 'free'
+      ? `Fetching free photos for ${dry.total_candidates} item(s)… this can take 30–90s.`
+      : `Generating AI photos for ${dry.total_candidates} item(s)… this can take 1–3 minutes.`);
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/bulk-fill`,
+        { source, max_items: 500 },
+        { withCredentials: true, timeout: 300000 },
+      );
+      setFillMessage(
+        `✓ ${data.source.toUpperCase()}: filled ${data.filled}/${data.total_candidates} items` +
+        `${data.skipped ? ` · ${data.skipped} skipped` : ''}` +
+        ` · cost ₹${data.estimated_cost_inr}`,
+      );
+    } catch (e) {
+      setFillMessage(`✗ ${e.response?.data?.detail || 'Bulk-fill failed'}`);
+    } finally {
+      setFilling(false);
+      setTimeout(() => setFillMessage(''), 20000);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -136,6 +194,44 @@ const MasterDashboard = () => {
               {reclassifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {reclassifying ? 'Reclassifying...' : 'Fix All Live Menus'}
             </button>
+          </div>
+
+          {/* Bulk photo fill toolbar */}
+          <div className="mb-6 rounded-2xl border border-violet-200 bg-violet-50 p-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3" data-testid="bulk-photo-toolbar">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-heading font-semibold text-violet-900 flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> Bulk-fill menu photos
+              </h3>
+              <p className="text-sm text-violet-800 mt-0.5">
+                Auto-generate photos for every menu item that doesn't have one. Pick <strong>FREE</strong> (Unsplash + Pollinations, ₹0) for MVP launches or <strong>PAID AI</strong> (gpt-image-1, ~₹3.5/item) for premium fidelity.
+              </p>
+              {fillMessage && (
+                <p className="text-xs mt-2 font-medium text-violet-900" data-testid="bulk-fill-message">
+                  {filling && <Loader2 className="inline h-3.5 w-3.5 animate-spin mr-1" />}
+                  {fillMessage}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => runBulkFill('free')}
+                disabled={filling}
+                data-testid="bulk-fill-free-btn"
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap"
+                title="Fetches real food photos from Unsplash and Pollinations — no LLM cost."
+              >
+                <Sparkles className="h-4 w-4" /> Fill FREE
+              </button>
+              <button
+                onClick={() => runBulkFill('paid')}
+                disabled={filling}
+                data-testid="bulk-fill-paid-btn"
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap"
+                title="Generates studio-quality photos via gpt-image-1 (~₹3.5 per item)."
+              >
+                <Sparkles className="h-4 w-4" /> Fill AI (paid)
+              </button>
+            </div>
           </div>
 
           {/* Quick actions row */}
