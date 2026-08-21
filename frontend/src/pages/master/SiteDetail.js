@@ -433,6 +433,33 @@ const MenuTab = ({ siteId }) => {
   const [aiPhotoItem, setAiPhotoItem] = useState(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  // Per-row regenerate: tracks which menu_item_id + source is currently
+  // in-flight so we can disable the button + show a spinner.
+  const [regenBusy, setRegenBusy] = useState({}); // { [item_id]: 'free' | 'paid' }
+
+  const regenPhoto = async (item, source) => {
+    if (source === 'paid' && !window.confirm(
+      `Regenerate "${item.name}" using paid AI (gpt-image-1)?\n\nCost: ~₹3.50.\n\nThe current photo will be replaced.`
+    )) return;
+    setRegenBusy((b) => ({ ...b, [item.id]: source }));
+    try {
+      const { data } = await axios.post(
+        `${API}/ai/menu-photos/regenerate/${item.id}`,
+        { source },
+        { withCredentials: true, timeout: 90000 },
+      );
+      // Optimistic in-place image swap so the whole table doesn't reload.
+      setItems((cur) => cur.map((it) => (it.id === item.id ? { ...it, image_url: data.image_url } : it)));
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Regenerate failed');
+    } finally {
+      setRegenBusy((b) => {
+        const rest = { ...b };
+        delete rest[item.id];
+        return rest;
+      });
+    }
+  };
 
   const runBulkFill = async () => {
     const missing = items.filter((it) => !it.image_url).length;
@@ -613,14 +640,40 @@ const MenuTab = ({ siteId }) => {
                           ?
                         </div>
                       )}
-                      <button
-                        data-testid={`ai-photo-btn-${it.id}`}
-                        onClick={() => setAiPhotoItem(it)}
-                        className="text-xs text-primary hover:text-primary-hover flex items-center gap-1 underline-offset-2 hover:underline"
-                        title="Generate AI photo"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" /> AI
-                      </button>
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          data-testid={`regen-free-btn-${it.id}`}
+                          onClick={() => regenPhoto(it, 'free')}
+                          disabled={!!regenBusy[it.id]}
+                          className="text-[11px] text-emerald-700 hover:text-emerald-900 flex items-center gap-1 disabled:opacity-50"
+                          title={it.image_url ? 'Regenerate this photo from free sources (Unsplash + Pollinations)' : 'Fetch a free photo for this item'}
+                        >
+                          {regenBusy[it.id] === 'free'
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Sparkles className="h-3 w-3" />}
+                          {it.image_url ? 'Regen (free)' : 'Free'}
+                        </button>
+                        <button
+                          data-testid={`regen-paid-btn-${it.id}`}
+                          onClick={() => regenPhoto(it, 'paid')}
+                          disabled={!!regenBusy[it.id]}
+                          className="text-[11px] text-violet-700 hover:text-violet-900 flex items-center gap-1 disabled:opacity-50"
+                          title="Regenerate using paid AI (gpt-image-1, ~₹3.5)"
+                        >
+                          {regenBusy[it.id] === 'paid'
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Sparkles className="h-3 w-3" />}
+                          {it.image_url ? 'Regen (AI)' : 'AI (₹3.5)'}
+                        </button>
+                        <button
+                          data-testid={`ai-photo-btn-${it.id}`}
+                          onClick={() => setAiPhotoItem(it)}
+                          className="text-[11px] text-primary hover:text-primary-hover flex items-center gap-1 underline-offset-2 hover:underline"
+                          title="Open AI photo picker (choose from 3 variants)"
+                        >
+                          <Sparkles className="h-3 w-3" /> Pick…
+                        </button>
+                      </div>
                     </div>
                   </td>
                   <td className="py-3">

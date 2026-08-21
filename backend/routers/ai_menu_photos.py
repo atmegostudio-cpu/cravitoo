@@ -64,6 +64,10 @@ class BulkFillRequest(BaseModel):
     source: str = Field("paid", description="'paid' → gpt-image-1 (₹3.5/item). 'free' → Unsplash + Pollinations (₹0).")
 
 
+class MenuPhotoRegenerateRequest(BaseModel):
+    source: str = Field("free", description="'free' → Unsplash + Pollinations (₹0). 'paid' → gpt-image-1 (~₹3.5).")
+
+
 class MenuPhotoFreeRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: Optional[str] = Field(default=None, max_length=300)
@@ -454,6 +458,57 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
             "source": "free" if is_free else "paid",
             "estimated_cost_inr": round(filled * per_item_cost, 1),
             "dry_run": False,
+        }
+
+    @r.post("/ai/menu-photos/regenerate/{menu_item_id}")
+    async def regenerate_menu_photo(
+        menu_item_id: str,
+        body: MenuPhotoRegenerateRequest,
+        user: dict = Depends(get_current_user),
+    ):
+        """Swap the current photo on a single menu item.
+
+        The most common use case: a Free bulk-fill produced a mediocre
+        photo and Master Admin wants to upgrade just that one row to a
+        paid AI photo. Pass ``source="paid"`` to force gpt-image-1;
+        pass ``source="free"`` to retry Unsplash + Pollinations (useful
+        when the first free fetch pulled a bad match).
+
+        Overwrites ``image_url`` unconditionally — it's the *regenerate*
+        endpoint, not *fill only if missing*.
+        """
+        if user.get("role") != "master_admin":
+            raise HTTPException(status_code=403, detail="Only Master Admin can regenerate menu photos.")
+
+        item = await db.menu_items.find_one({"_id": safe_objectid(menu_item_id, "Menu item")})
+        if not item:
+            raise HTTPException(status_code=404, detail="Menu item not found")
+
+        is_free = (body.source or "free").lower() == "free"
+        if is_free:
+            result = await _bulk_fill_one_free(item, user["email"])
+        else:
+            image_gen = _load_image_gen_or_raise()
+            result = await _bulk_fill_one(image_gen, item, user["email"])
+
+        if not result["ok"]:
+            raise HTTPException(status_code=502, detail=result.get("error") or "Photo generation failed")
+
+        await db.ai_image_generations.insert_one({
+            "user_id": user["id"], "user_email": user["email"], "user_role": user["role"],
+            "operation": "regenerate",
+            "menu_item_id": menu_item_id,
+            "menu_item_name": item.get("name"),
+            "source": "free" if is_free else "paid",
+            "cost_inr": 0.0 if is_free else COST_PER_IMAGE_INR,
+            "created_at": datetime.now(timezone.utc),
+        })
+
+        return {
+            "menu_item_id": menu_item_id,
+            "image_url": result["image_url"],
+            "source": "free" if is_free else "paid",
+            "cost_inr": 0.0 if is_free else COST_PER_IMAGE_INR,
         }
 
     return r
