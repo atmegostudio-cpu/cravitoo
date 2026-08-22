@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import axios from 'axios';
 import { Upload, Trash2, Sparkles, Loader2, ImageIcon } from 'lucide-react';
 import logger from '../lib/logger';
+import ImageCropperModal from './ImageCropperModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -39,26 +40,19 @@ export const MenuImageUploader = ({
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(null); // 'upload' | 'remove' | 'generate' | null
   const [err, setErr] = useState('');
+  // Raw file selected by the user, waiting for crop confirmation.
+  const [pendingFile, setPendingFile] = useState(null);
 
   const endpointBase = target.type === 'draft'
     ? `${API}/onboarding/vendors/${target.onboardingId}/menu/${target.itemId}/image`
     : `${API}/menu/${target.itemId}/image`;
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErr('Image must be under 5 MB.');
-      return;
-    }
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      setErr('Only PNG, JPG or WEBP allowed.');
-      return;
-    }
+  const doUpload = async (blob) => {
     setBusy('upload'); setErr('');
     try {
       const form = new FormData();
-      form.append('file', file);
+      const name = blob.name || `menu-${Date.now()}.jpg`;
+      form.append('file', blob, name);
       const { data } = await axios.post(endpointBase, form, {
         withCredentials: true,
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -70,8 +64,29 @@ export const MenuImageUploader = ({
       setErr(e.response?.data?.detail || 'Upload failed.');
     } finally {
       setBusy(null);
-      if (fileRef.current) fileRef.current.value = '';
     }
+  };
+
+  const handlePickFile = (e) => {
+    const file = e.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = '';   // reset so same-file re-pick fires change
+    if (!file) return;
+    setErr('');
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('Image must be under 5 MB.');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setErr('Only PNG, JPG or WEBP allowed.');
+      return;
+    }
+    // Open the crop dialog. On confirm we'll POST the cropped Blob.
+    setPendingFile(file);
+  };
+
+  const handleCropConfirm = async (blob) => {
+    setPendingFile(null);
+    await doUpload(blob);
   };
 
   const handleRemove = async () => {
@@ -109,6 +124,15 @@ export const MenuImageUploader = ({
     : 'w-full h-40 rounded-xl object-cover border border-border-light';
 
   return (
+    <>
+    {pendingFile && (
+      <ImageCropperModal
+        file={pendingFile}
+        onConfirm={handleCropConfirm}
+        onCancel={() => setPendingFile(null)}
+        testIdPrefix={`${target.itemId || 'new'}-`}
+      />
+    )}
     <div className={compact ? 'flex items-center gap-2' : 'space-y-2'} data-testid={`menu-image-uploader-${target.itemId || 'new'}`}>
       {imageUrl ? (
         <img
@@ -131,7 +155,7 @@ export const MenuImageUploader = ({
           ref={fileRef}
           type="file"
           accept="image/png,image/jpeg,image/webp"
-          onChange={handleUpload}
+          onChange={handlePickFile}
           className="hidden"
           data-testid={`menu-image-file-${target.itemId || 'new'}`}
         />
@@ -180,6 +204,7 @@ export const MenuImageUploader = ({
         </p>
       )}
     </div>
+    </>
   );
 };
 

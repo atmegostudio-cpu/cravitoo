@@ -9,6 +9,8 @@
 import React, { useRef, useState } from 'react';
 import axios from 'axios';
 import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon, ImageOff, ShieldAlert } from 'lucide-react';
+import logger from '../../lib/logger';
+import ImageCropperModal from '../../components/ImageCropperModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
@@ -156,33 +158,36 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
   const [aiBusyId, setAiBusyId] = useState(null);
   const uploadFileRef = useRef(null);
   const [uploadItemId, setUploadItemId] = useState(null);
+  const [pendingCropFile, setPendingCropFile] = useState(null);   // raw file awaiting crop
 
   const triggerUpload = (it) => {
     if (aiBusyId) return;
     setUploadItemId(it.item_id);
-    // Give React one tick so the input mounts with the target itemId,
-    // then programmatically click it. Avoids race where the ref is null.
     setTimeout(() => uploadFileRef.current?.click(), 0);
   };
 
-  const handleUploadChosen = async (e) => {
+  const handleUploadChosen = (e) => {
     const file = e.target.files?.[0];
-    e.target.value = '';                     // reset so same-file re-upload fires change
+    e.target.value = '';
     if (!file || !uploadItemId) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image must be under 5 MB.');
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB.'); return; }
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       alert('Only PNG, JPG or WEBP allowed.');
       return;
     }
-    setAiBusyId(uploadItemId);
+    setPendingCropFile(file);  // open the cropper — actual upload runs in onConfirm
+  };
+
+  const handleCropConfirmed = async (blob) => {
+    if (!uploadItemId) { setPendingCropFile(null); return; }
+    const itemId = uploadItemId;
+    setPendingCropFile(null);
+    setAiBusyId(itemId);
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', blob, 'menu.jpg');
       await axios.post(
-        `${API}/onboarding/vendors/${onbId}/menu/${uploadItemId}/image`,
+        `${API}/onboarding/vendors/${onbId}/menu/${itemId}/image`,
         form,
         {
           withCredentials: true,
@@ -319,6 +324,14 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
 
   return (
     <div className="space-y-6" data-testid="menu-tab-container">
+      {pendingCropFile && (
+        <ImageCropperModal
+          file={pendingCropFile}
+          onConfirm={handleCropConfirmed}
+          onCancel={() => { setPendingCropFile(null); setUploadItemId(null); }}
+          testIdPrefix="menutab-"
+        />
+      )}
       {/* Hidden file input drives the per-row Upload button (see triggerUpload) */}
       <input
         ref={uploadFileRef}

@@ -5,6 +5,7 @@ import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2 } from 'lucide-react';
 import logger from '../../lib/logger';
+import ImageCropperModal from '../../components/ImageCropperModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -438,6 +439,7 @@ const MenuTab = ({ siteId }) => {
   const [regenBusy, setRegenBusy] = useState({}); // { [item_id]: 'free' | 'paid' | 'upload' | 'remove' }
   const menuUploadFileRef = useRef(null);
   const [menuUploadItemId, setMenuUploadItemId] = useState(null);
+  const [pendingCropFile, setPendingCropFile] = useState(null);
 
   const triggerMenuImageUpload = (item) => {
     if (regenBusy[item.id]) return;
@@ -445,7 +447,7 @@ const MenuTab = ({ siteId }) => {
     setTimeout(() => menuUploadFileRef.current?.click(), 0);
   };
 
-  const handleMenuImageChosen = async (e) => {
+  const handleMenuImageChosen = (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !menuUploadItemId) return;
@@ -454,11 +456,17 @@ const MenuTab = ({ siteId }) => {
       alert('Only PNG, JPG or WEBP.');
       return;
     }
+    setPendingCropFile(file);
+  };
+
+  const handleMenuCropConfirmed = async (blob) => {
+    if (!menuUploadItemId) { setPendingCropFile(null); return; }
     const itemId = menuUploadItemId;
+    setPendingCropFile(null);
     setRegenBusy((b) => ({ ...b, [itemId]: 'upload' }));
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', blob, 'menu.jpg');
       const { data } = await axios.post(
         `${API}/menu/${itemId}/image`,
         form,
@@ -610,6 +618,14 @@ const MenuTab = ({ siteId }) => {
 
   return (
     <div className="space-y-6">
+      {pendingCropFile && (
+        <ImageCropperModal
+          file={pendingCropFile}
+          onConfirm={handleMenuCropConfirmed}
+          onCancel={() => { setPendingCropFile(null); setMenuUploadItemId(null); }}
+          testIdPrefix="sitemenu-"
+        />
+      )}
       {/* Hidden file input for per-row image upload */}
       <input
         ref={menuUploadFileRef}

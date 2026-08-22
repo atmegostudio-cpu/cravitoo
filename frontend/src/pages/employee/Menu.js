@@ -479,7 +479,22 @@ const EmployeeMenu = () => {
                     }`}
                   >
                     {item.image_url && (
-                      <img src={item.image_url} alt={item.name} className="w-full h-40 sm:h-48 object-cover" />
+                      <div className="relative">
+                        <img src={item.image_url} alt={item.name} className="w-full h-40 sm:h-48 object-cover" loading="lazy" />
+                        {item.image_source === 'vendor_upload' && (
+                          <div
+                            data-testid={`vendor-photo-credit-${item.id}`}
+                            className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none"
+                            style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                              <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            <span>Photo by {getCurrentVendor()?.name || 'vendor'}</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="p-4 sm:p-6">
                       <div className="flex justify-between items-start mb-2 gap-2">

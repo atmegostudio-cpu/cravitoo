@@ -1227,7 +1227,7 @@ async def create_menu_item(data: MenuItemCreate, user: dict = Depends(get_curren
 
 @api_router.get("/menu/{vendor_id}")
 async def get_menu(vendor_id: str):
-    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1}).to_list(1000)
+    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1, "image_source": 1}).to_list(1000)
     for item in menu_items:
         item["id"] = str(item.pop("_id"))
         if "allergens" not in item or item["allergens"] is None:
