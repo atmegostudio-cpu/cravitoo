@@ -714,39 +714,19 @@ const MenuTab = ({ siteId }) => {
                           {regenBusy[it.id] === 'upload'
                             ? <Loader2 className="h-3 w-3 animate-spin" />
                             : <Upload className="h-3 w-3" />}
-                          {it.image_url ? 'Upload' : 'Upload'}
+                          Upload
                         </button>
                         <button
                           data-testid={`regen-free-btn-${it.id}`}
                           onClick={() => regenPhoto(it, 'free')}
                           disabled={!!regenBusy[it.id]}
                           className="text-[11px] text-emerald-700 hover:text-emerald-900 flex items-center gap-1 disabled:opacity-50"
-                          title={it.image_url ? 'Regenerate this photo from free sources (Unsplash + Pollinations)' : 'Fetch a free photo for this item'}
+                          title={it.image_url ? 'Regenerate this photo automatically' : 'Auto-generate a photo based on the item name'}
                         >
                           {regenBusy[it.id] === 'free'
                             ? <Loader2 className="h-3 w-3 animate-spin" />
                             : <Sparkles className="h-3 w-3" />}
-                          {it.image_url ? 'Regen (free)' : 'Free'}
-                        </button>
-                        <button
-                          data-testid={`regen-paid-btn-${it.id}`}
-                          onClick={() => regenPhoto(it, 'paid')}
-                          disabled={!!regenBusy[it.id]}
-                          className="text-[11px] text-violet-700 hover:text-violet-900 flex items-center gap-1 disabled:opacity-50"
-                          title="Regenerate using paid AI (gpt-image-1, ~₹3.5)"
-                        >
-                          {regenBusy[it.id] === 'paid'
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <Sparkles className="h-3 w-3" />}
-                          {it.image_url ? 'Regen (AI)' : 'AI (₹3.5)'}
-                        </button>
-                        <button
-                          data-testid={`ai-photo-btn-${it.id}`}
-                          onClick={() => setAiPhotoItem(it)}
-                          className="text-[11px] text-primary hover:text-primary-hover flex items-center gap-1 underline-offset-2 hover:underline"
-                          title="Open AI photo picker (choose from 3 variants)"
-                        >
-                          <Sparkles className="h-3 w-3" /> Pick…
+                          {it.image_url ? 'Regenerate' : 'Generate'}
                         </button>
                         {it.image_url && (
                           <button

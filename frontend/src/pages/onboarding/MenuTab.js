@@ -654,16 +654,7 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                             disabled={aiBusyId === it.item_id}
                             data-testid={`menu-free-photo-${it.item_id}`}
                             className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 rounded transition-colors disabled:opacity-40"
-                            title="Auto-generate a free food photo (Unsplash + Pollinations, ₹0)"
-                          >
-                            <ImageIcon className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
-                          </button>
-                          <button
-                            onClick={() => generateAiPhoto(it)}
-                            disabled={aiBusyId === it.item_id}
-                            data-testid={`menu-ai-photo-${it.item_id}`}
-                            className="p-1.5 text-violet-600 hover:text-white hover:bg-violet-600 rounded transition-colors disabled:opacity-40"
-                            title="Generate premium AI photo (~₹3.5)"
+                            title={it.image_url ? 'Regenerate photo automatically' : 'Auto-generate a photo from the item name (free)'}
                           >
                             <Sparkles className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
                           </button>
