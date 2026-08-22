@@ -5,6 +5,7 @@ import Navbar from '../../components/Navbar';
 import { ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import logger from '../../lib/logger';
 import VegIndicator from '../../components/VegIndicator';
+import MenuImageUploader from '../../components/MenuImageUploader';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -203,18 +204,9 @@ const VendorMenu = () => {
                 {item.image_url ? (
                   <img src={item.image_url} alt={item.name} className="w-full h-40 object-cover" />
                 ) : (
-                  <button
-                    type="button"
-                    data-testid={`card-request-photo-${item.id}`}
-                    onClick={() => handleRequestPhoto(item)}
-                    className="w-full h-40 bg-amber-50 border-b border-amber-200 flex flex-col items-center justify-center group hover:bg-amber-100 transition-colors"
-                    title="Request a photo for this item"
-                  >
-                    <ImageIcon className="h-10 w-10 text-amber-500 group-hover:scale-110 transition-transform" />
-                    <span className="mt-2 text-xs font-medium text-amber-700 flex items-center gap-1">
-                      <Camera className="h-3 w-3" /> Request photo
-                    </span>
-                  </button>
+                  <div className="w-full h-40 bg-amber-50 border-b border-amber-200 flex items-center justify-center">
+                    <ImageIcon className="h-10 w-10 text-amber-500" />
+                  </div>
                 )}
                 <div className="p-4">
                   <div className="flex justify-between items-start mb-2">
@@ -225,6 +217,19 @@ const VendorMenu = () => {
                   <div className="flex justify-between items-center mb-3">
                     <p className="font-semibold text-primary text-lg">₹{item.price.toFixed(2)}</p>
                     <span className="text-xs text-text-muted">{item.category}</span>
+                  </div>
+                  {/* Vendor can now attach / replace / remove / auto-generate the photo directly */}
+                  <div className="mb-3 pb-3 border-b border-border-light">
+                    <MenuImageUploader
+                      target={{ type: 'live', itemId: item.id }}
+                      imageUrl={item.image_url}
+                      onChange={(newUrl) => {
+                        setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, image_url: newUrl } : x));
+                      }}
+                      canGenerate
+                      canRemove
+                      compact
+                    />
                   </div>
                   <button
                     onClick={() => toggleAvailability(item)}

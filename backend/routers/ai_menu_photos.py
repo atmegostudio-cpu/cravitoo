@@ -498,20 +498,35 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
         The most common use case: a Free bulk-fill produced a mediocre
         photo and Master Admin wants to upgrade just that one row to a
         paid AI photo. Pass ``source="paid"`` to force gpt-image-1;
-        pass ``source="free"`` to retry Unsplash + Pollinations (useful
-        when the first free fetch pulled a bad match).
+        pass ``source="free"`` to retry Unsplash + Pollinations.
 
+        Auth:
+          - ``master_admin``: any item, any source
+          - ``vendor``: only items they own, FREE source only (paid AI
+            is admin-only for cost control)
         Overwrites ``image_url`` unconditionally — it's the *regenerate*
         endpoint, not *fill only if missing*.
         """
-        if user.get("role") != "master_admin":
-            raise HTTPException(status_code=403, detail="Only Master Admin can regenerate menu photos.")
-
         item = await db.menu_items.find_one({"_id": safe_objectid(menu_item_id, "Menu item")})
         if not item:
             raise HTTPException(status_code=404, detail="Menu item not found")
 
+        role = user.get("role")
+        is_admin = role == "master_admin"
+        is_owning_vendor = role == "vendor" and item.get("vendor_id") == user.get("vendor_id")
+        if not (is_admin or is_owning_vendor):
+            raise HTTPException(status_code=403, detail="Only Master Admin or the owning vendor can regenerate this photo.")
+
         is_free = (body.source or "free").lower() == "free"
+        # Cost control: vendors can only use the FREE source (₹0). Paid
+        # AI generation stays admin-only so a compromised vendor account
+        # can't drain the Emergent LLM budget.
+        if not is_admin and not is_free:
+            raise HTTPException(
+                status_code=403,
+                detail="Vendors can only use the free photo source. Ask Master Admin to run paid AI generation.",
+            )
+
         if is_free:
             result = await _bulk_fill_one_free(item, user["email"])
         else:
@@ -522,7 +537,7 @@ def make_router(db, safe_objectid, get_current_user, UPLOAD_DIR: Path):
             raise HTTPException(status_code=502, detail=result.get("error") or "Photo generation failed")
 
         await db.ai_image_generations.insert_one({
-            "user_id": user["id"], "user_email": user["email"], "user_role": user["role"],
+            "user_id": user["id"], "user_email": user["email"], "user_role": role,
             "operation": "regenerate",
             "menu_item_id": menu_item_id,
             "menu_item_name": item.get("name"),

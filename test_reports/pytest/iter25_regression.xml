@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="7" failures="2" skipped="1" tests="90" time="16.485" timestamp="2026-08-22T06:51:12.729818+00:00" hostname="agent-env-3685d86f-20db-4981-a67a-03d7c1e6d149"><testcase classname="" name="backend.tests.test_allergen_classifier" time="0.000"><skipped message="collection skipped">('/app/backend/tests/test_allergen_classifier.py', 106, 'Skipped: REACT_APP_BACKEND_URL / ADMIN_EMAIL / ADMIN_PASSWORD env vars required for HTTP tests')</skipped></testcase><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Veg Sandwich]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Paneer Masala]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Aloo Paratha]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Chana Masala]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Masala Dosa]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Paneer Tikka Kebab]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Tomato Soup]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_veg_defaults[Fruit Grill Sandwich]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Chicken Biryani]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Egg Bhurji]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Fish Curry]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Mutton Rogan Josh]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Prawn Koliwada]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Chicken 65]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Non-Veg Thali]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[Non Veg Combo]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[nonveg biryani]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_non_veg[NON-VEGETARIAN Special]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_word_boundary_peach_not_prawn" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_default_unknown_is_veg" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_reclassify_batch_counts_changes" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Chicken Corn Soup-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Chicken Mushroom Soup-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Chicken with Palak-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Palak Chicken Curry-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Mutton with Peas-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Chicken Corn and Mushroom Soup-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Chicken Dal-False]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Sweet Corn Soup-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Mushroom Soup-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Palak Paneer-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Corn Chaat-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Paneer Tikka-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Paneer Tikka Kebab-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Aloo Tikki-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_meat_beats_ambiguous_vegetables[Vegetable Fried Rice-True]" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestClassifyVegUnit" name="test_reclassify_batch_only_missing_preserves_manual" time="0.000" /><testcase classname="backend.tests.test_veg_classifier.TestExcelAutoClassify" name="test_missing_column_auto_classifies" time="0.517" /><testcase classname="backend.tests.test_veg_classifier.TestExcelAutoClassify" name="test_explicit_column_honoured" time="0.209" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyOnboarding" name="test_reclassify_flips_wrong_flags" time="0.400" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyOnboarding" name="test_reclassify_noop_when_already_correct" time="0.203" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyOnboarding" name="test_reclassify_requires_auth" time="0.136" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyOnboarding" name="test_reclassify_400_when_rejected" time="0.196" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyLiveMenuItems" name="test_master_only" time="0.095" /><testcase classname="backend.tests.test_veg_classifier.TestReclassifyLiveMenuItems" name="test_scope_by_vendor" time="0.040" /><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_unauthenticated_401_or_403" time="0.001"><failure message="requests.exceptions.MissingSchema: Invalid URL '/api/ai/menu-photos/apply': No scheme supplied. Perhaps you meant https:///api/ai/menu-photos/apply?">backend/tests/test_apply_endpoint.py:40: in test_apply_unauthenticated_401_or_403
+    r = requests.post(APPLY, json={"menu_item_id": "000000000000000000000000",
+/root/.venv/lib/python3.11/site-packages/requests/api.py:134: in post
+    return request("post", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/api.py:71: in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/ai/menu-photos/apply': No scheme supplied. Perhaps you meant https:///api/ai/menu-photos/apply?</failure></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_endpoint_is_registered_not_404" time="0.001"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_rejects_legacy_ai_filename_400" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_rejects_path_traversal" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_rejects_bogus_url_scheme" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_requires_url_or_filename" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_valid_url_missing_menu_item_404" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_valid_s_filename_missing_menu_item_404" time="0.000"><error message="failed on setup with &quot;requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?&quot;">backend/tests/test_apply_endpoint.py:33: in admin
+    r = s.post(f"{BASE_URL}/api/auth/login",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/login': No scheme supplied. Perhaps you meant https:///api/auth/login?</error></testcase><testcase classname="backend.tests.test_apply_endpoint" name="test_apply_nonadmin_forbidden" time="0.001"><failure message="requests.exceptions.MissingSchema: Invalid URL '/api/auth/register': No scheme supplied. Perhaps you meant https:///api/auth/register?">backend/tests/test_apply_endpoint.py:102: in test_apply_nonadmin_forbidden
+    r = s.post(f"{BASE_URL}/api/auth/register",
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:712: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:635: in request
+    prep = self.prepare_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:541: in prepare_request
+    p.prepare(
+/root/.venv/lib/python3.11/site-packages/requests/models.py:439: in prepare
+    self.prepare_url(url, params)
+/root/.venv/lib/python3.11/site-packages/requests/models.py:514: in prepare_url
+    raise MissingSchema(
+E   requests.exceptions.MissingSchema: Invalid URL '/api/auth/register': No scheme supplied. Perhaps you meant https:///api/auth/register?</failure></testcase><testcase classname="backend.tests.test_free_menu_photos" name="test_unauthenticated_returns_401" time="0.134" /><testcase classname="backend.tests.test_free_menu_photos" name="test_employee_returns_403" time="0.602" /><testcase classname="backend.tests.test_free_menu_photos" name="test_empty_name_returns_422" time="0.400" /><testcase classname="backend.tests.test_free_menu_photos" name="test_name_too_long_returns_422" time="0.040" /><testcase classname="backend.tests.test_free_menu_photos" name="test_count_over_max_returns_422" time="0.080" /><testcase classname="backend.tests.test_free_menu_photos" name="test_happy_path_returns_image" time="1.033" /><testcase classname="backend.tests.test_free_menu_photos" name="test_free_rows_do_not_inflate_spend" time="0.130" /><testcase classname="backend.tests.test_free_menu_photos" name="test_paid_suggest_endpoint_still_wired" time="0.042" /><testcase classname="backend.tests.test_free_menu_photos" name="test_paid_suggest_endpoint_rejects_employee" time="0.044" /><testcase classname="backend.tests.test_onboarding_menu.TestAddMenuItem" name="test_add_item_ok" time="0.527" /><testcase classname="backend.tests.test_onboarding_menu.TestAddMenuItem" name="test_add_item_price_zero_rejected" time="0.092" /><testcase classname="backend.tests.test_onboarding_menu.TestAddMenuItem" name="test_add_item_negative_price_rejected" time="0.086" /><testcase classname="backend.tests.test_onboarding_menu.TestAddMenuItem" name="test_add_item_missing_name_rejected" time="0.165" /><testcase classname="backend.tests.test_onboarding_menu.TestAddMenuItem" name="test_add_item_unknown_meal_period_silently_filtered" time="0.085" /><testcase classname="backend.tests.test_onboarding_menu.TestPatchMenuItem" name="test_patch_updates_fields" time="0.213" /><testcase classname="backend.tests.test_onboarding_menu.TestPatchMenuItem" name="test_patch_zero_price_rejected" time="0.208" /><testcase classname="backend.tests.test_onboarding_menu.TestPatchMenuItem" name="test_patch_unknown_item_404" time="0.089" /><testcase classname="backend.tests.test_onboarding_menu.TestDeleteMenuItem" name="test_delete_ok_and_checklist_flip" time="0.422" /><testcase classname="backend.tests.test_onboarding_menu.TestDeleteMenuItem" name="test_delete_unknown_404" time="0.125" /><testcase classname="backend.tests.test_onboarding_menu.TestExcelUpload" name="test_upload_replaces_draft" time="0.215" /><testcase classname="backend.tests.test_onboarding_menu.TestExcelUpload" name="test_upload_rejects_bad_extension" time="0.084" /><testcase classname="backend.tests.test_onboarding_menu.TestExcelUpload" name="test_upload_missing_columns" time="0.093" /><testcase classname="backend.tests.test_onboarding_menu.TestStatusGuard" name="test_menu_add_rejected_when_rejected" time="0.404" /><testcase classname="backend.tests.test_onboarding_menu.TestMasterApprovalMaterialisation" name="test_menu_items_created_on_approval" time="0.953" /><testcase classname="backend.tests.test_storage_upload.TestHealthAndStartup" name="test_health_ok" time="0.161" /><testcase classname="backend.tests.test_storage_upload.TestObjectStorageUpload" name="test_pdf_upload_returns_encoded_url" time="0.826" /><testcase classname="backend.tests.test_storage_upload.TestObjectStorageUpload" name="test_pdf_download_bytes_roundtrip" time="0.210" /><testcase classname="backend.tests.test_storage_upload.TestObjectStorageUpload" name="test_persistence_across_backend_restart" time="4.611" /><testcase classname="backend.tests.test_storage_upload.TestObjectStorageUpload" name="test_png_upload_and_download" time="0.410" /><testcase classname="backend.tests.test_storage_upload.TestValidation" name="test_too_large_rejected" time="0.353" /><testcase classname="backend.tests.test_storage_upload.TestValidation" name="test_bad_extension_rejected" time="0.040" /><testcase classname="backend.tests.test_storage_upload.TestValidation" name="test_invalid_s_token_returns_404" time="0.095" /><testcase classname="backend.tests.test_storage_upload.TestValidation" name="test_legacy_filename_missing_returns_friendly_404" time="0.118" /><testcase classname="backend.tests.test_storage_upload.TestDeleteSoftDelete" name="test_delete_removes_db_entry_only" time="0.527" /><testcase classname="backend.tests.test_storage_upload.TestAccessControl" name="test_unauthenticated_upload_denied" time="0.371" /></testsuite></testsuites>

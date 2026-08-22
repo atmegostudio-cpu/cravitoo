@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
@@ -435,7 +435,61 @@ const MenuTab = ({ siteId }) => {
   const [bulkResult, setBulkResult] = useState(null);
   // Per-row regenerate: tracks which menu_item_id + source is currently
   // in-flight so we can disable the button + show a spinner.
-  const [regenBusy, setRegenBusy] = useState({}); // { [item_id]: 'free' | 'paid' }
+  const [regenBusy, setRegenBusy] = useState({}); // { [item_id]: 'free' | 'paid' | 'upload' | 'remove' }
+  const menuUploadFileRef = useRef(null);
+  const [menuUploadItemId, setMenuUploadItemId] = useState(null);
+
+  const triggerMenuImageUpload = (item) => {
+    if (regenBusy[item.id]) return;
+    setMenuUploadItemId(item.id);
+    setTimeout(() => menuUploadFileRef.current?.click(), 0);
+  };
+
+  const handleMenuImageChosen = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !menuUploadItemId) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB.'); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      alert('Only PNG, JPG or WEBP.');
+      return;
+    }
+    const itemId = menuUploadItemId;
+    setRegenBusy((b) => ({ ...b, [itemId]: 'upload' }));
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { data } = await axios.post(
+        `${API}/menu/${itemId}/image`,
+        form,
+        {
+          withCredentials: true,
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 60000,
+        },
+      );
+      setItems((cur) => cur.map((it) => (it.id === itemId ? { ...it, image_url: data.image_url } : it)));
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Upload failed');
+    } finally {
+      setRegenBusy((b) => { const rest = { ...b }; delete rest[itemId]; return rest; });
+      setMenuUploadItemId(null);
+    }
+  };
+
+  const removeMenuPhoto = async (item) => {
+    if (regenBusy[item.id]) return;
+    if (!window.confirm(`Remove the photo on "${item.name}"?`)) return;
+    setRegenBusy((b) => ({ ...b, [item.id]: 'remove' }));
+    try {
+      await axios.delete(`${API}/menu/${item.id}/image`, { withCredentials: true });
+      setItems((cur) => cur.map((it) => (it.id === item.id ? { ...it, image_url: null } : it)));
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Remove failed');
+    } finally {
+      setRegenBusy((b) => { const rest = { ...b }; delete rest[item.id]; return rest; });
+    }
+  };
 
   const regenPhoto = async (item, source) => {
     if (source === 'paid' && !window.confirm(
@@ -556,6 +610,15 @@ const MenuTab = ({ siteId }) => {
 
   return (
     <div className="space-y-6">
+      {/* Hidden file input for per-row image upload */}
+      <input
+        ref={menuUploadFileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={handleMenuImageChosen}
+        className="hidden"
+        data-testid="site-menu-upload-input"
+      />
       <div className="bg-card border border-border-light rounded-2xl p-6">
         <h3 className="font-heading text-xl font-medium mb-3 flex items-center gap-2">
           <FileSpreadsheet className="h-5 w-5 text-primary" /> Upload Menu via Excel
@@ -642,6 +705,18 @@ const MenuTab = ({ siteId }) => {
                       )}
                       <div className="flex flex-col gap-0.5">
                         <button
+                          data-testid={`upload-photo-btn-${it.id}`}
+                          onClick={() => triggerMenuImageUpload(it)}
+                          disabled={!!regenBusy[it.id]}
+                          className="text-[11px] text-sky-700 hover:text-sky-900 flex items-center gap-1 disabled:opacity-50"
+                          title={it.image_url ? 'Upload a new photo from your device' : 'Upload a photo from your device'}
+                        >
+                          {regenBusy[it.id] === 'upload'
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Upload className="h-3 w-3" />}
+                          {it.image_url ? 'Upload' : 'Upload'}
+                        </button>
+                        <button
                           data-testid={`regen-free-btn-${it.id}`}
                           onClick={() => regenPhoto(it, 'free')}
                           disabled={!!regenBusy[it.id]}
@@ -673,6 +748,20 @@ const MenuTab = ({ siteId }) => {
                         >
                           <Sparkles className="h-3 w-3" /> Pick…
                         </button>
+                        {it.image_url && (
+                          <button
+                            data-testid={`remove-photo-btn-${it.id}`}
+                            onClick={() => removeMenuPhoto(it)}
+                            disabled={!!regenBusy[it.id]}
+                            className="text-[11px] text-red-700 hover:text-red-900 flex items-center gap-1 disabled:opacity-50"
+                            title="Remove the current photo"
+                          >
+                            {regenBusy[it.id] === 'remove'
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : <Trash2 className="h-3 w-3" />}
+                            Remove
+                          </button>
+                        )}
                       </div>
                     </div>
                   </td>

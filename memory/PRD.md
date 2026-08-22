@@ -3,6 +3,24 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — Menu-Item Image Feature: Upload / Preview / Replace / Remove / AI Generate (COMPLETED)
+
+- **Vendor + Master Admin** can now upload a JPG/PNG/WEBP photo (≤5MB) for any menu item via new backend endpoints:
+  - `POST /api/menu/{item_id}/image` — live menu items. Auth: `master_admin` OR the owning vendor.
+  - `DELETE /api/menu/{item_id}/image` — same auth.
+  - `POST /api/onboarding/vendors/{onb_id}/menu/{item_id}/image` — draft menu items during onboarding.
+  - `DELETE /api/onboarding/vendors/{onb_id}/menu/{item_id}/image` — same scope.
+- **Ownership guard** — new helper `_load_menu_item_with_ownership_check` returns the item iff master admin or matching `vendor_id`. 404 (missing) precedes 403 (forbidden) per REST norms.
+- **AI Generate one-click** — extended `POST /api/ai/menu-photos/regenerate/{id}` so vendors can trigger free-source generation on their own items. Paid AI (`source=paid`) remains admin-only to protect the Emergent LLM budget from vendor-account abuse.
+- **File pipeline** — all uploads land in Emergent Object Storage under `cravitoo/menu-photos-manual/{live,draft}/`. Storage returns an `s_`-prefixed base64 token URL that the existing `/api/uploads/{fname}` route serves back.
+- **Frontend surfaces**:
+  - **Vendor Panel** (`/vendor/menu`) — new `MenuImageUploader` component replaces the "Request Photo" button. Compact mode gives upload / auto-generate / remove + preview inline on every card.
+  - **Onboarding Menu Tab** (`/onboarding/{id}/menu`) — added Upload icon button next to Free / AI / Edit / Delete in the row toolbar + Remove-Photo button that appears only when an image is set. Hidden file input drives the flow with a 5MB size cap + PNG/JPG/WEBP MIME gate.
+  - **Master Site Detail** (`/master/sites/{id}` Menu tab) — added Upload + Remove alongside existing Regen (free) / Regen (AI) / Pick per row.
+- **Auto-propagation** — Employee app `GET /api/menu/{vendor_id}` returns the new `image_url` immediately; no code change needed on the reader side (already returns `image_url` field).
+- **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
+- **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
+
 ## Feb 2026 — Code Review Fixes: 3 HIGH-severity defects (COMPLETED)
 
 ### P0-1: AI Photo Apply endpoint saved a broken image URL

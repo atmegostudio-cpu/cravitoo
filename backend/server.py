@@ -1833,6 +1833,98 @@ async def delete_menu_item(item_id: str, user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Menu item not found")
     return {"message": "Menu item deleted"}
 
+
+async def _load_menu_item_with_ownership_check(item_id: str, user: dict) -> dict:
+    """Return the menu_item doc iff ``user`` is allowed to mutate its photo.
+
+    Allowed:
+        - master_admin: any item
+        - vendor: only items where ``vendor_id`` matches user.vendor_id
+    Any other role → 403. Missing item → 404.
+    """
+    item = await db.menu_items.find_one({"_id": safe_objectid(item_id, "Menu item")})
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    if user["role"] == "master_admin":
+        return item
+    if user["role"] == "vendor" and item.get("vendor_id") == user.get("vendor_id"):
+        return item
+    raise HTTPException(status_code=403, detail="Only the owning vendor or Master Admin can edit this photo.")
+
+
+@api_router.post("/menu/{item_id}/image")
+async def upload_menu_item_image(
+    item_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Upload / replace the photo on a **live** menu item.
+
+    Auth: master_admin OR the vendor that owns the item. Accepts
+    PNG / JPG / JPEG / WEBP up to 5 MB. Stores in Emergent Object
+    Storage under ``cravitoo/menu-photos-manual/live/``.
+
+    On replacement the previous ``image_url`` is overwritten — we don't
+    GC the old blob (cheap, and a small audit history is useful).
+    """
+    item = await _load_menu_item_with_ownership_check(item_id, user)
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower()[:5]
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        raise HTTPException(status_code=400, detail="Allowed image types: PNG, JPG, JPEG, WEBP")
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}[ext]
+
+    from storage import put_object, path_to_url
+    from starlette.concurrency import run_in_threadpool
+    storage_path = f"cravitoo/menu-photos-manual/live/{item_id}_{uuid.uuid4().hex}.{ext}"
+    try:
+        result = await run_in_threadpool(put_object, storage_path, content, mime)
+    except Exception as e:
+        logger.error(f"Object storage put failed for live menu photo: {e}")
+        raise HTTPException(status_code=503, detail="Storage temporarily unavailable, please retry")
+
+    url = path_to_url(result["path"])
+    await db.menu_items.update_one(
+        {"_id": item["_id"]},
+        {"$set": {
+            "image_url": url,
+            "image_source": "vendor_upload" if user["role"] == "vendor" else "admin_upload",
+            "image_updated_at": datetime.now(timezone.utc),
+            "image_updated_by": user["email"],
+        }},
+    )
+    await audit_log(user, "menu_items", item_id, "uploaded_photo", {"size": len(content)})
+    return {"menu_item_id": item_id, "image_url": url, "size": len(content)}
+
+
+@api_router.delete("/menu/{item_id}/image")
+async def clear_menu_item_image(
+    item_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Remove the photo from a live menu item (sets ``image_url = None``).
+
+    Auth: master_admin OR the item's owning vendor. The stored blob is
+    left in place — cheap, and lets the operator inspect audit history
+    if needed.
+    """
+    item = await _load_menu_item_with_ownership_check(item_id, user)
+    await db.menu_items.update_one(
+        {"_id": item["_id"]},
+        {"$set": {
+            "image_url": None,
+            "image_source": None,
+            "image_updated_at": datetime.now(timezone.utc),
+            "image_updated_by": user["email"],
+        }},
+    )
+    await audit_log(user, "menu_items", item_id, "removed_photo", {})
+    return {"menu_item_id": item_id, "image_url": None}
+
+
 @api_router.get("/menu/vendor/all")
 async def get_my_menu(user: dict = Depends(get_current_user)):
     # Vendors see their own menu (read-only). Master_admin can pass vendor_id (handled by /menu/{vendor_id}).

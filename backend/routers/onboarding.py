@@ -417,6 +417,79 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                             {"changed": changed, "total": len(updated), "overwrite": overwrite})
         return {"changed": changed, "total": len(updated)}
 
+    @r.post("/onboarding/vendors/{onb_id}/menu/{item_id}/image")
+    async def upload_draft_menu_image(
+        onb_id: str,
+        item_id: str,
+        file: UploadFile = File(...),
+        user: dict = Depends(get_current_user),
+    ):
+        """Upload / replace a photo on a single draft-menu row.
+
+        Same auth model as the rest of ``menu`` — master, city and site
+        admin can attach; the frontend simply POSTs the file. On
+        replacement, the previous image_url is overwritten (we don't
+        garbage-collect the old object because Emergent Object Storage
+        deduplicates by content hash).
+        """
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        target = next((i for i, m in enumerate(draft) if m.get("item_id") == item_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Menu item not found in draft menu")
+
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+        ext = (file.filename or "img").rsplit(".", 1)[-1].lower()[:5]
+        if ext not in ("png", "jpg", "jpeg", "webp"):
+            raise HTTPException(status_code=400, detail="Allowed image types: PNG, JPG, JPEG, WEBP")
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}[ext]
+
+        storage_path = f"cravitoo/menu-photos-manual/{onb_id}/{item_id}_{uuid.uuid4().hex}.{ext}"
+        try:
+            from starlette.concurrency import run_in_threadpool
+            result = await run_in_threadpool(put_object, storage_path, content, mime)
+        except Exception as e:
+            logger.error(f"Object storage put failed for draft menu photo: {e}")
+            raise HTTPException(status_code=503, detail="Storage temporarily unavailable, please retry")
+
+        url = path_to_url(result["path"])
+        image_source = "vendor_upload" if user.get("role") == "vendor" else "admin_upload"
+        draft[target] = {**draft[target], "image_url": url, "image_source": image_source}
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {"draft_menu": draft, "updated_at": datetime.now(timezone.utc)}},
+        )
+        await audit_log(user, "vendor_onboarding", onb_id, "uploaded_menu_photo",
+                        {"item_id": item_id, "size": len(content)})
+        return {"item": draft[target], "image_url": url, "size": len(content)}
+
+    @r.delete("/onboarding/vendors/{onb_id}/menu/{item_id}/image")
+    async def clear_draft_menu_image(
+        onb_id: str,
+        item_id: str,
+        user: dict = Depends(get_current_user),
+    ):
+        """Remove the photo attached to a draft menu row (sets ``image_url`` = None).
+
+        The underlying object-storage blob is left in place — cheap
+        (~$0.02/GB/mo) and safe for undo history / audit trails.
+        """
+        o = await _load_editable_onboarding(db, safe_objectid, onb_id, user)
+        draft = list(o.get("draft_menu", []))
+        target = next((i for i, m in enumerate(draft) if m.get("item_id") == item_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Menu item not found in draft menu")
+        draft[target] = {**draft[target], "image_url": None, "image_source": None}
+        await db.vendor_onboarding.update_one(
+            {"_id": o["_id"]},
+            {"$set": {"draft_menu": draft, "updated_at": datetime.now(timezone.utc)}},
+        )
+        await audit_log(user, "vendor_onboarding", onb_id, "removed_menu_photo",
+                        {"item_id": item_id})
+        return {"item": draft[target], "image_url": None}
+
     @r.delete("/onboarding/vendors/{onb_id}/menu/{item_id}")
     async def onboarding_menu_delete(
         onb_id: str,

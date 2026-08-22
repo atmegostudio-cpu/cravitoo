@@ -6,9 +6,9 @@
  * the backend materialises every row here into the live `menu_items`
  * collection, bound to the newly-created vendor and their site.
  */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import axios from 'axios';
-import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon, ShieldAlert } from 'lucide-react';
+import { Upload, Plus, Pencil, Trash2, Save, X, Utensils, AlertCircle, Sparkles, Leaf, ImageIcon, ImageOff, ShieldAlert } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const MEAL_PERIODS = ['breakfast', 'lunch', 'snacks', 'dinner'];
@@ -154,6 +154,67 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
   };
 
   const [aiBusyId, setAiBusyId] = useState(null);
+  const uploadFileRef = useRef(null);
+  const [uploadItemId, setUploadItemId] = useState(null);
+
+  const triggerUpload = (it) => {
+    if (aiBusyId) return;
+    setUploadItemId(it.item_id);
+    // Give React one tick so the input mounts with the target itemId,
+    // then programmatically click it. Avoids race where the ref is null.
+    setTimeout(() => uploadFileRef.current?.click(), 0);
+  };
+
+  const handleUploadChosen = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';                     // reset so same-file re-upload fires change
+    if (!file || !uploadItemId) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be under 5 MB.');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      alert('Only PNG, JPG or WEBP allowed.');
+      return;
+    }
+    setAiBusyId(uploadItemId);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      await axios.post(
+        `${API}/onboarding/vendors/${onbId}/menu/${uploadItemId}/image`,
+        form,
+        {
+          withCredentials: true,
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 60000,
+        },
+      );
+      await reload();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Upload failed.');
+    } finally {
+      setAiBusyId(null);
+      setUploadItemId(null);
+    }
+  };
+
+  const removePhoto = async (it) => {
+    if (aiBusyId) return;
+    if (!window.confirm(`Remove the photo on "${it.name}"?`)) return;
+    setAiBusyId(it.item_id);
+    try {
+      await axios.delete(
+        `${API}/onboarding/vendors/${onbId}/menu/${it.item_id}/image`,
+        { withCredentials: true },
+      );
+      await reload();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Remove failed.');
+    } finally {
+      setAiBusyId(null);
+    }
+  };
 
   const generateFreePhoto = async (it) => {
     if (aiBusyId) return;
@@ -258,6 +319,15 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
 
   return (
     <div className="space-y-6" data-testid="menu-tab-container">
+      {/* Hidden file input drives the per-row Upload button (see triggerUpload) */}
+      <input
+        ref={uploadFileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={handleUploadChosen}
+        className="hidden"
+        data-testid="menu-tab-upload-input"
+      />
       {/* Banner */}
       <div className="bg-primary-light border border-primary/30 rounded-2xl p-4 flex items-start gap-3">
         <Utensils className="h-5 w-5 text-primary mt-0.5" />
@@ -561,13 +631,30 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                     </td>
                     {canEdit && (
                       <td className="px-4 py-3">
-                        <div className="flex gap-1 justify-end">
+                        <div className="flex gap-1 justify-end items-center">
+                          {it.image_url && (
+                            <img
+                              src={it.image_url}
+                              alt={it.name}
+                              className="w-10 h-10 rounded object-cover border border-border-light mr-1"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          )}
+                          <button
+                            onClick={() => triggerUpload(it)}
+                            disabled={aiBusyId === it.item_id}
+                            data-testid={`menu-upload-photo-${it.item_id}`}
+                            className="p-1.5 text-sky-600 hover:text-white hover:bg-sky-600 rounded transition-colors disabled:opacity-40"
+                            title={it.image_url ? 'Replace uploaded photo' : 'Upload a photo from your device'}
+                          >
+                            <Upload className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
+                          </button>
                           <button
                             onClick={() => generateFreePhoto(it)}
                             disabled={aiBusyId === it.item_id}
                             data-testid={`menu-free-photo-${it.item_id}`}
                             className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 rounded transition-colors disabled:opacity-40"
-                            title="Free real photo (Unsplash + Pollinations, ₹0)"
+                            title="Auto-generate a free food photo (Unsplash + Pollinations, ₹0)"
                           >
                             <ImageIcon className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
                           </button>
@@ -576,10 +663,21 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                             disabled={aiBusyId === it.item_id}
                             data-testid={`menu-ai-photo-${it.item_id}`}
                             className="p-1.5 text-violet-600 hover:text-white hover:bg-violet-600 rounded transition-colors disabled:opacity-40"
-                            title="Generate AI photo (≈ ₹3.5)"
+                            title="Generate premium AI photo (~₹3.5)"
                           >
                             <Sparkles className={`h-4 w-4 ${aiBusyId === it.item_id ? 'animate-pulse' : ''}`} />
                           </button>
+                          {it.image_url && (
+                            <button
+                              onClick={() => removePhoto(it)}
+                              disabled={aiBusyId === it.item_id}
+                              data-testid={`menu-remove-photo-${it.item_id}`}
+                              className="p-1.5 text-amber-600 hover:text-white hover:bg-amber-600 rounded transition-colors disabled:opacity-40"
+                              title="Remove photo"
+                            >
+                              <ImageOff className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => openEdit(it)}
                             data-testid={`menu-edit-${it.item_id}`}

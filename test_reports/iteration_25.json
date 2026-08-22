@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 25 — Backend regression for Menu-Item-Image feature (POST/DELETE /api/menu/{id}/image, POST/DELETE /api/onboarding/vendors/{onb}/menu/{item}/image, /ai/menu-photos/regenerate vendor-RBAC). Wrote 21 new tests in test_menu_image_upload.py covering: master upload OK (image_url starts with /api/uploads/s_), owning-vendor upload OK, non-owning-vendor 403, employee 403, unauth 401, >5MB payload 400, bad extension (.txt) 400, unknown item 404, DELETE mirror cases, GET /api/menu/{vendor_id} propagation, all draft-menu upload/clear cases, and regenerate RBAC (non-owning vendor 403, owning vendor+paid 403 with 'master admin' in detail, employee 403, unknown item 404). Scratch vendors seeded directly into Mongo with bcrypt-hashed passwords (login endpoint lowercases email → emails inserted lowercase). Full regression: test_veg_classifier (44), test_allergen_classifier (20), test_apply_endpoint (9, 1 skip corp-register), test_free_menu_photos (9), test_onboarding_menu (15), test_storage_upload (11), test_ai_photos_and_agreement (12), test_ai_photo_spend (2) — all green. Total 143 passed / 1 skipped / 0 failed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_menu_image_upload.py",
+    "/app/test_reports/pytest/iter25_menu_image.xml",
+    "/app/test_reports/pytest/iter25_all.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py _load_menu_item_with_ownership_check is a clean single-source-of-truth for both upload and delete — master_admin OR vendor-with-matching-vendor_id. 404 (missing item) precedes 403 which is standard REST practice.",
+    "5MB size cap uses len(await file.read()) — this holds the full payload in memory before rejecting. Acceptable at 5MB max but worth flagging: at scale (many concurrent uploads) memory could spike. Consider streaming with UploadFile.spool_max_size for future-proofing.",
+    "Extension whitelist is on file.filename suffix only, not MIME sniffing — a malicious client can rename evil.exe to evil.png and it passes. Storage layer (put_object) is content-agnostic so blast radius is limited to bandwidth waste + a broken <img>. Low priority but noting.",
+    "onboarding.py upload_draft_menu_image sets image_source='vendor_upload' unconditionally even when the actor is master/city/site admin — cosmetic bug (audit trail says vendor for admin uploads). Suggest mirroring server.py logic: 'vendor_upload' iff role=='vendor', else 'admin_upload'. Non-blocking; no functional impact.",
+    "ai_menu_photos.regenerate_menu_photo — vendor RBAC + paid gate order is correct: ownership check first, then paid restriction (`is_admin and is_free` check). Delivers the exact 403 detail messages expected by the spec ('owning vendor' vs 'Ask Master Admin').",
+    "GET /api/menu/{vendor_id} returns the new image_url without any code change (verified in TestVendorMenuFeed) — Employee app pickup is automatic.",
+    "MINOR (non-blocking): Storage GC — replaced blobs are intentionally NOT deleted from Object Storage. Comment in code says '~$0.02/GB/mo, worth it for audit'. Long-term, a cron sweeper for orphaned menu photos older than N days would keep costs bounded."
+  ],
+  "updated_files": ["/app/backend/tests/test_menu_image_upload.py"],
+  "success_rate": {"backend": "100% (143/143 executed; 1 env-limited skip)", "frontend": "N/A — backend only per request"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin)",
+  "seed_data_creation": "test_menu_image_upload.py inserts scratch vendor-a, vendor-b, employee users + 2 menu items via Mongo (bcrypt Test1234!), and creates a scratch onboarding row via /api/onboarding/vendors. All cleaned up in module teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-25 Menu-Item-Image endpoints (POST/DELETE /api/menu/{id}/image, onboarding draft variant, regenerate vendor RBAC) verified with 21 dedicated tests + full regression (143 total pass). Frontend components MenuImageUploader.js, vendor/Menu.js, onboarding/MenuTab.js, master/SiteDetail.js were NOT tested (backend-only request). If frontend testing is later requested: (1) verify the file input accepts JPG/PNG only, (2) preview shows before save, (3) Remove clears image, (4) Generate Image calls /regenerate?source=free for vendors and works with paid for master. Non-blocking code-review nit: onboarding.upload_draft_menu_image always stamps image_source='vendor_upload' even for master/city/site admin uploads — should conditionally set 'admin_upload' to keep audit trail accurate.",
+  "rca of the issue": "N/A — no regressions or bugs. All feature-under-test assertions passed."
+}
