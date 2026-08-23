@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Package } from 'lucide-react';
+import { Package, ScanLine } from 'lucide-react';
 import logger from '../../lib/logger';
+import CollectionScanner from '../../components/CollectionScanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const VendorOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -34,6 +36,26 @@ const VendorOrders = () => {
     }
   };
 
+  const markPaid = async (orderId, method) => {
+    if (!window.confirm(`Confirm payment received via ${method === 'cash' ? 'Cash' : 'Physical QR'}?`)) return;
+    try {
+      await axios.post(`${API}/orders/${orderId}/mark-paid`, { method }, { withCredentials: true });
+      fetchOrders();
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Could not mark paid');
+    }
+  };
+
+  const markCollected = async (orderId) => {
+    if (!window.confirm('Mark this order as collected by the customer?')) return;
+    try {
+      await axios.patch(`${API}/orders/${orderId}?status=collected`, {}, { withCredentials: true });
+      fetchOrders();
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Could not mark collected');
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -50,9 +72,24 @@ const VendorOrders = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-5xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-8">
-            Order Management
-          </h1>
+          <div className="flex items-start justify-between flex-wrap gap-4 mb-8">
+            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+              Order Management
+            </h1>
+            <button
+              data-testid="open-scanner-btn"
+              onClick={() => setScannerOpen(true)}
+              className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-3 rounded-2xl font-semibold shadow-lg shadow-primary/30 transition-all"
+            >
+              <ScanLine className="h-5 w-5" /> Scan & Collect
+            </button>
+          </div>
+
+          <CollectionScanner
+            open={scannerOpen}
+            onClose={() => setScannerOpen(false)}
+            onSuccess={() => fetchOrders()}
+          />
 
           {orders.length === 0 ? (
             <div data-testid="no-vendor-orders" className="bg-card border border-border-light rounded-xl p-12 text-center">
@@ -65,17 +102,31 @@ const VendorOrders = () => {
                 <div key={order.id} data-testid={`vendor-order-detail-${order.id}`} className="bg-card border border-border-light rounded-xl p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="font-heading text-lg font-medium text-text-primary mb-2">Order #{order.id.slice(-8)}</h3>
+                      <h3 className="font-heading text-lg font-medium text-text-primary mb-1">Order #{order.id.slice(-8)}</h3>
+                      {order.collection_code && (
+                        <p className="text-xs font-mono font-bold text-primary mb-1" data-testid={`vendor-collection-code-${order.id}`}>
+                          {order.collection_code}
+                        </p>
+                      )}
                       <p className="text-text-secondary text-sm">{new Date(order.created_at).toLocaleString()}</p>
                     </div>
-                    <p className="font-heading text-xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>
+                    <div className="text-right">
+                      <p className="font-heading text-xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-medium ${
+                        order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {order.payment_status === 'paid'
+                          ? `Paid · ${order.payment_method === 'cash' ? 'Cash' : order.payment_method === 'physical_qr' ? 'QR' : ''}`
+                          : 'Payment Pending'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mb-4">
                     <p className="text-sm font-medium text-text-primary mb-2">Items: {order.items.length}</p>
                   </div>
 
-                  <div className="flex space-x-3">
+                  <div className="flex flex-wrap gap-2">
                     {order.status === 'pending' && (
                       <button
                         onClick={() => updateStatus(order.id, 'confirmed')}
@@ -102,6 +153,33 @@ const VendorOrders = () => {
                       >
                         Mark Ready
                       </button>
+                    )}
+                    {order.status === 'ready' && (
+                      <button
+                        onClick={() => markCollected(order.id)}
+                        data-testid={`collect-order-${order.id}`}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                      >
+                        Mark Collected
+                      </button>
+                    )}
+                    {order.payment_status !== 'paid' && order.status !== 'cancelled' && (
+                      <>
+                        <button
+                          onClick={() => markPaid(order.id, 'cash')}
+                          data-testid={`mark-paid-cash-${order.id}`}
+                          className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                        >
+                          💵 Paid (Cash)
+                        </button>
+                        <button
+                          onClick={() => markPaid(order.id, 'physical_qr')}
+                          data-testid={`mark-paid-qr-${order.id}`}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                        >
+                          📱 Paid (QR)
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

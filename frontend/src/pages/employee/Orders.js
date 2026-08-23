@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Package, Clock, CheckCircle, QrCode, Star, XCircle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -153,6 +154,32 @@ const EmployeeOrders = () => {
                       </span>
                     </div>
                   </div>
+
+                  {order.collection_code && order.status !== 'collected' && order.status !== 'cancelled' && (
+                    <div
+                      data-testid={`collection-code-${order.id}`}
+                      className="mt-3 p-4 bg-primary/5 border border-primary/30 rounded-xl flex items-center gap-4"
+                    >
+                      <QRCodeSVG
+                        value={order.collection_code}
+                        size={72}
+                        level="M"
+                        includeMargin={false}
+                        className="bg-white p-1 rounded"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-text-secondary uppercase tracking-wide">Show at counter</p>
+                        <p className="font-mono text-xl font-bold text-primary tracking-tight" data-testid={`collection-code-text-${order.id}`}>
+                          {order.collection_code}
+                        </p>
+                        {order.payment_status !== 'paid' && (
+                          <p className="text-xs text-amber-700 mt-1">
+                            💰 Pay at counter — Cash or QR
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="border-t border-border-light pt-4">
                     <p className="text-sm font-medium text-text-primary mb-2">Items:</p>

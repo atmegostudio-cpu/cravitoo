@@ -271,15 +271,25 @@ const EmployeeMenu = () => {
       const allVendorIds = Object.keys(cartByVendor);
       if (allVendorIds.length === 0) return;
 
-      // Lazy-load Razorpay ONCE, before we start creating orders.
-      const scriptOk = await loadRazorpayScript();
-      if (!scriptOk) {
-        alert('Could not load the payment gateway. Please check your internet and try again.');
-        return;
-      }
-
       const paidVendors = [];
+      const offlineCodes = [];  // {code, vendorName, amount}
       const failures = [];
+
+      // Fetch payment mode ONCE — if OFFLINE, skip Razorpay entirely.
+      let paymentMode = 'OFFLINE';
+      try {
+        const { data } = await axios.get(`${API}/config/payment-mode`, { withCredentials: true });
+        paymentMode = (data.mode || 'OFFLINE').toUpperCase();
+      } catch (_) { paymentMode = 'OFFLINE'; }
+
+      // Only load Razorpay if we're actually going to use it.
+      if (paymentMode === 'RAZORPAY') {
+        const scriptOk = await loadRazorpayScript();
+        if (!scriptOk) {
+          alert('Could not load the payment gateway. Please check your internet and try again.');
+          return;
+        }
+      }
 
       for (const vId of allVendorIds) {
         const vendorCart = cartByVendor[vId];
@@ -296,6 +306,17 @@ const EmployeeMenu = () => {
           };
           const { data: created } = await axios.post(`${API}/orders`, orderData, { withCredentials: true });
           orderId = created.id;
+
+          if (paymentMode === 'OFFLINE') {
+            // No Razorpay flow — order is confirmed as pending payment.
+            offlineCodes.push({
+              code: created.collection_code,
+              vendorName: vendorCart.vendor?.name || 'Vendor',
+              amount: (vendorCart.items || []).reduce((s, it) => s + it.price * it.quantity, 0),
+            });
+            paidVendors.push(vId);
+            continue;
+          }
 
           const { data: rzpOrder } = await axios.post(
             `${API}/payments/razorpay/create-order`,
@@ -341,6 +362,15 @@ const EmployeeMenu = () => {
       setCartSheetOpen(false);
 
       if (failures.length === 0 && paidVendors.length > 0) {
+        if (offlineCodes.length > 0) {
+          // Show a confirmation dialog with every collection code, then
+          // route to Orders where the user sees full details + QR.
+          const codeList = offlineCodes.map(o => `  • ${o.vendorName}: ${o.code}  (₹${o.amount.toFixed(2)})`).join('\n');
+          alert(
+            `Order confirmed. Pay at the counter.\n\n` +
+            `Show these Collection Codes to the vendor:\n\n${codeList}`
+          );
+        }
         window.location.href = '/employee/orders';
       } else if (paidVendors.length > 0) {
         const failedLabels = failures.map((f) => f.label).join(', ');

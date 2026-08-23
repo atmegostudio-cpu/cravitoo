@@ -8,6 +8,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from fastapi.responses import JSONResponse, FileResponse
 import re
 import uuid
+import random
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
@@ -1281,6 +1282,14 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
         "total_amount": total_amount,
         "status": "pending",
         "payment_status": "pending",
+        # `collection_code` is the short human-readable ID the vendor
+        # reads out at the counter ("Order CRV-102045 ready"). Kept
+        # separate from Mongo _id so it can be regenerated / rotated
+        # without breaking foreign references. 6-digit random keeps
+        # collision odds at 1 in a million per active order.
+        "collection_code": f"CRV-{random.randint(100000, 999999)}",
+        "payment_mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper(),
+        "payment_method": None,   # set to 'cash' / 'physical_qr' when vendor collects
         "delivery_type": data.delivery_type,
         "special_instructions": data.special_instructions,
         "created_at": datetime.now(timezone.utc)
@@ -1388,7 +1397,164 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     except Exception as e:
         logger.error(f"Low-stock check failed: {e}")
 
-    return {"id": order_id, "total_amount": total_amount, "status": final_status, "pickup_qr": qr_code}
+    return {
+        "id": order_id,
+        "total_amount": total_amount,
+        "status": final_status,
+        "pickup_qr": qr_code,
+        "collection_code": order_doc["collection_code"],
+        "payment_mode": order_doc["payment_mode"],
+        "payment_status": order_doc["payment_status"],
+    }
+
+
+# ─── Offline payment mode (Feb 2026) ─────────────────────────────────
+@api_router.get("/config/payment-mode")
+async def get_payment_mode():
+    """Public config probe: tells the frontend whether to send the
+    customer to Razorpay or straight to a collection-code screen.
+
+    Values: ``OFFLINE`` (cash / physical QR collected at counter) or
+    ``RAZORPAY`` (online). Controlled via the ``PAYMENT_MODE`` env
+    var — flipping this + a backend restart is the only step needed to
+    switch modes later.
+    """
+    return {"mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper()}
+
+
+class _MarkPaidBody(BaseModel):
+    method: str = Field(pattern="^(cash|physical_qr)$")
+
+
+@api_router.post("/orders/{order_id}/mark-paid")
+async def mark_order_paid(order_id: str, body: _MarkPaidBody, user: dict = Depends(get_current_user)):
+    """Vendor / site_admin / master_admin marks an offline order paid.
+
+    Records the collection method separately from order status so the
+    admin reconciliation dashboard can slice by cash vs physical-QR.
+    Idempotent — re-calling on an already-paid order 409s so double-
+    collect attempts are caught.
+    """
+    if user["role"] not in ("vendor", "site_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Only vendor / site admin / master admin can mark paid")
+    order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order")})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] == "vendor" and order.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="Not your order")
+    if order.get("payment_status") == "paid":
+        raise HTTPException(status_code=409, detail="Order is already marked paid")
+
+    await db.orders.update_one(
+        {"_id": order["_id"]},
+        {"$set": {
+            "payment_status": "paid",
+            "payment_method": body.method,
+            "paid_at": datetime.now(timezone.utc),
+            "paid_by": user["email"],
+        }},
+    )
+    return {"order_id": order_id, "payment_status": "paid", "payment_method": body.method}
+
+
+@api_router.post("/orders/collect/{collection_code}")
+async def scan_collect(collection_code: str, body: _MarkPaidBody, user: dict = Depends(get_current_user)):
+    """One-tap collect flow — vendor scans the employee's QR at the
+    counter and picks Cash or Physical QR. In a single call:
+
+      1. Looks up the order by ``collection_code`` (indexed).
+      2. Verifies the vendor owns the order (403 if not).
+      3. Sets ``payment_status: paid`` + ``payment_method``.
+      4. Bumps ``status`` to ``collected``.
+
+    Rejects if the collection code doesn't exist or the order is
+    already collected — makes double-scan safe.
+    """
+    if user["role"] not in ("vendor", "site_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Only vendor / site admin / master admin can collect")
+    code = collection_code.strip().upper()
+    order = await db.orders.find_one({"collection_code": code})
+    if not order:
+        raise HTTPException(status_code=404, detail=f"No order found with code {code}")
+    if user["role"] == "vendor" and order.get("vendor_id") != user.get("vendor_id"):
+        raise HTTPException(status_code=403, detail="This order belongs to a different vendor")
+    if order.get("status") == "collected":
+        raise HTTPException(status_code=409, detail="Order already collected")
+
+    now = datetime.now(timezone.utc)
+    await db.orders.update_one(
+        {"_id": order["_id"]},
+        {"$set": {
+            "payment_status": "paid",
+            "payment_method": body.method,
+            "paid_at": now,
+            "paid_by": user["email"],
+            "status": "collected",
+            "collected_at": now,
+        }},
+    )
+    return {
+        "order_id": str(order["_id"]),
+        "collection_code": code,
+        "payment_status": "paid",
+        "payment_method": body.method,
+        "status": "collected",
+    }
+
+
+@api_router.get("/admin/orders/reconciliation")
+async def orders_reconciliation(user: dict = Depends(get_current_user)):
+    """Bucketed counts + rupee totals for admin reconciliation.
+
+    Buckets: total, pending, cash, physical_qr, paid, unpaid,
+    ready_for_collection, collected, cancelled. Every bucket returns
+    ``{count, amount}`` so admins can see both volume and value.
+    """
+    if user["role"] not in ("site_admin", "master_admin"):
+        raise HTTPException(status_code=403, detail="Only site admin / master admin")
+
+    pipeline = [
+        {"$group": {
+            "_id": None,
+            "total_count":  {"$sum": 1},
+            "total_amount": {"$sum": "$total_amount"},
+            "pending_count":  {"$sum": {"$cond": [{"$eq": ["$payment_status", "pending"]}, 1, 0]}},
+            "pending_amount": {"$sum": {"$cond": [{"$eq": ["$payment_status", "pending"]}, "$total_amount", 0]}},
+            "cash_count":  {"$sum": {"$cond": [{"$eq": ["$payment_method", "cash"]}, 1, 0]}},
+            "cash_amount": {"$sum": {"$cond": [{"$eq": ["$payment_method", "cash"]}, "$total_amount", 0]}},
+            "qr_count":  {"$sum": {"$cond": [{"$eq": ["$payment_method", "physical_qr"]}, 1, 0]}},
+            "qr_amount": {"$sum": {"$cond": [{"$eq": ["$payment_method", "physical_qr"]}, "$total_amount", 0]}},
+            "paid_count":  {"$sum": {"$cond": [{"$eq": ["$payment_status", "paid"]}, 1, 0]}},
+            "paid_amount": {"$sum": {"$cond": [{"$eq": ["$payment_status", "paid"]}, "$total_amount", 0]}},
+            "ready_count":  {"$sum": {"$cond": [{"$eq": ["$status", "ready_for_collection"]}, 1, 0]}},
+            "collected_count":  {"$sum": {"$cond": [{"$eq": ["$status", "collected"]}, 1, 0]}},
+            "cancelled_count":  {"$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}},
+        }},
+    ]
+    agg = await db.orders.aggregate(pipeline).to_list(1)
+    if not agg:
+        return {"buckets": {k: {"count": 0, "amount": 0} for k in [
+            "total", "pending", "cash", "physical_qr", "paid", "unpaid",
+            "ready_for_collection", "collected", "cancelled",
+        ]}, "payment_mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper()}
+    r = agg[0]
+    total = r["total_count"]
+    paid = r["paid_count"]
+    return {
+        "buckets": {
+            "total":                {"count": total,                "amount": round(r["total_amount"], 2)},
+            "pending":              {"count": r["pending_count"],   "amount": round(r["pending_amount"], 2)},
+            "cash":                 {"count": r["cash_count"],      "amount": round(r["cash_amount"], 2)},
+            "physical_qr":          {"count": r["qr_count"],        "amount": round(r["qr_amount"], 2)},
+            "paid":                 {"count": paid,                 "amount": round(r["paid_amount"], 2)},
+            "unpaid":               {"count": total - paid,         "amount": round(r["total_amount"] - r["paid_amount"], 2)},
+            "ready_for_collection": {"count": r["ready_count"],     "amount": 0},
+            "collected":            {"count": r["collected_count"], "amount": 0},
+            "cancelled":            {"count": r["cancelled_count"], "amount": 0},
+        },
+        "payment_mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper(),
+    }
+# ────────────────────────────────────────────────────────────────────
 
 @api_router.get("/orders")
 async def get_orders(user: dict = Depends(get_current_user)):
@@ -1398,7 +1564,7 @@ async def get_orders(user: dict = Depends(get_current_user)):
     elif user["role"] == "vendor":
         query["vendor_id"] = user.get("vendor_id")
     
-    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1}).sort("created_at", -1).to_list(1000)
+    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
     for order in orders:
         order["id"] = str(order.pop("_id"))
     return orders

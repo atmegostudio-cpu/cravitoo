@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2, Sparkles } from 'lucide-react';
+import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2, Sparkles, Wallet, ScanLine, Clock, CheckCircle2, XCircle, PackageCheck } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -12,6 +12,7 @@ const MasterDashboard = () => {
   const [charts, setCharts] = useState(null);
   const [leaderboard, setLeaderboard] = useState(null);
   const [aiSpend, setAiSpend] = useState(null);
+  const [reconciliation, setReconciliation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sendingReport, setSendingReport] = useState(false);
   const [reportMessage, setReportMessage] = useState('');
@@ -94,16 +95,18 @@ const MasterDashboard = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [d, c, lb, ai] = await Promise.all([
+        const [d, c, lb, ai, rc] = await Promise.all([
           axios.get(`${API}/reports/master-dashboard`, { withCredentials: true }),
           axios.get(`${API}/reports/charts?days=14`, { withCredentials: true }),
           axios.get(`${API}/reports/city-leaderboard?days=30`, { withCredentials: true }),
           axios.get(`${API}/admin/ai-photos/spend`, { withCredentials: true }).catch(() => null),
+          axios.get(`${API}/admin/orders/reconciliation`, { withCredentials: true }).catch(() => null),
         ]);
         setData(d.data);
         setCharts(c.data);
         setLeaderboard(lb.data);
         if (ai) setAiSpend(ai.data);
+        if (rc) setReconciliation(rc.data);
       } catch (e) {
         logger.error(e);
       } finally {
@@ -331,6 +334,10 @@ const MasterDashboard = () => {
             })}
           </div>
 
+          {reconciliation && (
+            <OrderReconciliation data={reconciliation} />
+          )}
+
           {charts && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <RevenueChart data={charts.daily_revenue} />
@@ -392,6 +399,82 @@ const MasterDashboard = () => {
 };
 
 // ============== CHART COMPONENTS ==============
+
+const OrderReconciliation = ({ data }) => {
+  const b = data?.buckets || {};
+  const mode = data?.payment_mode || 'OFFLINE';
+  const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+  const paymentBuckets = [
+    { key: 'total',       label: 'Total Orders',    bucket: b.total,       icon: ShoppingBag,   accent: 'text-slate-700',   ring: 'ring-slate-200',   bg: 'bg-slate-50' },
+    { key: 'pending',     label: 'Pending Payment', bucket: b.pending,     icon: Clock,         accent: 'text-amber-700',   ring: 'ring-amber-200',   bg: 'bg-amber-50' },
+    { key: 'paid',        label: 'Paid',            bucket: b.paid,        icon: CheckCircle2,  accent: 'text-emerald-700', ring: 'ring-emerald-200', bg: 'bg-emerald-50' },
+    { key: 'unpaid',      label: 'Unpaid',          bucket: b.unpaid,      icon: XCircle,       accent: 'text-red-700',     ring: 'ring-red-200',     bg: 'bg-red-50' },
+    { key: 'cash',        label: 'Cash',            bucket: b.cash,        icon: Wallet,        accent: 'text-yellow-700',  ring: 'ring-yellow-200',  bg: 'bg-yellow-50' },
+    { key: 'physical_qr', label: 'Physical QR',     bucket: b.physical_qr, icon: ScanLine,      accent: 'text-indigo-700',  ring: 'ring-indigo-200',  bg: 'bg-indigo-50' },
+  ];
+
+  const statusBuckets = [
+    { key: 'ready_for_collection', label: 'Ready',     bucket: b.ready_for_collection, icon: PackageCheck, tone: 'bg-primary-light text-primary' },
+    { key: 'collected',            label: 'Collected', bucket: b.collected,            icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'cancelled',            label: 'Cancelled', bucket: b.cancelled,            icon: XCircle,      tone: 'bg-red-100 text-red-700' },
+  ];
+
+  return (
+    <div className="bg-card border border-border-light rounded-2xl p-6 mb-6" data-testid="order-reconciliation-card">
+      <div className="flex items-start justify-between mb-5 flex-wrap gap-2">
+        <div>
+          <h2 className="font-heading text-xl font-medium text-text-primary flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-primary" /> Order Reconciliation
+          </h2>
+          <p className="text-xs text-text-muted mt-0.5">
+            Bucketed view of every order — cross-check counter cash and QR takings at end of day.
+          </p>
+        </div>
+        <span
+          data-testid="payment-mode-badge"
+          className={`text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full ${mode === 'OFFLINE' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}
+        >
+          Mode · {mode}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {paymentBuckets.map(({ key, label, bucket, icon: Icon, accent, ring, bg }) => (
+          <div
+            key={key}
+            data-testid={`recon-bucket-${key}`}
+            className={`rounded-xl p-4 ring-1 ${ring} ${bg}`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Icon className={`h-4 w-4 ${accent}`} />
+              <span className={`text-[11px] font-semibold uppercase tracking-wider ${accent}`}>{label}</span>
+            </div>
+            <p className="font-heading text-2xl font-semibold text-text-primary leading-none">{bucket?.count || 0}</p>
+            <p className={`text-xs ${accent} mt-1 font-medium`}>{fmt(bucket?.amount)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 pt-4 border-t border-border-light">
+        <p className="text-xs uppercase tracking-wider text-text-muted mb-2 font-semibold">Fulfilment status</p>
+        <div className="flex flex-wrap gap-2">
+          {statusBuckets.map(({ key, label, bucket, icon: Icon, tone }) => (
+            <div
+              key={key}
+              data-testid={`recon-status-${key}`}
+              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm ${tone}`}
+            >
+              <Icon className="h-4 w-4" />
+              <span className="font-medium">{label}</span>
+              <span className="font-heading font-semibold">{bucket?.count || 0}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const RevenueChart = ({ data }) => {
   if (!data || data.length === 0) {

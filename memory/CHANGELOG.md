@@ -1,3 +1,10 @@
+## Feb 2026 — OFFLINE Payment Mode: UI Complete + Projection Fix
+- **P0 fix**: `GET /api/orders` projection at `server.py:1567` now returns `collection_code`, `payment_mode`, `payment_method`, `paid_at`. Unblocks employee/vendor UIs that render the CRV-XXXXXX collection code and payment method badge from the list endpoint. Regression test in `test_offline_payment_mode.py::TestOrderListNewFields` now passes (iter-26 → iter-27).
+- **Master Admin Order Reconciliation card** (`Dashboard.js` → `OrderReconciliation` subcomponent): fetches `GET /api/admin/orders/reconciliation`, renders 6 payment buckets (total, pending, paid, unpaid, cash, physical_qr) with count + ₹ amount, 3 fulfilment pills (ready, collected, cancelled) with count, and a `MODE · OFFLINE/RAZORPAY` badge. Test IDs `order-reconciliation-card`, `payment-mode-badge`, `recon-bucket-{key}`, `recon-status-{key}`.
+- **Vendor Scan & Collect** (`vendor/Orders.js` + new `components/CollectionScanner.js`): `open-scanner-btn` opens a modal wrapping `html5-qrcode`. Scan phase uses rear camera → decode `CRV-XXXXXX` → confirm phase → pick Cash or Physical QR → `POST /api/orders/collect/{code}` in a single tap. Falls back to a manual-entry input (`scanner-manual-toggle`) when camera is unavailable. Success / error panels with retry.
+- **Backend regression**: Extended `test_offline_payment_mode.py` with `TestVendorCollectHappyPath` — real vendor account (Mongo-seeded, cleaned in teardown), happy-path collect returns 200 + `{paid, cash, collected}`, double-collect 409, non-owning vendor 403, unknown code 404. 24/24 pytest passing.
+
+
 ## Feb 2026 — Reset App to Blank State
 - Backend: `POST /api/admin/reset-to-blank?confirm=I_UNDERSTAND_THIS_DELETES_EVERYTHING&keep_domain=cravitoo.com` (master_admin only). Wipes 20 collections after copying every row into `_reset_backup_<ts>` for rollback. Preserves admin login + 1 signup domain. Returns rollback command in response.
 - Backend: `GET /api/admin/reset-preview` (master_admin only, read-only) — returns counts per collection.

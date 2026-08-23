@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 27: retested OFFLINE payment mode after main-agent fix on GET /api/orders projection (server.py:1567) and added vendor-owning happy path for /orders/collect/{code}. Also completed frontend coverage that iteration 26 skipped: Master Reconciliation card + Vendor Scan & Collect scanner (manual-entry flow, camera path is not reachable in headless). Result: 24/24 backend tests passing, all frontend testids present and wired to backend. No new bugs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/orders/reconciliation", "issue": "ready_for_collection / collected / cancelled buckets still hard-code amount=0 (server.py L1551-1553). Cosmetic — spec required counts, but inconsistent with the six payment buckets. Carried over from iter-26."},
+      {"endpoint": "POST /api/orders", "issue": "collection_code has no unique index and no collision retry on generation. Fine at current volume, worth adding a partial unique index for future safety. Carried over from iter-26."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_offline_payment_mode.py",
+    "/app/test_reports/pytest/offline_payment_mode.xml"
+  ],
+  "backend_verification": {
+    "pytest_total": 24,
+    "pytest_passed": 24,
+    "new_cases_added": [
+      "TestVendorCollectHappyPath::test_non_owning_vendor_403",
+      "TestVendorCollectHappyPath::test_unknown_code_404",
+      "TestVendorCollectHappyPath::test_owning_vendor_collect_200 (payment_status=paid, payment_method=cash, status=collected)",
+      "TestVendorCollectHappyPath::test_double_collect_409"
+    ],
+    "regression_fixed": "TestOrderListNewFields::test_order_list_projection_exposes_collection_code — was failing in iter-26, now passes after server.py:1567 projection now includes collection_code, payment_mode, payment_method, paid_at."
+  },
+  "frontend_verification": {
+    "master_reconciliation_card": {
+      "data-testid=order-reconciliation-card": "present",
+      "data-testid=payment-mode-badge": "renders 'Mode · OFFLINE'",
+      "recon-bucket-{total,pending,paid,unpaid,cash,physical_qr}": "all 6 present with count + ₹ amount (e.g. Total 6 ₹600, Paid 6 ₹600)",
+      "recon-status-{ready_for_collection,collected,cancelled}": "all 3 pills present with counts",
+      "note": "Dashboard route is /master/dashboard (not /master). AppRoutes root redirect '/master' -> '/master/dashboard' would be nicer; currently /master shows 'No routes matched location /master' warning in console, but the auto-post-login redirect lands on /master/dashboard so real users never hit /master."
+    },
+    "vendor_scanner_flow": {
+      "open-scanner-btn": "present, opens modal",
+      "collection-scanner-modal": "opens with default scan phase",
+      "scanner-manual-toggle -> scanner-manual-input -> scanner-manual-continue": "all wired; typing CRV-TEST99 then continue advances to confirm phase",
+      "scanner-confirm-panel + scanner-detected-code": "shows entered code",
+      "scanner-method-cash / scanner-method-qr": "both selectable",
+      "scanner-confirm-btn": "on click POSTs /api/orders/collect/{code}; on 404 shows scanner-error-panel with backend message 'No order found with code CRV-TEST99' — integration verified.",
+      "note": "Happy-path scanner-success-panel not exercised via UI because we did not create a real order matching the seeded vendor's vendor_id (would require menu/site scaffolding). Backend happy path is fully covered by pytest suite. Camera flow (html5-qrcode) not reachable in headless — manual-entry fallback is the documented automated path."
+    }
+  },
+  "critical_code_review_comments": [
+    "server.py L1567 fix is correct — projection now includes collection_code, payment_mode, payment_method, paid_at plus pickup_qr. Projection test now passes.",
+    "server.py L1479 vendor ownership check on /orders/collect works: seeded non-owning vendor correctly received 403; owning vendor 200; second call 409. Non-string comparison (str(ObjectId) vs stored str) worked because user.vendor_id is stored as str in the throw-away doc, matching order.vendor_id. Prod path: create_order stores vendor_id as str, so this is consistent.",
+    "Dashboard.js: '/master' has no matching route (console warns 'No routes matched location /master'); consider adding a root redirect to /master/dashboard so deep-links to /master don't blank-screen.",
+    "CollectionScanner.js integration surface is clean: all 3 phases (scan/confirm/success/error) have distinct data-testid roots and are wired to /api/orders/collect/{code}.",
+    "Reconciliation card in Dashboard.js correctly consumes both new response shape ({buckets, payment_mode}) and renders every requested testid. amount for status pills is intentionally omitted in UI, matching backend which returns amount=0."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_offline_payment_mode.py (added TestVendorCollectHappyPath + vendor_ctx fixture)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% of testable flows (camera scan excluded, requires physical device)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin, only real account). Throw-away vendor user 'test_offline_ui_vendor@example.com / TestPass123!' was seeded via Mongo for the scanner UI check and cleaned up on teardown (both by the pytest teardown_module and an explicit cleanup step). No lingering test data.",
+  "seed_data_creation": "All test data is seeded via direct Mongo inserts, prefix 'test_offline_'. Cleaned in fixture teardown + module teardown + explicit post-run cleanup. Verified 0 residual rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "OFFLINE payment mode is fully green. Next iteration can retire /app/backend/tests/test_offline_payment_mode.py::TestOrderListNewFields once the reconciliation-status-bucket amount aggregation is added (minor issue #1). If the '/master' → '/master/dashboard' root redirect is added, no need to retest it — just verify absence of the 'No routes matched' console warning."
+}

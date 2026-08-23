@@ -1,0 +1,54 @@
+{
+  "summary": "Backend-only testing of the Feb-2026 OFFLINE payment mode. 20 pytest cases covering /config/payment-mode, /orders/{id}/mark-paid, /orders/collect/{code}, /admin/orders/reconciliation, RBAC negatives for employee/unauth, Razorpay route regression, and a projection check on GET /api/orders. 19/20 passed. Found ONE real bug: GET /api/orders projection strips collection_code/payment_mode/payment_method — the frontend Menu.js & Orders.js rely on these to render the QR + collection-code banner, so with the current projection the employee UI cannot display them from the list endpoint. All new endpoints work correctly for the paths we could exercise (public config, admin auth, RBAC 403s, 404 on unknown, 422 on bad method, 409 idempotency path deferred to vendor happy-path). Vendor-owning happy path (mark-paid → 200, double mark-paid → 409, collect → 200, double collect → 409) NOT executed because no vendor account exists post clean-slate (seed_demo permanently disabled per /app/memory/test_credentials.md). Verified via source review: logic is correct (server.py L1438-1502).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/orders",
+        "issue": "Projection at server.py:1567 excludes collection_code, payment_mode, payment_method. Frontend employee views (Menu.js placeOrdersForAllVendors success alert reads collection_code; Orders.js renders QR + banner) cannot see the fields the new OFFLINE flow requires. Fix: add these three keys to the projection dict (or drop the projection entirely and let _id be stringified).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/orders/last",
+        "issue": "Return payload at server.py:3306-3310 only projects vendor_id/items/total_amount. Review request lists it as needing collection_code/payment_mode/payment_method too. If frontend uses /orders/last for reorder QR display, add the fields; if only for reorder-cart, current shape is fine."
+      },
+      {
+        "endpoint": "GET /api/admin/orders/reconciliation",
+        "issue": "ready_for_collection / collected / cancelled buckets always return amount=0 (hard-coded at server.py:1551-1553). Aggregation pipeline doesn't sum $total_amount for these three. Low priority — spec only required count for status-based buckets, but inconsistent with the other 6 buckets that return real amounts."
+      },
+      {
+        "endpoint": "POST /api/orders (create)",
+        "issue": "collection_code uniqueness is not enforced. 1-in-a-million per active order is fine at current volume, but a unique index on collection_code (partial, where status != 'collected') would prevent the collect-endpoint ambiguity. Also no index on collection_code — /orders/collect/{code} does a full collection scan."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_offline_payment_mode.py",
+    "/app/test_reports/pytest/offline_payment_mode.xml"
+  ],
+  "action_items": [
+    "Fix GET /api/orders projection in server.py:1567 to include collection_code, payment_mode, payment_method (blocks frontend QR + banner display for OFFLINE mode).",
+    "(Optional) Include the same three fields in GET /api/orders/last if the reorder screen displays them.",
+    "(Optional) Add MongoDB index on orders.collection_code for the /orders/collect/{code} lookup.",
+    "(Optional) Sum $total_amount for ready_for_collection / collected / cancelled buckets in reconciliation for consistency."
+  ],
+  "critical_code_review_comments": [
+    "server.py L1567: GET /api/orders projection outdated — missing 3 new schema fields; caused the one test failure.",
+    "server.py L1290 collection_code generation uses random.randint without collision retry — 1e-6 collision rate per active order is acceptable for MVP but should be documented / add a unique partial index.",
+    "server.py L1479 vendor-owner check compares order.vendor_id to user.vendor_id — correct. RBAC logic is sound.",
+    "server.py L1445 mark-paid idempotency uses payment_status=='paid' → returns 409 on second call. Correct.",
+    "server.py L1481 collect idempotency checks status=='collected' → 409 on double scan. Correct.",
+    "server.py:1516 aggregation groups the entire orders collection with no per-vendor/per-site filter — master_admin sees global totals which is fine, but a site_admin sees the same global totals (should probably be scoped to user.assigned_sites). Flag for product review.",
+    "PAYMENT_MODE env read on every request instead of at module load — negligible overhead, but note that flipping the env var requires backend restart (spec says this is by design)."
+  ],
+  "updated_files": ["/app/backend/tests/test_offline_payment_mode.py"],
+  "success_rate": {"backend": "95% (19/20)", "frontend": "not tested"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master_admin, only surviving account after Feb-2026 clean slate). Seeded throw-away employee via direct Mongo insert (email regex ^test_offline_) — cleaned up in teardown_module.",
+  "seed_data_creation": "Test creates a throw-away employee user directly in Mongo (password_hash via bcrypt) for RBAC tests and inserts one dummy order document to verify the /orders list projection. Both are removed on teardown.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Vendor-side happy-path (mark-paid 200, collect 200, non-owning vendor 403, double-paid 409, double-collect 409) is NOT covered because there is no vendor account and creating one requires the vendor onboarding UI. Endpoint logic verified by source review. If a vendor account is later created, extend test_offline_payment_mode.py with fixtures analogous to employee_token but seeding role='vendor' with a vendor_id, then reuse the assertions. All tests are pytest, run via: `pytest /app/backend/tests/test_offline_payment_mode.py -v`. Requires MONGO_URL + DB_NAME env vars loaded from backend/.env.",
+  "rca of the issue": "GET /api/orders explicit projection dict at server.py:1567 was written before the Feb-2026 OFFLINE payment fields were added. When the create_order endpoint was updated to persist collection_code / payment_mode / payment_method, the list projection was not updated in tandem, so the employee list returns the old shape and the frontend cannot render the QR / collection-code banner it needs. Fix: append 'collection_code': 1, 'payment_mode': 1, 'payment_method': 1 to the projection at server.py:1567. Reproduction: login as employee, GET /api/orders → response items lack the three keys (verified in test test_order_list_projection_exposes_collection_code)."
+}

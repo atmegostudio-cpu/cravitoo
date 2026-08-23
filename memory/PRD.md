@@ -3,6 +3,20 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Feb 2026 — OFFLINE Payment Mode (COMPLETED)
+
+- **Toggle**: `PAYMENT_MODE=OFFLINE` in `backend/.env` bypasses Razorpay checkout. Setting `PAYMENT_MODE=RAZORPAY` re-enables the live gateway. `GET /api/config/payment-mode` is the read endpoint the frontend polls.
+- **Collection codes**: every order now stores `collection_code` (`CRV-XXXXXX`), `payment_mode`, `payment_status`, `payment_method`, `paid_at`, `paid_by`. Employee UI renders the code as a QR (`qrcode.react`) for counter presentment.
+- **Vendor actions** (`vendor/Orders.js`):
+  - `POST /api/orders/{id}/mark-paid` — vendor marks Cash or Physical QR after collecting payment (idempotent: 409 on double-tap).
+  - `POST /api/orders/collect/{code}` — one-tap collect: scan the employee's QR → pick method → auto-mark **Paid + Collected** in a single call. Modal component `CollectionScanner.js` wraps `html5-qrcode` and falls back to manual code entry when the camera is unavailable.
+- **Master Admin Reconciliation** (`Dashboard.js` → `OrderReconciliation` card):
+  - `GET /api/admin/orders/reconciliation` returns 9 buckets: total, pending, cash, physical_qr, paid, unpaid, ready_for_collection, collected, cancelled — each `{count, amount}`.
+  - Card displays 6 payment buckets + 3 fulfilment pills + MODE badge. Refresh on page load.
+- **Backend suite**: 24/24 pytest passing in `test_offline_payment_mode.py` covering happy paths, RBAC (403), idempotency (409), 404, and projection.
+- **Known minor items** (deferred): `ready_for_collection / collected / cancelled` buckets hard-code amount=0 (spec required counts only); no unique index on `collection_code` (1e-6 collision at current volume).
+
+
 ## Feb 2026 — Menu-Item Image Feature: Upload / Preview / Replace / Remove / AI Generate (COMPLETED)
 
 - **Vendor + Master Admin** can now upload a JPG/PNG/WEBP photo (≤5MB) for any menu item via new backend endpoints:
