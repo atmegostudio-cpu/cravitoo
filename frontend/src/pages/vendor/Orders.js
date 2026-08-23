@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Package, ScanLine } from 'lucide-react';
+import { Package, ScanLine, Maximize2 } from 'lucide-react';
 import logger from '../../lib/logger';
 import CollectionScanner from '../../components/CollectionScanner';
 
@@ -76,13 +77,23 @@ const VendorOrders = () => {
             <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
               Order Management
             </h1>
-            <button
-              data-testid="open-scanner-btn"
-              onClick={() => setScannerOpen(true)}
-              className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-3 rounded-2xl font-semibold shadow-lg shadow-primary/30 transition-all"
-            >
-              <ScanLine className="h-5 w-5" /> Scan & Collect
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to="/vendor/kiosk"
+                data-testid="enter-kiosk-btn"
+                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-3 rounded-2xl font-semibold shadow-lg transition-all"
+                title="Full-screen counter mode — locks to Scan & Collect"
+              >
+                <Maximize2 className="h-5 w-5" /> Kiosk Mode
+              </Link>
+              <button
+                data-testid="open-scanner-btn"
+                onClick={() => setScannerOpen(true)}
+                className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-3 rounded-2xl font-semibold shadow-lg shadow-primary/30 transition-all"
+              >
+                <ScanLine className="h-5 w-5" /> Scan &amp; Collect
+              </button>
+            </div>
           </div>
 
           <CollectionScanner

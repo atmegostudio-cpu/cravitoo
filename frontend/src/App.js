@@ -20,6 +20,7 @@ import VendorOrders from './pages/vendor/Orders';
 import VendorMenu from './pages/vendor/Menu';
 import VendorVerifyPickup from './pages/vendor/VerifyPickup';
 import VendorAIInsights from './pages/vendor/AIInsights';
+import VendorKiosk from './pages/vendor/Kiosk';
 
 import CorporateAdminDashboard from './pages/admin/Dashboard';
 import CorporateBulkPreOrder from './pages/admin/BulkPreOrder';
@@ -175,6 +176,11 @@ function AppRoutes() {
           <VendorAIInsights />
         </ProtectedRoute>
       } />
+      <Route path="/vendor/kiosk" element={
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
+          <VendorKiosk />
+        </ProtectedRoute>
+      } />
       
       {/* Corporate Admin Routes */}
       <Route path="/admin/dashboard" element={
@@ -206,6 +212,7 @@ function AppRoutes() {
       } />
 
       {/* Master Admin Routes */}
+      <Route path="/master" element={<Navigate to="/master/dashboard" replace />} />
       <Route path="/master/dashboard" element={
         <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterDashboard />

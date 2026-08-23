@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 28: verified two new features on top of OFFLINE payment mode — (1) /master → /master/dashboard redirect and (2) full-screen Vendor Kiosk at /vendor/kiosk. Backend regression (test_offline_payment_mode.py) 24/24 PASS after a small fix to the test file to load backend/.env so pymongo hits the same DB the API uses. Frontend: 6/6 kiosk-related flows PASS end-to-end (redirect + no route warning, role-gating, enter-kiosk link, kiosk shell + tally + connection + navbar-absent, manual-entry → confirm → backend 404 → error-phase → retry, exit modal wrong-then-right password → /vendor/orders). Throw-away QA vendor was seeded via a helper script and scrubbed on teardown. No new bugs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/orders/reconciliation", "issue": "ready_for_collection/collected/cancelled buckets still hard-code amount=0 (cosmetic, carried from iter-26)."},
+      {"endpoint": "POST /api/orders", "issue": "collection_code has no unique index / no collision retry (carried from iter-26)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_offline_payment_mode.py",
+    "/app/backend/tests/seed_qa_kiosk_vendor.py",
+    "/app/test_reports/pytest/offline_payment_mode_iter28.xml"
+  ],
+  "backend_verification": {
+    "pytest_total": 24,
+    "pytest_passed": 24,
+    "pytest_skipped": 0,
+    "fix_applied_to_test_file": "Added `load_dotenv(backend/.env)` at top of test_offline_payment_mode.py so DB_NAME/MONGO_URL match the running API (previously fell back to DB_NAME=test_database and 9 seeded-user tests silently skipped)."
+  },
+  "frontend_verification": {
+    "test_1_master_redirect": "PASS — GET /master → /master/dashboard, no 'No routes matched' console warning, order-reconciliation-card renders.",
+    "test_2_kiosk_role_gating": "PASS — master_admin navigating to /vendor/kiosk does NOT get kiosk-root (redirected away by ProtectedRoute).",
+    "test_3_enter_kiosk_link": "PASS — [data-testid=enter-kiosk-btn] on /vendor/orders navigates to /vendor/kiosk.",
+    "test_4_kiosk_shell": "PASS — kiosk-root, kiosk-tally-{total,cash,qr} all render with count=0/₹0, kiosk-connection shows 'Online', kiosk-exit-btn present, kiosk-scan-phase visible with #kiosk-scanner-region, document.querySelector('nav') === null (chromeless confirmed).",
+    "test_5_manual_entry_error_flow": "PASS — kiosk-manual-toggle → kiosk-manual-input 'CRV-BADCODE01' → kiosk-manual-continue → kiosk-confirm-phase with kiosk-detected-code='CRV-BADCODE01' → kiosk-method-cash + kiosk-confirm-btn → backend 404 → kiosk-error-phase with 'No order found with code CRV-BADCODE01' → kiosk-error-retry-btn returns to kiosk-scan-phase.",
+    "test_6_exit_modal": "PASS — kiosk-exit-btn opens kiosk-exit-modal with all 4 testids (pwd/confirm/logout/close). Wrong password → kiosk-exit-error 'Wrong password. Ask the manager.'. Correct vendor password → navigates to /vendor/orders."
+  },
+  "critical_code_review_comments": [
+    "Kiosk.js confirmExit() re-uses POST /api/auth/login as a password-verification primitive. Functionally correct, but it (a) issues brand new access/refresh cookies (fine, same user), (b) is subject to brute-force lockout at 5 tries — a fat-fingered manager will get the vendor locked out for 15 minutes; consider a dedicated /auth/verify-password endpoint or exempt this call from brute-force counters.",
+    "Kiosk.js fetchTally() derives today's totals client-side from GET /api/orders + payment_method filter. It filters by paid_at >= startOfDay, but does NOT filter by vendor — for a vendor user this is fine because the API already scopes /orders to their vendor_id, but this coupling is implicit; a comment or a dedicated /api/vendor/kiosk/tally endpoint would be more robust and cheaper on large stores.",
+    "Kiosk.js: success screen auto-closes in 3s (setTimeout), but if the vendor clicks kiosk-scan-now-btn during that window, backToScan() clears the timer via clearTimeout(successTimerRef.current) — good. However pressing the browser back button or opening the exit modal during the 3s window does NOT clear the timer; the state will race with unmount. Low-severity edge case.",
+    "App.js line 215 <Route path=\"/master\" element={<Navigate to=\"/master/dashboard\" replace />} /> — correct and the console 'No routes matched' warning is gone. If more /master/* aliases exist unlinked, consider `path=\"/master\" element={<Navigate .../>}` under a wildcard, but current shape is fine.",
+    "Kiosk.js: no ProtectedRoute-level check that camera permission failed — the useEffect that starts Html5Qrcode falls back to manualMode with an error toast. Acceptable, but on iPad Safari camera-permission denials can leave scannerRef in a partially-initialized state; the stopScanner() call is guarded so should not throw."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_offline_payment_mode.py (added dotenv load so DB_NAME/MONGO_URL align with API)",
+    "/app/backend/tests/seed_qa_kiosk_vendor.py (new helper — seed/cleanup throw-away QA vendor; seed run + cleanup run on this iteration)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (6/6 kiosk flows)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (real master_admin). Throw-away QA vendor qa_kiosk_vendor@example.com / KioskQA123! was seeded via /app/backend/tests/seed_qa_kiosk_vendor.py and cleaned up at end of run.",
+  "seed_data_creation": "One QA vendor + one vendor user seeded via seed_qa_kiosk_vendor.py seed. Cleaned via seed_qa_kiosk_vendor.py cleanup. Verified no residual users/vendors matching QA name/email.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Kiosk feature is fully green. Helper script /app/backend/tests/seed_qa_kiosk_vendor.py can be re-used any time you need a throw-away vendor for UI flows (seed then cleanup). If the confirmExit() brute-force concern is addressed by adding a dedicated password-verify endpoint, retest the exit modal with wrong password 6 times to confirm the vendor is NOT locked out.",
+  "rca of the issue": "No production issue found. Only a test-tooling bug was fixed: previous iteration's pytest silently skipped 9 tests because pymongo defaulted DB_NAME='test_database' (backend/.env sets DB_NAME='cravitoo_db'). Fix: load backend/.env from the test file so MONGO_URL/DB_NAME match the running API. Now all 24 tests execute and pass."
+}

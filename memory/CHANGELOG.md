@@ -1,3 +1,10 @@
+## Feb 2026 — Kiosk Mode + /master Redirect
+- **/master redirect**: `App.js` now has `<Route path="/master" element={<Navigate to="/master/dashboard" replace />} />` — deep links to /master no longer trigger 'No routes matched' console warning.
+- **Vendor Kiosk** at `/vendor/kiosk` (`pages/vendor/Kiosk.js`, role-gated to `ROLES_VENDOR`): chromeless full-screen counter iPad UI with (a) big camera scanner + manual-code fallback, (b) live Today Total / Cash / Physical QR tally cards refreshed every 60s, (c) success screen that auto-loops back to scan in 3s, (d) password-protected exit modal (verifies via `/api/auth/login`) with "Exit to Panel" or "Log Out" options, (e) online/offline indicator. Entry point on `/vendor/orders` via `enter-kiosk-btn`.
+- **Test verification** (iter-28): 24/24 backend pytest + 6/6 frontend kiosk flows PASS. Test-tooling fix: `test_offline_payment_mode.py` now loads `backend/.env` so DB_NAME/MONGO_URL match the running API (9 tests were silently skipping before).
+- **Known cosmetic issue** (deferred): kiosk exit uses `/auth/login` for password verify — a fat-fingered manager could hit the 5-try brute-force lockout. Consider a dedicated `/auth/verify-password` endpoint that bypasses lockout counter.
+
+
 ## Feb 2026 — OFFLINE Payment Mode: UI Complete + Projection Fix
 - **P0 fix**: `GET /api/orders` projection at `server.py:1567` now returns `collection_code`, `payment_mode`, `payment_method`, `paid_at`. Unblocks employee/vendor UIs that render the CRV-XXXXXX collection code and payment method badge from the list endpoint. Regression test in `test_offline_payment_mode.py::TestOrderListNewFields` now passes (iter-26 → iter-27).
 - **Master Admin Order Reconciliation card** (`Dashboard.js` → `OrderReconciliation` subcomponent): fetches `GET /api/admin/orders/reconciliation`, renders 6 payment buckets (total, pending, paid, unpaid, cash, physical_qr) with count + ₹ amount, 3 fulfilment pills (ready, collected, cancelled) with count, and a `MODE · OFFLINE/RAZORPAY` badge. Test IDs `order-reconciliation-card`, `payment-mode-badge`, `recon-bucket-{key}`, `recon-status-{key}`.

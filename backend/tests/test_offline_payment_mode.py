@@ -14,6 +14,11 @@ import os
 import pytest
 import requests
 from bson import ObjectId
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load backend .env so MONGO_URL / DB_NAME point at the real DB the API uses.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://corporate-feast.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
