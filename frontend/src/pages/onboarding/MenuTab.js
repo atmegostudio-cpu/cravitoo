@@ -579,7 +579,7 @@ const MenuTab = ({ data, onbId, canEdit, reload }) => {
                   <th className="text-left px-4 py-3">Category</th>
                   <th className="text-right px-4 py-3">Price</th>
                   <th className="text-left px-4 py-3">Meal Period</th>
-                  <th className="text-left px-4 py-3">Veg</th>
+                  <th className="text-left px-4 py-3">Veg/Non-Veg</th>
                   <th className="text-left px-4 py-3">Allergens</th>
                   <th className="text-left px-4 py-3">Available</th>
                   {canEdit && <th className="text-right px-4 py-3">Actions</th>}
