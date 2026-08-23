@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, Keyboard, CheckCircle2, AlertCircle, IndianRupee, Loader2 } from 'lucide-react';
+import { X, Camera, Keyboard, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import logger from '../lib/logger';
 
@@ -12,18 +12,18 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
  * Flow:
  *   1. Vendor taps "Scan & Collect" — modal opens with rear camera
  *   2. Employee holds their CRV-XXXXXX QR up
- *   3. On decode → confirm the code + pick Cash / Physical QR
+ *   3. On decode → confirm the code (payment is always Physical QR — cash removed)
  *   4. POST /api/orders/collect/{code} → marks paid + collected in one call
  *
  * Falls back to a manual text-entry field for cases where the browser
  * blocks camera access or the QR is smudged.
  */
 const SCANNER_ID = 'crv-scanner-region';
+const METHOD = 'physical_qr';  // Only method accepted — cash removed Feb 2026
 
 export default function CollectionScanner({ open, onClose, onSuccess }) {
   const [phase, setPhase] = useState('scan');   // 'scan' | 'confirm' | 'success' | 'error'
   const [code, setCode] = useState('');
-  const [method, setMethod] = useState('cash');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [manualMode, setManualMode] = useState(false);
@@ -99,7 +99,7 @@ export default function CollectionScanner({ open, onClose, onSuccess }) {
     try {
       const { data } = await axios.post(
         `${API}/orders/collect/${encodeURIComponent(code)}`,
-        { method },
+        { method: METHOD },
         { withCredentials: true, timeout: 15000 },
       );
       setResult(data);
@@ -118,7 +118,6 @@ export default function CollectionScanner({ open, onClose, onSuccess }) {
     await stopScanner();
     setPhase('scan');
     setCode('');
-    setMethod('cash');
     setErrorMsg('');
     setResult(null);
     setManualMode(false);
@@ -129,7 +128,6 @@ export default function CollectionScanner({ open, onClose, onSuccess }) {
     await stopScanner();
     setPhase('scan');
     setCode('');
-    setMethod('cash');
     setErrorMsg('');
     setResult(null);
     setManualMode(false);
@@ -232,30 +230,14 @@ export default function CollectionScanner({ open, onClose, onSuccess }) {
                 <p className="font-mono text-2xl font-bold text-primary tracking-widest" data-testid="scanner-detected-code">{code}</p>
               </div>
 
-              <p className="text-sm font-medium text-text-primary mb-2">How did the employee pay?</p>
-              <div className="grid grid-cols-2 gap-2 mb-5">
-                <button
-                  data-testid="scanner-method-cash"
-                  onClick={() => setMethod('cash')}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${method === 'cash' ? 'border-primary bg-primary-light' : 'border-border-light bg-background hover:border-primary/40'}`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <IndianRupee className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold text-text-primary">Cash</span>
-                  </div>
-                  <p className="text-[11px] text-text-muted">Received notes at the counter</p>
-                </button>
-                <button
-                  data-testid="scanner-method-qr"
-                  onClick={() => setMethod('physical_qr')}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${method === 'physical_qr' ? 'border-primary bg-primary-light' : 'border-border-light bg-background hover:border-primary/40'}`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Camera className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold text-text-primary">Physical QR</span>
-                  </div>
-                  <p className="text-[11px] text-text-muted">UPI to your counter QR</p>
-                </button>
+              <div className="flex items-center gap-3 rounded-xl border-2 border-primary bg-primary-light p-4 mb-5" data-testid="scanner-method-qr">
+                <div className="rounded-lg bg-white/70 p-2">
+                  <Camera className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">Payment: Physical QR</p>
+                  <p className="text-[11px] text-text-muted">Confirm UPI payment received on your counter QR before collecting.</p>
+                </div>
               </div>
 
               {errorMsg && (
@@ -294,7 +276,7 @@ export default function CollectionScanner({ open, onClose, onSuccess }) {
               <h3 className="font-heading text-xl font-semibold text-text-primary mb-1">Order Collected</h3>
               <p className="font-mono text-sm text-primary mb-4">{result?.collection_code}</p>
               <p className="text-sm text-text-secondary mb-6">
-                Marked as <strong>Paid ({result?.payment_method === 'cash' ? 'Cash' : 'Physical QR'})</strong> and <strong>Collected</strong>.
+                Marked as <strong>Paid (Physical QR)</strong> and <strong>Collected</strong>.
               </p>
               <div className="flex gap-2">
                 <button

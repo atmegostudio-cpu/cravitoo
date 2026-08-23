@@ -78,13 +78,13 @@ class TestReconciliation:
 class TestMarkPaidRBAC:
     def test_unauthenticated_denied(self):
         fake_id = str(ObjectId())
-        r = requests.post(f"{API}/orders/{fake_id}/mark-paid", json={"method": "cash"})
+        r = requests.post(f"{API}/orders/{fake_id}/mark-paid", json={"method": "physical_qr"})
         assert r.status_code in (401, 403)
 
     def test_master_admin_on_unknown_order_404(self, admin_headers):
         fake_id = str(ObjectId())
         r = requests.post(f"{API}/orders/{fake_id}/mark-paid",
-                          json={"method": "cash"}, headers=admin_headers)
+                          json={"method": "physical_qr"}, headers=admin_headers)
         assert r.status_code == 404, f"expected 404 for unknown order, got {r.status_code}: {r.text}"
 
     def test_invalid_method_422(self, admin_headers):
@@ -93,15 +93,23 @@ class TestMarkPaidRBAC:
                           json={"method": "bitcoin"}, headers=admin_headers)
         assert r.status_code == 422, f"expected 422 for bad method, got {r.status_code}: {r.text}"
 
+    def test_cash_method_rejected_422(self, admin_headers):
+        """Cash payments are no longer accepted (Feb 2026 client requirement)."""
+        fake_id = str(ObjectId())
+        r = requests.post(f"{API}/orders/{fake_id}/mark-paid",
+                          json={"method": "cash"}, headers=admin_headers)
+        assert r.status_code == 422, f"cash must be rejected, got {r.status_code}: {r.text}"
+
     def test_missing_method_422(self, admin_headers):
         fake_id = str(ObjectId())
         r = requests.post(f"{API}/orders/{fake_id}/mark-paid",
                           json={}, headers=admin_headers)
-        assert r.status_code == 422
+        # method now has default='physical_qr' — payload {} should be accepted schema-wise but the order doesn't exist → 404
+        assert r.status_code in (404, 422)
 
     def test_malformed_order_id_400_or_404(self, admin_headers):
         r = requests.post(f"{API}/orders/not-a-real-id/mark-paid",
-                          json={"method": "cash"}, headers=admin_headers)
+                          json={"method": "physical_qr"}, headers=admin_headers)
         # safe_objectid raises HTTPException 400
         assert r.status_code in (400, 404, 422), r.status_code
 
@@ -109,24 +117,30 @@ class TestMarkPaidRBAC:
 # ─── /orders/collect/{code} RBAC & validation ────────────────────────
 class TestCollectRBAC:
     def test_unauthenticated_denied(self):
-        r = requests.post(f"{API}/orders/collect/CRV-999999", json={"method": "cash"})
+        r = requests.post(f"{API}/orders/collect/CRV-999999", json={"method": "physical_qr"})
         assert r.status_code in (401, 403)
 
     def test_master_admin_unknown_code_404(self, admin_headers):
         r = requests.post(f"{API}/orders/collect/CRV-000000",
-                          json={"method": "cash"}, headers=admin_headers)
+                          json={"method": "physical_qr"}, headers=admin_headers)
         assert r.status_code == 404
         assert "CRV-000000" in r.text or "No order" in r.text
 
     def test_code_normalised_uppercase(self, admin_headers):
         # lowercase code should be normalised then still 404
         r = requests.post(f"{API}/orders/collect/crv-000000",
-                          json={"method": "cash"}, headers=admin_headers)
+                          json={"method": "physical_qr"}, headers=admin_headers)
         assert r.status_code == 404
 
     def test_invalid_method_422(self, admin_headers):
         r = requests.post(f"{API}/orders/collect/CRV-000000",
                           json={"method": "upi"}, headers=admin_headers)
+        assert r.status_code == 422
+
+    def test_cash_method_rejected_422(self, admin_headers):
+        """Cash payments no longer accepted on /collect either."""
+        r = requests.post(f"{API}/orders/collect/CRV-000000",
+                          json={"method": "cash"}, headers=admin_headers)
         assert r.status_code == 422
 
 
@@ -175,13 +189,13 @@ class TestEmployeeRoleGating:
     def test_employee_cannot_mark_paid(self, employee_token):
         fake_id = str(ObjectId())
         r = requests.post(f"{API}/orders/{fake_id}/mark-paid",
-                          json={"method": "cash"},
+                          json={"method": "physical_qr"},
                           headers={"Authorization": f"Bearer {employee_token}"})
         assert r.status_code == 403
 
     def test_employee_cannot_collect(self, employee_token):
         r = requests.post(f"{API}/orders/collect/CRV-000000",
-                          json={"method": "cash"},
+                          json={"method": "physical_qr"},
                           headers={"Authorization": f"Bearer {employee_token}"})
         assert r.status_code == 403
 
@@ -336,7 +350,7 @@ class TestVendorCollectHappyPath:
     def test_non_owning_vendor_403(self, vendor_ctx):
         r = requests.post(
             f"{API}/orders/collect/{vendor_ctx['code']}",
-            json={"method": "cash"},
+            json={"method": "physical_qr"},
             headers={"Authorization": f"Bearer {vendor_ctx['other_vendor_token']}"},
         )
         assert r.status_code == 403, r.text
@@ -344,7 +358,7 @@ class TestVendorCollectHappyPath:
     def test_unknown_code_404(self, vendor_ctx):
         r = requests.post(
             f"{API}/orders/collect/CRV-ZZZZZZ",
-            json={"method": "cash"},
+            json={"method": "physical_qr"},
             headers={"Authorization": f"Bearer {vendor_ctx['vendor_token']}"},
         )
         assert r.status_code == 404
@@ -352,20 +366,20 @@ class TestVendorCollectHappyPath:
     def test_owning_vendor_collect_200(self, vendor_ctx):
         r = requests.post(
             f"{API}/orders/collect/{vendor_ctx['code']}",
-            json={"method": "cash"},
+            json={"method": "physical_qr"},
             headers={"Authorization": f"Bearer {vendor_ctx['vendor_token']}"},
         )
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["payment_status"] == "paid"
-        assert body["payment_method"] == "cash"
+        assert body["payment_method"] == "physical_qr"
         assert body["status"] == "collected"
 
     def test_double_collect_409(self, vendor_ctx):
         # first collect happened in previous test; retry must 409
         r = requests.post(
             f"{API}/orders/collect/{vendor_ctx['code']}",
-            json={"method": "cash"},
+            json={"method": "physical_qr"},
             headers={"Authorization": f"Bearer {vendor_ctx['vendor_token']}"},
         )
         assert r.status_code == 409, r.text

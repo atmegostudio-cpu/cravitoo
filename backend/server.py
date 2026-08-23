@@ -1423,7 +1423,9 @@ async def get_payment_mode():
 
 
 class _MarkPaidBody(BaseModel):
-    method: str = Field(pattern="^(cash|physical_qr)$")
+    # Cash payments are no longer accepted at the counter — only Physical QR (UPI).
+    # Historical orders paid in cash remain in the DB; new collects must be physical_qr.
+    method: str = Field(default="physical_qr", pattern="^physical_qr$")
 
 
 @api_router.post("/orders/{order_id}/mark-paid")

@@ -410,7 +410,6 @@ const OrderReconciliation = ({ data }) => {
     { key: 'pending',     label: 'Pending Payment', bucket: b.pending,     icon: Clock,         accent: 'text-amber-700',   ring: 'ring-amber-200',   bg: 'bg-amber-50' },
     { key: 'paid',        label: 'Paid',            bucket: b.paid,        icon: CheckCircle2,  accent: 'text-emerald-700', ring: 'ring-emerald-200', bg: 'bg-emerald-50' },
     { key: 'unpaid',      label: 'Unpaid',          bucket: b.unpaid,      icon: XCircle,       accent: 'text-red-700',     ring: 'ring-red-200',     bg: 'bg-red-50' },
-    { key: 'cash',        label: 'Cash',            bucket: b.cash,        icon: Wallet,        accent: 'text-yellow-700',  ring: 'ring-yellow-200',  bg: 'bg-yellow-50' },
     { key: 'physical_qr', label: 'Physical QR',     bucket: b.physical_qr, icon: ScanLine,      accent: 'text-indigo-700',  ring: 'ring-indigo-200',  bg: 'bg-indigo-50' },
   ];
 
@@ -439,7 +438,7 @@ const OrderReconciliation = ({ data }) => {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {paymentBuckets.map(({ key, label, bucket, icon: Icon, accent, ring, bg }) => (
           <div
             key={key}

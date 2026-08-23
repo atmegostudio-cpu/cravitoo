@@ -37,10 +37,10 @@ const VendorOrders = () => {
     }
   };
 
-  const markPaid = async (orderId, method) => {
-    if (!window.confirm(`Confirm payment received via ${method === 'cash' ? 'Cash' : 'Physical QR'}?`)) return;
+  const markPaid = async (orderId) => {
+    if (!window.confirm('Confirm payment received via Physical QR?')) return;
     try {
-      await axios.post(`${API}/orders/${orderId}/mark-paid`, { method }, { withCredentials: true });
+      await axios.post(`${API}/orders/${orderId}/mark-paid`, { method: 'physical_qr' }, { withCredentials: true });
       fetchOrders();
     } catch (error) {
       alert(error.response?.data?.detail || 'Could not mark paid');
@@ -127,7 +127,7 @@ const VendorOrders = () => {
                         order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                       }`}>
                         {order.payment_status === 'paid'
-                          ? `Paid · ${order.payment_method === 'cash' ? 'Cash' : order.payment_method === 'physical_qr' ? 'QR' : ''}`
+                          ? `Paid · ${order.payment_method === 'physical_qr' ? 'QR' : order.payment_method === 'cash' ? 'Cash' : ''}`
                           : 'Payment Pending'}
                       </span>
                     </div>
@@ -175,22 +175,13 @@ const VendorOrders = () => {
                       </button>
                     )}
                     {order.payment_status !== 'paid' && order.status !== 'cancelled' && (
-                      <>
-                        <button
-                          onClick={() => markPaid(order.id, 'cash')}
-                          data-testid={`mark-paid-cash-${order.id}`}
-                          className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
-                        >
-                          💵 Paid (Cash)
-                        </button>
-                        <button
-                          onClick={() => markPaid(order.id, 'physical_qr')}
-                          data-testid={`mark-paid-qr-${order.id}`}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
-                        >
-                          📱 Paid (QR)
-                        </button>
-                      </>
+                      <button
+                        onClick={() => markPaid(order.id)}
+                        data-testid={`mark-paid-qr-${order.id}`}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                      >
+                        Mark Paid (QR)
+                      </button>
                     )}
                   </div>
                 </div>

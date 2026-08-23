@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Html5Qrcode } from 'html5-qrcode';
-import { ScanLine, CheckCircle2, XCircle, IndianRupee, LogOut, Loader2, AlertCircle, Wallet, Camera, Keyboard, X, Wifi, WifiOff } from 'lucide-react';
+import { ScanLine, CheckCircle2, XCircle, LogOut, Loader2, AlertCircle, Wallet, Camera, Keyboard, X, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import logger from '../../lib/logger';
@@ -22,12 +22,11 @@ const SCANNER_ID = 'kiosk-scanner-region';
 export default function VendorKiosk() {
   const [phase, setPhase] = useState('scan');        // 'scan' | 'confirm' | 'success' | 'error'
   const [code, setCode] = useState('');
-  const [method, setMethod] = useState('cash');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [lastResult, setLastResult] = useState(null);
-  const [tally, setTally] = useState({ cash_count: 0, cash_amount: 0, qr_count: 0, qr_amount: 0, total_count: 0, total_amount: 0 });
+  const [tally, setTally] = useState({ qr_count: 0, qr_amount: 0, total_count: 0, total_amount: 0 });
   const [online, setOnline] = useState(navigator.onLine);
   const [exitPromptOpen, setExitPromptOpen] = useState(false);
   const [exitPwd, setExitPwd] = useState('');
@@ -44,10 +43,9 @@ export default function VendorKiosk() {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const today = data.filter((o) => o.paid_at && new Date(o.paid_at) >= startOfDay);
-      const t = { cash_count: 0, cash_amount: 0, qr_count: 0, qr_amount: 0, total_count: 0, total_amount: 0 };
+      const t = { qr_count: 0, qr_amount: 0, total_count: 0, total_amount: 0 };
       for (const o of today) {
-        if (o.payment_method === 'cash') { t.cash_count++; t.cash_amount += o.total_amount || 0; }
-        else if (o.payment_method === 'physical_qr') { t.qr_count++; t.qr_amount += o.total_amount || 0; }
+        if (o.payment_method === 'physical_qr') { t.qr_count++; t.qr_amount += o.total_amount || 0; }
         t.total_count++; t.total_amount += o.total_amount || 0;
       }
       setTally(t);
@@ -128,7 +126,6 @@ export default function VendorKiosk() {
     successTimerRef.current = setTimeout(() => {
       setPhase('scan');
       setCode('');
-      setMethod('cash');
       setLastResult(null);
       setErrorMsg('');
       setManualMode(false);
@@ -144,7 +141,7 @@ export default function VendorKiosk() {
     try {
       const { data } = await axios.post(
         `${API}/orders/collect/${encodeURIComponent(code)}`,
-        { method },
+        { method: 'physical_qr' },
         { withCredentials: true, timeout: 15000 },
       );
       setLastResult(data);
@@ -163,7 +160,6 @@ export default function VendorKiosk() {
     clearTimeout(successTimerRef.current);
     setPhase('scan');
     setCode('');
-    setMethod('cash');
     setErrorMsg('');
     setLastResult(null);
     setManualMode(false);
@@ -215,7 +211,7 @@ export default function VendorKiosk() {
       </div>
 
       {/* Live tally */}
-      <div className="grid grid-cols-3 gap-3 px-5 py-4 border-b border-white/10 bg-slate-900/40">
+      <div className="grid grid-cols-2 gap-3 px-5 py-4 border-b border-white/10 bg-slate-900/40">
         <div data-testid="kiosk-tally-total" className="rounded-2xl px-4 py-3 bg-gradient-to-br from-primary to-orange-600">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-white/80 font-semibold">
             <Wallet className="h-3 w-3" /> Today Total
@@ -223,15 +219,6 @@ export default function VendorKiosk() {
           <div className="flex items-baseline gap-2 mt-1">
             <span className="font-heading text-3xl font-bold">{tally.total_count}</span>
             <span className="text-sm font-medium text-white/90">{fmt(tally.total_amount)}</span>
-          </div>
-        </div>
-        <div data-testid="kiosk-tally-cash" className="rounded-2xl px-4 py-3 bg-white/5 border border-white/10">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-yellow-300 font-semibold">
-            <IndianRupee className="h-3 w-3" /> Cash
-          </div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="font-heading text-3xl font-bold">{tally.cash_count}</span>
-            <span className="text-sm font-medium text-white/70">{fmt(tally.cash_amount)}</span>
           </div>
         </div>
         <div data-testid="kiosk-tally-qr" className="rounded-2xl px-4 py-3 bg-white/5 border border-white/10">
@@ -313,26 +300,14 @@ export default function VendorKiosk() {
                 <p data-testid="kiosk-detected-code" className="font-mono text-4xl font-bold text-primary tracking-widest">{code}</p>
               </div>
 
-              <p className="text-sm font-semibold text-white/80 mb-3 text-center">How did they pay?</p>
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <button
-                  data-testid="kiosk-method-cash"
-                  onClick={() => setMethod('cash')}
-                  className={`p-5 rounded-2xl border-2 text-left transition-all ${method === 'cash' ? 'border-yellow-400 bg-yellow-500/15' : 'border-white/10 bg-white/5 hover:border-white/30'}`}
-                >
-                  <IndianRupee className="h-6 w-6 text-yellow-300 mb-2" />
-                  <p className="text-base font-bold">Cash</p>
-                  <p className="text-[11px] text-white/60">Notes at the counter</p>
-                </button>
-                <button
-                  data-testid="kiosk-method-qr"
-                  onClick={() => setMethod('physical_qr')}
-                  className={`p-5 rounded-2xl border-2 text-left transition-all ${method === 'physical_qr' ? 'border-indigo-400 bg-indigo-500/15' : 'border-white/10 bg-white/5 hover:border-white/30'}`}
-                >
-                  <ScanLine className="h-6 w-6 text-indigo-300 mb-2" />
-                  <p className="text-base font-bold">Physical QR</p>
-                  <p className="text-[11px] text-white/60">UPI to counter QR</p>
-                </button>
+              <div className="flex items-center gap-3 mb-5 rounded-2xl border-2 border-indigo-400 bg-indigo-500/15 p-4" data-testid="kiosk-method-qr">
+                <div className="rounded-xl bg-indigo-500/20 p-2.5">
+                  <ScanLine className="h-6 w-6 text-indigo-300" />
+                </div>
+                <div>
+                  <p className="text-base font-bold">Payment: Physical QR</p>
+                  <p className="text-xs text-white/60">Confirm UPI payment on your counter QR before collecting.</p>
+                </div>
               </div>
 
               {errorMsg && (
@@ -370,7 +345,7 @@ export default function VendorKiosk() {
               <h1 className="font-heading text-5xl font-bold mb-2">Collected</h1>
               <p className="font-mono text-lg text-primary mb-1">{lastResult?.collection_code}</p>
               <p className="text-white/70 text-sm mb-8">
-                Paid via <span className="font-semibold text-white">{lastResult?.payment_method === 'cash' ? 'Cash' : 'Physical QR'}</span>
+                Paid via <span className="font-semibold text-white">Physical QR</span>
               </p>
               <p className="text-xs text-white/40 uppercase tracking-widest">Next scan in 3s…</p>
               <button
