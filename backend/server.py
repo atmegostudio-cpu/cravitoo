@@ -68,6 +68,14 @@ async def health_email():
 async def root():
     return {"status": "ok", "service": "cravitoo-api"}
 
+
+# Kubernetes liveness / readiness probe. Kept OUTSIDE the /api prefix
+# because the ingress does NOT rewrite /api → / for probes; k8s hits
+# the container port directly on /health.
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 # WebSocket Connection Manager
 class ConnectionManager:
     def __init__(self):
@@ -2749,16 +2757,42 @@ async def razorpay_webhook(request: Request):
     → Settings → Webhooks: URL = {PUBLIC_BACKEND_URL}/api/payments/razorpay/webhook
     Events to subscribe: payment.captured, payment.failed, order.paid"""
     raw_body = await request.body()
-    signature = request.headers.get('X-Razorpay-Signature', '')
+    # Header lookup is case-insensitive via Starlette, but be defensive.
+    signature = (
+        request.headers.get('X-Razorpay-Signature')
+        or request.headers.get('x-razorpay-signature')
+        or ''
+    ).strip()
     webhook_secret = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '').strip()
 
-    # Verify signature (only enforced when a webhook secret is configured)
+    # Verify signature (only enforced when a webhook secret is configured).
+    # We compute the HMAC ourselves rather than relying on the razorpay SDK —
+    # the SDK's `verify_webhook_signature` occasionally raises on bytes vs str
+    # encoding, and doing it manually gives us clean diagnostics.
     if webhook_secret:
-        try:
-            client_rzp = razorpay.Client(auth=(os.environ['RAZORPAY_KEY_ID'], os.environ['RAZORPAY_KEY_SECRET']))
-            client_rzp.utility.verify_webhook_signature(raw_body.decode('utf-8'), signature, webhook_secret)
-        except Exception as e:
-            logger.warning(f"Razorpay webhook signature verification failed: {e}")
+        if not signature:
+            logger.warning(
+                "Razorpay webhook: missing X-Razorpay-Signature header "
+                f"(body_len={len(raw_body)}, secret_configured=True)"
+            )
+            raise HTTPException(status_code=400, detail="Missing signature header")
+        expected = hmac.new(
+            webhook_secret.encode('utf-8'),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            # Log first/last 6 chars of both sigs to spot secret mismatches
+            # in production without leaking the full secret to logs.
+            logger.warning(
+                "Razorpay webhook signature mismatch — "
+                f"expected={expected[:6]}...{expected[-6:]} "
+                f"got={signature[:6]}...{signature[-6:]} "
+                f"body_len={len(raw_body)} "
+                f"secret_len={len(webhook_secret)}. "
+                "Most common cause: RAZORPAY_WEBHOOK_SECRET on this environment "
+                "does not match what is configured in Razorpay Dashboard → Webhooks."
+            )
             raise HTTPException(status_code=400, detail="Invalid webhook signature")
     else:
         logger.warning("RAZORPAY_WEBHOOK_SECRET not configured — accepting webhook without signature check (test mode only)")
