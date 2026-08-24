@@ -429,6 +429,17 @@ class RazorpayOrderCreate(BaseModel):
     order_id: str  # internal Cravitoo order ID
 
 
+class RazorpayCheckoutIntent(BaseModel):
+    """New payment-first flow: no Cravitoo order exists yet.
+    Frontend sends the cart; backend creates a Razorpay order + payment_intent.
+    The Cravitoo order is only materialised after signature verification.
+    """
+    vendor_id: str
+    items: List[OrderItemInput]
+    delivery_type: str = "pickup"
+    special_instructions: Optional[str] = None
+
+
 class RazorpayVerify(BaseModel):
     order_id: Optional[str] = None  # Cravitoo order ID — optional; if omitted, looked up via razorpay_order_id
     razorpay_payment_id: str

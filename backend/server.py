@@ -206,7 +206,7 @@ from models import (  # noqa: E402
     ReviewCreate, PreferencesUpdate, SubscriptionCreate,
     EmployeeCreate, BulkOrderItem, BulkOrderCreate, EventCateringCreate,
     NotificationCreate, LoyaltyRedeemRequest,
-    RazorpayOrderCreate, RazorpayVerify,
+    RazorpayOrderCreate, RazorpayVerify, RazorpayCheckoutIntent,
     PushTokenRegister,
 )
 
@@ -1252,101 +1252,154 @@ async def update_menu_item(item_id: str, data: Dict[str, Any], user: dict = Depe
 async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)):
     if user["role"] != "employee":
         raise HTTPException(status_code=403, detail="Only employees can create orders")
-    
-    # Server-side price validation - batch-look up actual prices from DB (avoid N+1)
-    menu_item_ids = [safe_objectid(item.menu_item_id, "Menu item") for item in data.items]
+
+    # Payment-mode gate: in RAZORPAY mode, employees must go through
+    # the /payments/razorpay/checkout-intent → /verify path so we
+    # never persist an unpaid order. This POST /orders route is the
+    # OFFLINE (pay-at-counter) path only.
+    active_mode = os.environ.get("PAYMENT_MODE", "OFFLINE").upper()
+    if active_mode == "RAZORPAY":
+        raise HTTPException(
+            status_code=400,
+            detail="Online payment mode is active — use /payments/razorpay/checkout-intent instead of creating an order directly.",
+        )
+
+    validated_items, total_amount = await _validate_cart(data.items)
+
+    order_id, order_doc = await _materialize_order(
+        user=user,
+        vendor_id=data.vendor_id,
+        validated_items=validated_items,
+        total_amount=total_amount,
+        payment_status="pending",
+        payment_method=None,
+        delivery_type=data.delivery_type,
+        special_instructions=data.special_instructions,
+    )
+
+    return {
+        "id": order_id,
+        "total_amount": total_amount,
+        "status": order_doc["status"],
+        "pickup_qr": order_doc.get("pickup_qr"),
+        "collection_code": order_doc["collection_code"],
+        "payment_mode": order_doc["payment_mode"],
+        "payment_status": order_doc["payment_status"],
+    }
+
+
+# ─── Cart validation + order materialisation helpers ────────────────
+async def _validate_cart(items):
+    """Server-side price validation. Returns (validated_items, total_amount)."""
+    if not items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+    menu_item_ids = [safe_objectid(item.menu_item_id, "Menu item") for item in items]
     menu_items_cursor = db.menu_items.find({"_id": {"$in": menu_item_ids}})
     menu_items_dict = {str(mi["_id"]): mi async for mi in menu_items_cursor}
 
     validated_items = []
     total_amount = 0.0
-    for item in data.items:
+    for item in items:
         menu_item = menu_items_dict.get(item.menu_item_id)
         if not menu_item:
             raise HTTPException(status_code=400, detail=f"Menu item {item.menu_item_id} not found")
         if not menu_item.get("is_available", False):
             raise HTTPException(status_code=400, detail=f"Menu item {menu_item['name']} is not available")
-        actual_price = menu_item["price"]
+        actual_price = float(menu_item["price"])
+        if int(item.quantity) <= 0:
+            raise HTTPException(status_code=400, detail=f"Invalid quantity for {menu_item['name']}")
         validated_items.append({
             "menu_item_id": item.menu_item_id,
             "name": menu_item["name"],
-            "quantity": item.quantity,
-            "price": actual_price
+            "quantity": int(item.quantity),
+            "price": actual_price,
         })
-        total_amount += actual_price * item.quantity
-    
+        total_amount += actual_price * int(item.quantity)
+    return validated_items, round(total_amount, 2)
+
+
+async def _materialize_order(
+    *,
+    user: dict,
+    vendor_id: str,
+    validated_items: list,
+    total_amount: float,
+    payment_status: str,               # 'paid' (razorpay) | 'pending' (offline)
+    payment_method: Optional[str],     # 'razorpay' | None
+    delivery_type: str = "pickup",
+    special_instructions: Optional[str] = None,
+    razorpay_order_id: Optional[str] = None,
+    razorpay_payment_id: Optional[str] = None,
+):
+    """Insert the order row + collection_code + QR + notifications.
+    Callable from OFFLINE create_order and from Razorpay verify/webhook.
+    Returns (order_id_str, order_doc).
+    """
+    now = datetime.now(timezone.utc)
     order_doc = {
         "user_id": user["id"],
-        "vendor_id": data.vendor_id,
+        "vendor_id": vendor_id,
         "items": validated_items,
         "total_amount": total_amount,
         "status": "pending",
-        "payment_status": "pending",
-        # `collection_code` is the short human-readable ID the vendor
-        # reads out at the counter ("Order CRV-102045 ready"). Kept
-        # separate from Mongo _id so it can be regenerated / rotated
-        # without breaking foreign references. 6-digit random keeps
-        # collision odds at 1 in a million per active order.
+        "payment_status": payment_status,
         "collection_code": f"CRV-{random.randint(100000, 999999)}",
         "payment_mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper(),
-        "payment_method": None,   # set to 'cash' / 'physical_qr' when vendor collects
-        "delivery_type": data.delivery_type,
-        "special_instructions": data.special_instructions,
-        "created_at": datetime.now(timezone.utc)
+        "payment_method": payment_method,
+        "delivery_type": delivery_type,
+        "special_instructions": special_instructions,
+        "created_at": now,
     }
-    
+    if payment_status == "paid":
+        order_doc["paid_at"] = now
+    if razorpay_order_id:
+        order_doc["razorpay_order_id"] = razorpay_order_id
+    if razorpay_payment_id:
+        order_doc["razorpay_payment_id"] = razorpay_payment_id
+
     result = await db.orders.insert_one(order_doc)
     order_id = str(result.inserted_id)
-    
-    # Generate QR code for pickup
+
     qr_code = generate_pickup_qr(order_id)
     update_doc = {"pickup_qr": qr_code}
-    
-    # Auto-confirm if vendor has enabled it
-    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(data.vendor_id, "Vendor")})
-    auto_confirmed = False
+
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
     if vendor_doc and vendor_doc.get("auto_confirm"):
         update_doc["status"] = "confirmed"
-        auto_confirmed = True
-    
+        order_doc["status"] = "confirmed"
+    if payment_status == "paid" and update_doc.get("status") != "confirmed":
+        # Paid orders auto-confirm — no reason to leave them "pending"
+        update_doc["status"] = "confirmed"
+        order_doc["status"] = "confirmed"
+
     await db.orders.update_one({"_id": result.inserted_id}, {"$set": update_doc})
-    final_status = "confirmed" if auto_confirmed else "pending"
-    
-    # Notify vendor of new order
-    vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
+    order_doc["pickup_qr"] = qr_code
+
+    # Notify vendor
+    vendor_users = await db.users.find({"vendor_id": vendor_id, "role": "vendor"}).to_list(10)
     for vu in vendor_users:
         await create_notification(
             str(vu["_id"]),
-            "New Order Received",
-            f"You have a new order for ₹{total_amount:.2f}",
-            "order"
+            "New Paid Order" if payment_status == "paid" else "New Order Received",
+            f"Order for ₹{total_amount:.2f} — Code {order_doc['collection_code']}",
+            "order",
         )
-
-    # Notify employee if auto-confirmed (consistency with manual confirm path)
-    if auto_confirmed:
-        await create_notification(
-            user["id"],
-            "Order Confirmed",
-            f"Your order has been auto-confirmed by {vendor_doc.get('name', 'the vendor')}",
-            "order"
-        )
-        await manager.send_to_user(user["id"], {
-            "type": "order_update",
-            "order_id": order_id,
-            "status": "confirmed",
-        })
-
-    # Broadcast WebSocket event to vendor
-    await manager.send_to_vendor(data.vendor_id, {
+    await manager.send_to_vendor(vendor_id, {
         "type": "new_order",
         "order_id": order_id,
-        "status": final_status,
+        "status": order_doc["status"],
         "amount": total_amount,
-        "items_count": len(validated_items)
+        "items_count": len(validated_items),
+        "payment_status": payment_status,
+    })
+    await manager.send_to_user(user["id"], {
+        "type": "order_created",
+        "order_id": order_id,
+        "collection_code": order_doc["collection_code"],
+        "payment_status": payment_status,
     })
 
-    # Send order confirmation email to the employee (best-effort) — opt-in via notification_preferences.
-    # Default is OFF; users can flip it on in Settings → Notifications. The daily digest covers most cases.
+    # Best-effort order confirmation email
     try:
         prefs = (user.get("notification_preferences") or {})
         if prefs.get("order_confirm_email", False):
@@ -1366,46 +1419,7 @@ async def create_order(data: OrderCreate, user: dict = Depends(get_current_user)
     except Exception as e:
         logger.warning(f"Order confirmation email failed: {e}")
 
-    # Low-stock alert: count items sold today per menu_item_id, notify vendor if any drops below threshold
-    try:
-        if vendor_doc:
-            threshold = int(vendor_doc.get("low_stock_threshold", 0) or 0)
-            if threshold > 0:
-                today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-                for it in validated_items:
-                    pipe = [
-                        {"$match": {"vendor_id": data.vendor_id, "created_at": {"$gte": today_start}, "status": {"$nin": ["cancelled"]}}},
-                        {"$unwind": "$items"},
-                        {"$match": {"items.menu_item_id": it["menu_item_id"]}},
-                        {"$group": {"_id": None, "qty": {"$sum": "$items.quantity"}}},
-                    ]
-                    async for r in db.orders.aggregate(pipe):
-                        cur_qty = r["qty"]
-                        prev_qty = cur_qty - it.get("quantity", 0)
-                        crossed_low = prev_qty < threshold <= cur_qty
-                        crossed_critical = prev_qty < (threshold * 2) <= cur_qty
-                        if crossed_low or crossed_critical:
-                            level = "Critical low stock" if crossed_critical else "Low stock alert"
-                            vendor_users = await db.users.find({"vendor_id": data.vendor_id, "role": "vendor"}).to_list(10)
-                            for vu in vendor_users:
-                                await create_notification(
-                                    str(vu["_id"]),
-                                    level,
-                                    f"{it.get('name', 'An item')} has sold {cur_qty} units today",
-                                    "stock"
-                                )
-    except Exception as e:
-        logger.error(f"Low-stock check failed: {e}")
-
-    return {
-        "id": order_id,
-        "total_amount": total_amount,
-        "status": final_status,
-        "pickup_qr": qr_code,
-        "collection_code": order_doc["collection_code"],
-        "payment_mode": order_doc["payment_mode"],
-        "payment_status": order_doc["payment_status"],
-    }
+    return order_id, order_doc
 
 
 # ─── Offline payment mode (Feb 2026) ─────────────────────────────────
@@ -2538,136 +2552,194 @@ def get_razorpay_client():
     return razorpay.Client(auth=(os.environ['RAZORPAY_KEY_ID'], os.environ['RAZORPAY_KEY_SECRET']))
 
 
-@api_router.post("/payments/razorpay/create-order")
-async def razorpay_create_order(data: RazorpayOrderCreate, user: dict = Depends(get_current_user)):
-    """Create a Razorpay order linked to a Cravitoo order. Works in mock mode."""
-    order = await db.orders.find_one({"_id": safe_objectid(data.order_id, "Order"), "user_id": user["id"]})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    if order.get("payment_status") == "paid":
-        raise HTTPException(status_code=400, detail="Order already paid")
+@api_router.post("/payments/razorpay/checkout-intent")
+async def razorpay_checkout_intent(data: RazorpayCheckoutIntent, user: dict = Depends(get_current_user)):
+    """PAYMENT-FIRST FLOW — Step 1.
 
-    amount_paise = int(order["total_amount"] * 100)
+    Employee submits cart → we validate prices, compute the total server-side,
+    and create a Razorpay order + payment_intent. NO Cravitoo order is created
+    yet — that happens on /verify (or the webhook) after the signature is valid.
+
+    Returns everything the client needs to open Razorpay Checkout.
+    """
+    if user["role"] != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can pay")
+
+    validated_items, total_amount = await _validate_cart(data.items)
+    if total_amount <= 0:
+        raise HTTPException(status_code=400, detail="Cart total must be greater than zero")
+
+    amount_paise = int(round(total_amount * 100))
+    intent_id = secrets.token_hex(12)
 
     if RAZORPAY_MOCK_MODE:
-        # Mock: generate a fake razorpay_order_id
-        razorpay_order_id = f"order_mock_{secrets.token_hex(8)}"
-        await db.payment_transactions.insert_one({
-            "order_id": data.order_id,
-            "user_id": user["id"],
-            "provider": "razorpay",
-            "razorpay_order_id": razorpay_order_id,
-            "amount": amount_paise,
-            "currency": "INR",
-            "payment_status": "created",
-            "mock_mode": True,
-            "created_at": datetime.now(timezone.utc)
-        })
-        return {
-            "razorpay_order_id": razorpay_order_id,
-            "amount": amount_paise,
-            "currency": "INR",
-            "key_id": os.environ['RAZORPAY_KEY_ID'],
-            "mock_mode": True,
-            "cravitoo_order_id": data.order_id
-        }
+        razorpay_order_id = f"order_mock_{intent_id}"
     else:
         client_rzp = get_razorpay_client()
         razor_order = client_rzp.order.create({
             "amount": amount_paise,
             "currency": "INR",
             "payment_capture": 1,
-            "receipt": data.order_id[:40]
+            "receipt": intent_id,
+            "notes": {
+                "cravitoo_user_id": user["id"],
+                "cravitoo_vendor_id": data.vendor_id,
+                "cravitoo_intent_id": intent_id,
+            },
         })
-        await db.payment_transactions.insert_one({
-            "order_id": data.order_id,
-            "user_id": user["id"],
-            "provider": "razorpay",
-            "razorpay_order_id": razor_order["id"],
-            "amount": amount_paise,
-            "currency": "INR",
-            "payment_status": "created",
-            "mock_mode": False,
-            "created_at": datetime.now(timezone.utc)
-        })
-        return {
-            "razorpay_order_id": razor_order["id"],
-            "amount": amount_paise,
-            "currency": "INR",
-            "key_id": os.environ['RAZORPAY_KEY_ID'],
-            "mock_mode": False,
-            "cravitoo_order_id": data.order_id
-        }
+        razorpay_order_id = razor_order["id"]
+
+    await db.payment_intents.insert_one({
+        "intent_id": intent_id,
+        "razorpay_order_id": razorpay_order_id,
+        "user_id": user["id"],
+        "user_email": user.get("email"),
+        "user_name": user.get("name"),
+        "vendor_id": data.vendor_id,
+        "items": validated_items,
+        "delivery_type": data.delivery_type,
+        "special_instructions": data.special_instructions,
+        "amount": amount_paise,
+        "currency": "INR",
+        "total_amount": total_amount,
+        "status": "created",
+        "cravitoo_order_id": None,
+        "mock_mode": RAZORPAY_MOCK_MODE,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    return {
+        "razorpay_order_id": razorpay_order_id,
+        "amount": amount_paise,
+        "currency": "INR",
+        "key_id": os.environ.get('RAZORPAY_KEY_ID', ''),
+        "mock_mode": RAZORPAY_MOCK_MODE,
+        "intent_id": intent_id,
+        "total_amount": total_amount,
+    }
+
+
+# Legacy alias — old clients may still POST to /payments/razorpay/create-order
+# with a Cravitoo order_id. Reject clearly so they upgrade to the new flow.
+@api_router.post("/payments/razorpay/create-order")
+async def razorpay_create_order_deprecated(data: RazorpayOrderCreate, user: dict = Depends(get_current_user)):
+    raise HTTPException(
+        status_code=410,
+        detail="Deprecated — use POST /payments/razorpay/checkout-intent with the cart. Order creation happens on /verify after successful payment.",
+    )
+
+
+async def _finalize_payment_intent(*, intent: dict, razorpay_payment_id: str, source: str) -> Optional[dict]:
+    """Idempotent materialisation: turns a paid payment_intent into a real
+    Cravitoo order. Safe to call from both /verify and the webhook — the
+    findOneAndUpdate on (cravitoo_order_id: None) is the atomic guard.
+
+    Returns the Cravitoo order document (from a fresh find) or None if
+    the intent was already materialised.
+    """
+    # Atomic claim: only ONE caller succeeds in going from cravitoo_order_id=None → some string.
+    claim = await db.payment_intents.find_one_and_update(
+        {"_id": intent["_id"], "cravitoo_order_id": None},
+        {"$set": {"status": "materialising", "materialising_by": source, "materialising_at": datetime.now(timezone.utc)}},
+    )
+    if claim is None:
+        # Already materialised by another caller — return existing order.
+        cur = await db.payment_intents.find_one({"_id": intent["_id"]})
+        if cur and cur.get("cravitoo_order_id"):
+            return await db.orders.find_one({"_id": safe_objectid(cur["cravitoo_order_id"], "Order")})
+        return None
+
+    # We hold the claim — materialise now.
+    user_doc = await db.users.find_one({"_id": safe_objectid(intent["user_id"], "User")})
+    if not user_doc:
+        # User disappeared — release the claim so a retry can happen
+        await db.payment_intents.update_one({"_id": intent["_id"]}, {"$set": {"cravitoo_order_id": None, "status": "user_missing"}})
+        return None
+    user_dict = {**user_doc, "id": str(user_doc["_id"])}
+
+    class _MockItems:
+        def __init__(self, items):
+            self._items = items
+        def __iter__(self):
+            for it in self._items:
+                # Rebuild lightweight OrderItemInput-shaped objects
+                yield type("_I", (), {"menu_item_id": it["menu_item_id"], "quantity": it["quantity"], "price": it["price"]})()
+
+    # Re-validate cart at materialisation time — prices might have shifted; but
+    # we honour the intent snapshot as the source of truth since the customer
+    # already paid on that amount.
+    validated_items = intent["items"]
+    total_amount = intent["total_amount"]
+
+    order_id, order_doc = await _materialize_order(
+        user=user_dict,
+        vendor_id=intent["vendor_id"],
+        validated_items=validated_items,
+        total_amount=total_amount,
+        payment_status="paid",
+        payment_method="razorpay",
+        delivery_type=intent.get("delivery_type", "pickup"),
+        special_instructions=intent.get("special_instructions"),
+        razorpay_order_id=intent["razorpay_order_id"],
+        razorpay_payment_id=razorpay_payment_id,
+    )
+
+    await db.payment_intents.update_one(
+        {"_id": intent["_id"]},
+        {"$set": {
+            "cravitoo_order_id": order_id,
+            "razorpay_payment_id": razorpay_payment_id,
+            "status": "paid",
+            "materialised_at": datetime.now(timezone.utc),
+        }},
+    )
+
+    return await db.orders.find_one({"_id": safe_objectid(order_id, "Order")})
+
 
 @api_router.post("/payments/razorpay/verify")
 async def razorpay_verify(data: RazorpayVerify, user: dict = Depends(get_current_user)):
-    """Verify Razorpay payment signature and mark order as paid.
-
-    The frontend may omit `order_id` (Cravitoo order ID) and rely on the
-    payment_transactions lookup via razorpay_order_id.
+    """PAYMENT-FIRST FLOW — Step 3.
+    Frontend calls this immediately after the Razorpay Checkout callback.
+    We verify the HMAC signature, then idempotently materialise the Cravitoo
+    order. If /verify races the webhook, both return the same order_id.
     """
-    tx = await db.payment_transactions.find_one({"razorpay_order_id": data.razorpay_order_id, "user_id": user["id"]})
-    if not tx:
+    intent = await db.payment_intents.find_one({
+        "razorpay_order_id": data.razorpay_order_id,
+        "user_id": user["id"],
+    })
+    if not intent:
         raise HTTPException(status_code=404, detail="Payment session not found")
-    cravitoo_order_id = data.order_id or tx.get("order_id")
-    order = await db.orders.find_one({"_id": safe_objectid(cravitoo_order_id, "Order"), "user_id": user["id"]})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
 
-    if RAZORPAY_MOCK_MODE:
-        # Mock: skip signature verification, accept any payment_id
-        pass
-    else:
+    if not RAZORPAY_MOCK_MODE:
         # Verify HMAC signature
         body = f"{data.razorpay_order_id}|{data.razorpay_payment_id}"
         expected_signature = hmac.new(
             os.environ['RAZORPAY_KEY_SECRET'].encode(),
             body.encode(),
-            hashlib.sha256
+            hashlib.sha256,
         ).hexdigest()
         if not hmac.compare_digest(expected_signature, data.razorpay_signature):
             raise HTTPException(status_code=400, detail="Invalid payment signature")
 
-    # Mark order as paid
-    await db.payment_transactions.update_one(
-        {"razorpay_order_id": data.razorpay_order_id},
-        {"$set": {
-            "payment_status": "paid",
-            "razorpay_payment_id": data.razorpay_payment_id,
-            "razorpay_signature": data.razorpay_signature,
-            "paid_at": datetime.now(timezone.utc)
-        }}
+    order = await _finalize_payment_intent(
+        intent=intent,
+        razorpay_payment_id=data.razorpay_payment_id,
+        source="verify",
     )
-    await db.orders.update_one(
-        {"_id": safe_objectid(cravitoo_order_id, "Order")},
-        {"$set": {"payment_status": "paid", "status": "confirmed"}}
-    )
+    if not order:
+        # Should not happen in practice — either race resolved to another intent, or user missing
+        raise HTTPException(status_code=500, detail="Could not finalise order")
 
-    # Notify vendor (push + websocket)
-    vendor_users = await db.users.find({"vendor_id": order["vendor_id"], "role": "vendor"}).to_list(10)
-    for vu in vendor_users:
-        await create_notification(
-            str(vu["_id"]),
-            "Order Paid & Confirmed",
-            f"Order #{cravitoo_order_id[-8:]} has been paid. Total ₹{order['total_amount']:.2f}",
-            "order"
-        )
-
-    # Broadcast via WebSocket
-    await manager.send_to_user(user["id"], {
-        "type": "order_update",
-        "order_id": cravitoo_order_id,
-        "status": "confirmed",
-        "payment_status": "paid"
-    })
-    await manager.send_to_vendor(order["vendor_id"], {
-        "type": "new_order",
-        "order_id": cravitoo_order_id,
-        "status": "confirmed",
-        "amount": order["total_amount"]
-    })
-
-    return {"verified": True, "payment_status": "paid", "order_status": "confirmed"}
+    return {
+        "verified": True,
+        "order_id": str(order["_id"]),
+        "collection_code": order.get("collection_code"),
+        "total_amount": order.get("total_amount"),
+        "payment_status": "paid",
+        "status": order.get("status"),
+        "pickup_qr": order.get("pickup_qr"),
+    }
 
 
 @api_router.post("/payments/razorpay/webhook")
@@ -2704,51 +2776,46 @@ async def razorpay_webhook(request: Request):
     if not rzp_order_id:
         return {"ok": True, "ignored": "missing order_id"}
 
-    tx = await db.payment_transactions.find_one({"razorpay_order_id": rzp_order_id})
-    if not tx:
-        # Webhook arrived but we have no record of this order — log and ignore (probably a different account)
-        logger.warning(f"Razorpay webhook for unknown order_id={rzp_order_id} event={event}")
-        return {"ok": True, "ignored": "unknown_order"}
-
-    if event in ("payment.captured", "order.paid"):
-        # Idempotent — only update if not already paid
-        if tx.get("payment_status") != "paid":
+    # New payment-first flow: look up the payment_intent
+    intent = await db.payment_intents.find_one({"razorpay_order_id": rzp_order_id})
+    if not intent:
+        # Legacy fallback: some old orders may still exist in payment_transactions
+        tx = await db.payment_transactions.find_one({"razorpay_order_id": rzp_order_id})
+        if not tx:
+            logger.warning(f"Razorpay webhook for unknown order_id={rzp_order_id} event={event}")
+            return {"ok": True, "ignored": "unknown_order"}
+        # Legacy path: just mark the pre-existing order as paid
+        if event in ("payment.captured", "order.paid") and tx.get("payment_status") != "paid":
             await db.payment_transactions.update_one(
                 {"_id": tx["_id"]},
                 {"$set": {
                     "payment_status": "paid",
                     "razorpay_payment_id": rzp_payment_id,
                     "paid_at": datetime.now(timezone.utc),
-                    "confirmed_via": "webhook",
+                    "confirmed_via": "webhook_legacy",
                 }},
             )
-            cravitoo_order_id = tx.get("order_id")
-            if cravitoo_order_id:
+            cid = tx.get("order_id")
+            if cid:
                 await db.orders.update_one(
-                    {"_id": safe_objectid(cravitoo_order_id, "Order")},
+                    {"_id": safe_objectid(cid, "Order")},
                     {"$set": {"payment_status": "paid", "status": "confirmed"}},
                 )
-                # Notify vendor
-                order_doc = await db.orders.find_one({"_id": safe_objectid(cravitoo_order_id, "Order")})
-                if order_doc:
-                    vendor_users = await db.users.find({"vendor_id": order_doc["vendor_id"], "role": "vendor"}).to_list(10)
-                    for vu in vendor_users:
-                        await create_notification(
-                            str(vu["_id"]),
-                            "Order Paid & Confirmed",
-                            f"Order #{cravitoo_order_id[-8:]} has been paid. Total ₹{order_doc.get('total_amount', 0):.2f}",
-                            "order",
-                        )
-                    await manager.send_to_vendor(order_doc["vendor_id"], {
-                        "type": "new_order", "order_id": cravitoo_order_id, "amount": order_doc.get("total_amount", 0),
-                    })
-        return {"ok": True, "marked_paid": True}
+        return {"ok": True, "legacy": True}
+
+    if event in ("payment.captured", "order.paid"):
+        order = await _finalize_payment_intent(intent=intent, razorpay_payment_id=rzp_payment_id, source="webhook")
+        return {
+            "ok": True,
+            "marked_paid": True,
+            "order_id": str(order["_id"]) if order else None,
+        }
 
     if event == "payment.failed":
-        await db.payment_transactions.update_one(
-            {"_id": tx["_id"]},
+        await db.payment_intents.update_one(
+            {"_id": intent["_id"]},
             {"$set": {
-                "payment_status": "failed",
+                "status": "failed",
                 "razorpay_payment_id": rzp_payment_id,
                 "failed_at": datetime.now(timezone.utc),
                 "error_description": pay_entity.get("error_description"),

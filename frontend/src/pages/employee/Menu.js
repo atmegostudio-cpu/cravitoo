@@ -266,16 +266,17 @@ const EmployeeMenu = () => {
   };
 
   const placeOrdersForAllVendors = async () => {
+    if (submitting) return;   // hard guard against double-click
     setSubmitting(true);
     try {
       const allVendorIds = Object.keys(cartByVendor);
       if (allVendorIds.length === 0) return;
 
+      const successfulOrders = [];   // {code, vendorName, amount, mode}
       const paidVendors = [];
-      const offlineCodes = [];  // {code, vendorName, amount}
       const failures = [];
 
-      // Fetch payment mode ONCE — if OFFLINE, skip Razorpay entirely.
+      // Fetch payment mode ONCE — decides which endpoint we hit.
       let paymentMode = 'OFFLINE';
       try {
         const { data } = await axios.get(`${API}/config/payment-mode`, { withCredentials: true });
@@ -293,9 +294,10 @@ const EmployeeMenu = () => {
 
       for (const vId of allVendorIds) {
         const vendorCart = cartByVendor[vId];
-        let orderId;
+        const vendorName = vendorCart.vendor?.name || 'Vendor';
+        const vendorAmount = (vendorCart.items || []).reduce((s, it) => s + it.price * it.quantity, 0);
         try {
-          const orderData = {
+          const cartPayload = {
             vendor_id: vId,
             items: vendorCart.items.map((item) => ({
               menu_item_id: item.id,
@@ -304,53 +306,63 @@ const EmployeeMenu = () => {
             })),
             delivery_type: 'pickup',
           };
-          const { data: created } = await axios.post(`${API}/orders`, orderData, { withCredentials: true });
-          orderId = created.id;
 
-          if (paymentMode === 'OFFLINE') {
-            // No Razorpay flow — order is confirmed as pending payment.
-            offlineCodes.push({
-              code: created.collection_code,
-              vendorName: vendorCart.vendor?.name || 'Vendor',
-              amount: (vendorCart.items || []).reduce((s, it) => s + it.price * it.quantity, 0),
+          if (paymentMode === 'RAZORPAY') {
+            // PAYMENT-FIRST FLOW —
+            //   1) Ask backend to create a Razorpay order (no Cravitoo order yet)
+            //   2) Open checkout, user pays
+            //   3) Send signatures to /verify — backend materialises the Cravitoo order
+            //      atomically and returns the collection_code + order_id.
+            const { data: intent } = await axios.post(
+              `${API}/payments/razorpay/checkout-intent`,
+              cartPayload,
+              { withCredentials: true },
+            );
+            const payResp = await openRazorpayCheckout({
+              keyId: intent.key_id,
+              razorpayOrderId: intent.razorpay_order_id,
+              amount: intent.amount,
+              currency: intent.currency,
+              description: `Cravitoo — ${vendorName}`,
             });
-            paidVendors.push(vId);
-            continue;
+            const { data: verified } = await axios.post(
+              `${API}/payments/razorpay/verify`,
+              {
+                razorpay_order_id: payResp.razorpay_order_id,
+                razorpay_payment_id: payResp.razorpay_payment_id,
+                razorpay_signature: payResp.razorpay_signature,
+              },
+              { withCredentials: true },
+            );
+            successfulOrders.push({
+              code: verified.collection_code,
+              vendorName,
+              amount: verified.total_amount || vendorAmount,
+              mode: 'RAZORPAY',
+              orderId: verified.order_id,
+            });
+          } else {
+            // OFFLINE — old behaviour (backend creates order in pending state)
+            const { data: created } = await axios.post(`${API}/orders`, cartPayload, { withCredentials: true });
+            successfulOrders.push({
+              code: created.collection_code,
+              vendorName,
+              amount: vendorAmount,
+              mode: 'OFFLINE',
+              orderId: created.id,
+            });
           }
-
-          const { data: rzpOrder } = await axios.post(
-            `${API}/payments/razorpay/create-order`,
-            { order_id: orderId },
-            { withCredentials: true },
-          );
-          const payResp = await openRazorpayCheckout({
-            keyId: rzpOrder.key_id,
-            razorpayOrderId: rzpOrder.razorpay_order_id,
-            amount: rzpOrder.amount,
-            currency: rzpOrder.currency,
-            description: `Cravitoo Order #${orderId.slice(-8)}`,
-          });
-          await axios.post(
-            `${API}/payments/razorpay/verify`,
-            {
-              razorpay_order_id: payResp.razorpay_order_id,
-              razorpay_payment_id: payResp.razorpay_payment_id,
-              razorpay_signature: payResp.razorpay_signature,
-            },
-            { withCredentials: true },
-          );
           paidVendors.push(vId);
         } catch (payErr) {
           logger.error('Payment failed for vendor', vId, payErr);
-          const label = vendorCart.vendor?.name || vId.slice(-6);
-          failures.push({ vId, label, message: payErr?.message || 'unknown' });
-          // If user cancelled, abort the whole loop to respect their intent.
+          const label = vendorName;
+          const detail = payErr?.response?.data?.detail || payErr?.message || 'unknown';
+          failures.push({ vId, label, message: detail });
           if (payErr?.message === 'Payment cancelled') break;
         }
       }
 
-      // Clear ONLY the successfully-paid vendor carts. Failed ones stay
-      // in the cart so the user can retry without re-picking items.
+      // Clear ONLY the successfully-paid vendor carts.
       setCartByVendor((prev) => {
         const next = { ...prev };
         for (const vId of paidVendors) delete next[vId];
@@ -361,23 +373,24 @@ const EmployeeMenu = () => {
       });
       setCartSheetOpen(false);
 
-      if (failures.length === 0 && paidVendors.length > 0) {
-        if (offlineCodes.length > 0) {
-          // Show a confirmation dialog with every collection code, then
-          // route to Orders where the user sees full details + QR.
-          const codeList = offlineCodes.map(o => `  • ${o.vendorName}: ${o.code}  (₹${o.amount.toFixed(2)})`).join('\n');
-          alert(
-            `Order confirmed. Pay at the counter.\n\n` +
-            `Show these Collection Codes to the vendor:\n\n${codeList}`
-          );
-        }
+      if (failures.length === 0 && successfulOrders.length > 0) {
+        const isPaid = successfulOrders[0].mode === 'RAZORPAY';
+        const codeList = successfulOrders
+          .map(o => `  • ${o.vendorName}: ${o.code}  (₹${o.amount.toFixed(2)})`)
+          .join('\n');
+        alert(
+          (isPaid
+            ? 'Payment successful! Show these Collection Codes at the counter to collect your order:\n\n'
+            : 'Order confirmed. Pay at the counter.\n\nShow these Collection Codes to the vendor:\n\n')
+          + codeList,
+        );
         window.location.href = '/employee/orders';
       } else if (paidVendors.length > 0) {
         const failedLabels = failures.map((f) => f.label).join(', ');
         alert(
           `${paidVendors.length} order(s) placed successfully.\n` +
           `${failures.length} vendor cart(s) still pending (${failedLabels}). ` +
-          `You can retry them from the cart.`
+          `You can retry them from the cart.`,
         );
       } else {
         // 0 paid, some failures
