@@ -235,13 +235,14 @@ def make_router(
 
     @r.post("/auth/refresh")
     async def refresh(request: Request, response: Response):
-        """Issue a new access_token using the refresh_token cookie.
+        """Issue a new access_token AND rotate the refresh_token cookie.
 
-        Solves the "Not authenticated" mid-session bug where the 15-min access
-        token expires while the user is still actively using the app.
+        Rolling window: every successful refresh mints a fresh 365-day refresh
+        token so an active PWA never has its session clock run out. Only truly
+        idle sessions (>1 year no use), manual logout, admin `is_active=False`,
+        or a password change (via `password_changed_at`) can end the session.
 
         Reads `refresh_token` from cookie OR Authorization header (mobile).
-        Returns a new short-lived access token + sets it as a cookie.
         """
         import jwt as _jwt
         token = request.cookies.get("refresh_token")
@@ -260,6 +261,7 @@ def make_router(
             if payload.get("type") != "refresh":
                 raise HTTPException(status_code=401, detail="Invalid token type")
             user_id = payload.get("sub")
+            issued_at = payload.get("iat", 0)
             if not user_id:
                 raise HTTPException(status_code=401, detail="Invalid refresh token")
         except _jwt.ExpiredSignatureError:
@@ -273,8 +275,20 @@ def make_router(
         # Deactivated accounts cannot silently refresh — kill the session.
         if user.get("is_active") is False:
             raise HTTPException(status_code=403, detail="Account deactivated")
+        # Password-change invalidation: any refresh token issued before the
+        # last password change is rejected. Server-side kill switch for
+        # compromised sessions.
+        pwd_changed_at = user.get("password_changed_at")
+        if pwd_changed_at:
+            try:
+                pwd_changed_epoch = int(pwd_changed_at.timestamp()) if hasattr(pwd_changed_at, "timestamp") else int(pwd_changed_at)
+                if issued_at and issued_at < pwd_changed_epoch:
+                    raise HTTPException(status_code=401, detail="Session revoked — please log in again")
+            except (TypeError, ValueError):
+                pass
 
         new_access = create_access_token(str(user["_id"]), user["email"], user["role"])
+        new_refresh = create_refresh_token(str(user["_id"]))     # rolling 365-day window
         secure_cookie = is_secure_request(request)
         samesite_value = "none" if secure_cookie else "lax"
         response.set_cookie(
@@ -282,7 +296,12 @@ def make_router(
             httponly=True, secure=secure_cookie, samesite=samesite_value,
             max_age=900, path="/",
         )
-        return {"access_token": new_access}
+        response.set_cookie(
+            key="refresh_token", value=new_refresh,
+            httponly=True, secure=secure_cookie, samesite=samesite_value,
+            max_age=31536000, path="/",
+        )
+        return {"access_token": new_access, "refresh_token": new_refresh}
 
 
     # ============== Email OTP login (channel-agnostic — SMS can be added later) ==============
@@ -647,9 +666,16 @@ def make_router(
                 raise HTTPException(status_code=400, detail="Current password is incorrect")
 
         new_hash = hash_password(data.new_password)
+        now = datetime.now(timezone.utc)
         await db.users.update_one(
             {"_id": user_doc["_id"]},
-            {"$set": {"password_hash": new_hash, "password_updated_at": datetime.now(timezone.utc)}}
+            {"$set": {
+                "password_hash": new_hash,
+                "password_updated_at": now,
+                # /auth/refresh rejects refresh tokens issued before this
+                # timestamp — effectively logs out every other device.
+                "password_changed_at": now,
+            }},
         )
         try:
             await db.audit_log.insert_one({

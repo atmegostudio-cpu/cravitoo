@@ -166,7 +166,13 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
 REFRESH_TOKEN_DAYS = 365
 
 def create_refresh_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_DAYS), "type": "refresh"}
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "iat": int(now.timestamp()),   # used for password-change revocation
+        "exp": now + timedelta(days=REFRESH_TOKEN_DAYS),
+        "type": "refresh",
+    }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
