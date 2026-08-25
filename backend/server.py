@@ -2808,7 +2808,30 @@ async def razorpay_webhook(request: Request):
     rzp_payment_id = pay_entity.get("id")
 
     if not rzp_order_id:
-        return {"ok": True, "ignored": "missing order_id"}
+        # Payments that arrive without an order_id are NOT from the Cravitoo
+        # checkout flow — our /checkout-intent always calls Razorpay Orders API.
+        # These come from other Razorpay products the merchant may have enabled:
+        #   • Static Payment QR / QRv2  (description contains 'QR' or 'QRv2')
+        #   • Payment Links / Payment Pages
+        #   • Payment Button widgets
+        # We log with enough detail for merchant-side triage and return 200 so
+        # Razorpay doesn't disable the webhook.
+        logger.warning(
+            "Razorpay webhook — payment without order_id. "
+            f"NOT from Cravitoo checkout (that flow always uses Orders API). "
+            f"payment_id={rzp_payment_id} amount={pay_entity.get('amount')} "
+            f"method={pay_entity.get('method')} description='{pay_entity.get('description')}' "
+            f"vpa={pay_entity.get('vpa')} event={event}. "
+            "Likely source: Razorpay Static QR / Payment Link / Payment Button. "
+            "If unintended, disable it in Razorpay Dashboard → Payment Products."
+        )
+        return {
+            "ok": True,
+            "ignored": "payment_without_order_id",
+            "note": "This payment did not originate from the Cravitoo Standard Checkout flow (which always creates a Razorpay Order via the Orders API). It came from Razorpay Static QR, Payment Link, or Payment Button. Cravitoo cannot reconcile it because there is no corresponding cart intent.",
+            "payment_id": rzp_payment_id,
+            "source_hint": pay_entity.get("description"),
+        }
 
     # New payment-first flow: look up the payment_intent
     intent = await db.payment_intents.find_one({"razorpay_order_id": rzp_order_id})
