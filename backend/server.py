@@ -3422,15 +3422,15 @@ async def resend_vendor_onboarding(
             {"$set": {"email": override, "contact_email": override}},
         )
 
-    # Create the magic link (single-use, 7-day expiry)
+    # Create the magic link (single-use, no time expiry — vendor sets password on click)
     token = _generate_magic_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.vendor_magic_links.insert_one({
         "token": token,
         "vendor_user_id": vendor_user_id,
         "vendor_id": vendor_id,
         "email": target_email,
-        "expires_at": expires_at,
+        "purpose": "onboarding",       # 'onboarding' | 'password_reset'
+        "expires_at": None,            # no expiry — invalid only after use
         "used_at": None,
         "created_by_admin": user["id"],
         "created_at": datetime.now(timezone.utc),
@@ -3439,7 +3439,7 @@ async def resend_vendor_onboarding(
     magic_url = f"{public_base}/auth/magic/{token}"
 
     # Send the ONE combined email
-    subject = f"You're onboarded on Cravitoo — Sign in to your Vendor Panel"
+    subject = f"You're onboarded on Cravitoo — Set your Vendor Panel password"
     try:
         import email_service as _es
         html, text = _es.render_vendor_magic_link_email(
@@ -3472,8 +3472,7 @@ async def resend_vendor_onboarding(
     return {
         "success": True,
         "delivered_to": target_email,
-        "expires_at": expires_at.isoformat(),
-        "message": f"Onboarding link sent to {target_email}. It is valid for 7 days.",
+        "message": f"Onboarding link sent to {target_email}. Vendor will set their password on first click.",
     }
 
 
@@ -3492,49 +3491,182 @@ async def vendor_email_log(vendor_id: str, user: dict = Depends(get_current_user
     } for r in rows]
 
 
-@api_router.post("/auth/magic/{token}/consume")
-async def consume_magic_link(token: str, response: Response, request: Request):
-    """Public — consumes a single-use magic link and issues a session cookie.
-    Called by the frontend `/auth/magic/:token` route on mount."""
+@api_router.get("/auth/magic/{token}")
+async def verify_magic_link(token: str):
+    """Public — checks the magic link without consuming it. Frontend calls this
+    when the vendor lands on /auth/magic/:token so we can render the right screen
+    (Set Password / Reset Password / already-used)."""
     doc = await db.vendor_magic_links.find_one({"token": token})
     if not doc:
-        raise HTTPException(status_code=404, detail="Link not found or already consumed")
+        raise HTTPException(status_code=404, detail="This link is not valid. Ask your admin to send you a new one.")
     if doc.get("used_at"):
-        raise HTTPException(status_code=410, detail="This link was already used. Please sign in with Email OTP.")
+        raise HTTPException(status_code=410, detail="This link was already used. Sign in with your email and password, or use Forgot Password.")
+
+    # Optional expiry (kept nullable — onboarding links never expire, but
+    # password-reset links may in future). Skip when None.
     expires_at = doc.get("expires_at")
     if expires_at:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < datetime.now(timezone.utc):
-            raise HTTPException(status_code=410, detail="This link expired. Ask your admin to resend it.")
+            raise HTTPException(status_code=410, detail="This link expired. Ask your admin to send a new one.")
 
-    user = await db.users.find_one({"_id": safe_objectid(doc["vendor_user_id"], "User")})
-    if not user or user.get("is_active") is False:
-        raise HTTPException(status_code=403, detail="This vendor account is disabled. Contact your admin.")
+    user_doc = await db.users.find_one({"_id": safe_objectid(doc["vendor_user_id"], "User")})
+    if not user_doc or user_doc.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="This account is disabled. Contact your admin.")
+    vendor_doc = await db.vendors.find_one({"_id": safe_objectid(doc.get("vendor_id", ""), "Vendor")}) if doc.get("vendor_id") else None
+    return {
+        "email": doc.get("email") or user_doc.get("email"),
+        "vendor_name": vendor_doc.get("name") if vendor_doc else None,
+        "purpose": doc.get("purpose", "onboarding"),
+        "user_name": user_doc.get("name"),
+    }
 
-    # Consume atomically — first caller wins, second gets the 410 above
+
+class _CompleteMagicBody(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+@api_router.post("/auth/magic/{token}/complete")
+async def complete_magic_link(token: str, body: _CompleteMagicBody, request: Request, response: Response):
+    """Public — validates the password FIRST, then atomically consumes the
+    magic link and sets the user's password. A failed password attempt does
+    NOT burn the token so the user can retry."""
+    # 1) Read the token WITHOUT claiming
+    doc = await db.vendor_magic_links.find_one({"token": token})
+    if not doc:
+        raise HTTPException(status_code=404, detail="This link is not valid.")
+    if doc.get("used_at"):
+        raise HTTPException(status_code=410, detail="This link was already used. Sign in with your email and password.")
+    expires_at = doc.get("expires_at")
+    now = datetime.now(timezone.utc)
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise HTTPException(status_code=410, detail="This link expired.")
+
+    user_doc = await db.users.find_one({"_id": safe_objectid(doc["vendor_user_id"], "User")})
+    if not user_doc or user_doc.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="This account is disabled. Contact your admin.")
+
+    # 2) Validate password BEFORE consuming the token
+    pwd = body.password
+    if not any(ch.isalpha() for ch in pwd) or not any(ch.isdigit() for ch in pwd):
+        raise HTTPException(status_code=400, detail="Password must contain at least one letter and one number.")
+
+    # 3) Atomically claim — first caller wins; if race, second gets 410
     claim = await db.vendor_magic_links.find_one_and_update(
         {"_id": doc["_id"], "used_at": None},
-        {"$set": {"used_at": datetime.now(timezone.utc)}},
+        {"$set": {"used_at": now}},
     )
-    if claim is None:
-        raise HTTPException(status_code=410, detail="This link was already used. Please sign in with Email OTP.")
+    if not claim:
+        raise HTTPException(status_code=410, detail="This link was just used from another tab.")
 
-    access = create_access_token(str(user["_id"]), user["email"], user["role"])
-    refresh = create_refresh_token(str(user["_id"]))
+    # 4) Hash + persist password
+    try:
+        from passlib.hash import bcrypt as _bcrypt
+        new_hash = _bcrypt.hash(pwd)
+    except Exception:
+        import bcrypt as _bc
+        new_hash = _bc.hashpw(pwd.encode("utf-8"), _bc.gensalt()).decode("utf-8")
+
+    await db.users.update_one(
+        {"_id": user_doc["_id"]},
+        {"$set": {
+            "password_hash": new_hash,
+            "password_updated_at": now,
+            "password_changed_at": now,
+            "failed_attempts": 0,
+        }},
+    )
+
+    access = create_access_token(str(user_doc["_id"]), user_doc["email"], user_doc["role"])
+    refresh = create_refresh_token(str(user_doc["_id"]))
     secure_cookie = is_secure_request(request)
     samesite_value = "none" if secure_cookie else "lax"
     response.set_cookie("access_token", access, httponly=True, secure=secure_cookie,
                         samesite=samesite_value, max_age=900, path="/")
     response.set_cookie("refresh_token", refresh, httponly=True, secure=secure_cookie,
                         samesite=samesite_value, max_age=31536000, path="/")
+    await audit_log({"id": str(user_doc["_id"]), "email": user_doc["email"], "role": user_doc["role"]},
+                    "auth", str(user_doc["_id"]),
+                    "magic_link_completed",
+                    {"purpose": claim.get("purpose", "onboarding")})
     return {
         "success": True,
-        "role": user["role"],
-        "email": user["email"],
-        "name": user.get("name"),
-        "vendor_id": user.get("vendor_id"),
+        "role": user_doc["role"],
+        "email": user_doc["email"],
+        "name": user_doc.get("name"),
+        "vendor_id": user_doc.get("vendor_id"),
     }
+
+
+# Backwards-compat alias — old frontend that hit /consume still works but only
+# for links that haven't been used yet (returns metadata without setting password).
+@api_router.post("/auth/magic/{token}/consume")
+async def consume_magic_link_deprecated(token: str):
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint has been replaced by GET /auth/magic/{token} + POST /auth/magic/{token}/complete. Please refresh your app.",
+    )
+
+
+class _ForgotPasswordBody(BaseModel):
+    email: str
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(body: _ForgotPasswordBody, request: Request):
+    """Public. Sends a one-tap password-reset link if the email belongs to a
+    known active user. Always returns 200 so attackers cannot enumerate emails.
+
+    Rate-limited: max 3 reset emails per email address per hour (spam guard).
+    """
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        # Even for garbage input we return the success message to avoid probing.
+        return {"success": True, "message": "If this email is registered, a reset link has been sent."}
+
+    # Anti-spam: no more than 3 resets per email per hour
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent = await db.vendor_magic_links.count_documents({
+        "email": email,
+        "purpose": "password_reset",
+        "created_at": {"$gte": one_hour_ago},
+    })
+    if recent >= 3:
+        return {"success": True, "message": "If this email is registered, a reset link has been sent."}
+
+    user_doc = await db.users.find_one({"email": email})
+    if user_doc and user_doc.get("is_active") is not False:
+        token = _generate_magic_token()
+        await db.vendor_magic_links.insert_one({
+            "token": token,
+            "vendor_user_id": str(user_doc["_id"]),
+            "vendor_id": user_doc.get("vendor_id"),
+            "email": email,
+            "purpose": "password_reset",
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),   # reset links DO expire, unlike onboarding
+            "used_at": None,
+            "created_by_admin": None,
+            "created_at": datetime.now(timezone.utc),
+        })
+        public_base = os.environ.get("PUBLIC_APP_URL", "https://app.cravitoo.com").rstrip("/")
+        reset_url = f"{public_base}/auth/magic/{token}"
+        try:
+            import email_service as _es
+            html, text = _es.render_password_reset_email(
+                name=user_doc.get("name") or "there",
+                reset_url=reset_url,
+            )
+            _es.send_email(email, "Reset your Cravitoo password", html, text)
+        except Exception as e:
+            logger.warning(f"Password reset email failed for {email}: {e}")
+
+    # Uniform response regardless of user existence
+    return {"success": True, "message": "If this email is registered, a reset link has been sent."}
+
 
 
 @api_router.delete("/vendors/{vendor_id}")

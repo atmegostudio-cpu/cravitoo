@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import MagicLinkConsumer from './pages/MagicLinkConsumer';
 import RegisterPage from './pages/RegisterPage';
 
@@ -107,6 +108,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LandingPage />} />
       <Route path="/login" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/auth/magic/:token" element={<MagicLinkConsumer />} />
       <Route path="/register" element={user ? <Navigate to={getDefaultRoute()} replace /> : <RegisterPage />} />
       

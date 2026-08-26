@@ -179,7 +179,16 @@ const LoginPage = () => {
                   />
                 </div>
                 <div className="mb-6">
-                  <label className="block text-sm font-medium text-text-primary mb-2" htmlFor="password">Password</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-text-primary" htmlFor="password">Password</label>
+                    <Link
+                      to="/forgot-password"
+                      data-testid="forgot-password-link"
+                      className="text-xs text-primary hover:text-primary-hover font-medium"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <input
                     type="password" id="password" data-testid="login-password-input"
                     value={password} onChange={(e) => setPassword(e.target.value)}

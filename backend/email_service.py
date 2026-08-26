@@ -413,12 +413,10 @@ Lost or didn't receive the code? Just request a new one — codes expire after 1
 
 
 def render_vendor_magic_link_email(*, name: str, vendor_name: str, magic_url: str, expires_hours: int = 168) -> Tuple[str, str]:
-    """One-tap sign-in email for vendors. Combines welcome + onboarding link
-    in a single message so partial delivery failures can't happen. Link is
-    single-use, expires in `expires_hours` (default 7 days)."""
+    """One-tap sign-in email for vendors. On click, vendor sets their password
+    for the first time. Link is single-use and does not expire until used."""
     safe_name = (name or "Partner").split()[0][:40]
     safe_vendor = (vendor_name or "your business")[:80]
-    days = max(1, expires_hours // 24)
     html = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Welcome to Cravitoo Partner Panel</title></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#FFF7F0;color:#1F1410;">
@@ -430,16 +428,17 @@ def render_vendor_magic_link_email(*, name: str, vendor_name: str, magic_url: st
     </td></tr>
     <tr><td style="padding:32px;">
       <p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
-        Welcome aboard. <strong>{safe_vendor}</strong> is now onboarded on Cravitoo. Tap the button below to sign in to your Vendor Panel — no OTP needed this time.
+        Welcome aboard. <strong>{safe_vendor}</strong> is now onboarded on Cravitoo. Tap the button below to <strong>set your password</strong> — you'll only do this once.
       </p>
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:24px 0;"><tr><td align="center">
-        <a href="{magic_url}" style="display:inline-block;background:#FF5A1F;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:600;font-size:15px;">Open Vendor Panel →</a>
+        <a href="{magic_url}" style="display:inline-block;background:#FF5A1F;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:600;font-size:15px;">Set My Password →</a>
       </td></tr></table>
       <p style="margin:0 0 12px 0;font-size:13px;color:#7C6B60;line-height:1.6;">
-        This one-tap link is valid for <strong>{days} day{'s' if days != 1 else ''}</strong> and can be used only once. After that, sign in with your Email Code at
-        <a href="https://app.cravitoo.com/login" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com/login</a>.
+        This is a one-time link. Once you set your password, sign in normally at
+        <a href="https://app.cravitoo.com/login" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com/login</a>
+        with your email + password.
       </p>
-      <p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;font-size:14px;">What you can do next</p>
+      <p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;font-size:14px;">Once you're in you can</p>
       <ul style="padding-left:20px;margin:0 0 16px 0;color:#52443A;line-height:1.8;font-size:14px;">
         <li>Upload / edit your daily menu with photos</li>
         <li>Receive new orders in real time (already-paid, no cash to handle)</li>
@@ -447,7 +446,7 @@ def render_vendor_magic_link_email(*, name: str, vendor_name: str, magic_url: st
         <li>View daily settlements + earnings</li>
       </ul>
       <p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">
-        Didn't request this? You can safely ignore this email — the link expires automatically.
+        Didn't request this? You can safely ignore this email — the link stays unused.
       </p>
     </td></tr>
     <tr><td style="background:#FFF7EE;padding:16px 32px;text-align:center;color:#9C8B80;font-size:12px;">
@@ -459,11 +458,53 @@ def render_vendor_magic_link_email(*, name: str, vendor_name: str, magic_url: st
 
 {safe_vendor} is now onboarded on Cravitoo.
 
-Sign in with one tap (no OTP needed):
+Set your password (one-time link):
 {magic_url}
 
-This link is valid for {days} day{'s' if days != 1 else ''} and can be used only once.
-After that, sign in with your Email Code at https://app.cravitoo.com/login
+Once you set your password, sign in normally at https://app.cravitoo.com/login
+with your email + password.
+
+— Team Cravitoo
+"""
+    return html, text
+
+
+def render_password_reset_email(*, name: str, reset_url: str) -> Tuple[str, str]:
+    """Password-reset email for any Cravitoo user (vendors, employees, admins)."""
+    safe_name = (name or "there").split()[0][:40]
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Reset your Cravitoo password</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#FFF7F0;color:#1F1410;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#FFF7F0;"><tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid rgba(255,90,31,0.15);border-radius:16px;overflow:hidden;">
+    <tr><td style="background:linear-gradient(135deg,#FF5A1F 0%,#FF7A3F 100%);padding:20px 32px;color:#ffffff;">
+      <p style="margin:0;font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.9;">Password reset</p>
+      <p style="margin:6px 0 0 0;font-size:20px;font-weight:700;">Hey {safe_name} 👋</p>
+    </td></tr>
+    <tr><td style="padding:32px;">
+      <p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+        We received a request to reset your Cravitoo password. Tap the button below to choose a new one — this link is valid for the next 24 hours and can be used only once.
+      </p>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:24px 0;"><tr><td align="center">
+        <a href="{reset_url}" style="display:inline-block;background:#FF5A1F;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:600;font-size:15px;">Reset My Password →</a>
+      </td></tr></table>
+      <p style="margin:0 0 12px 0;font-size:13px;color:#7C6B60;line-height:1.6;">
+        If you didn't request this, ignore this email — your current password stays active and no one else can change it without your inbox.
+      </p>
+    </td></tr>
+    <tr><td style="background:#FFF7EE;padding:16px 32px;text-align:center;color:#9C8B80;font-size:12px;">
+      Cravitoo · Smart Corporate Cafeteria · <a href="https://app.cravitoo.com" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com</a>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+    text = f"""Hey {safe_name},
+
+We received a request to reset your Cravitoo password.
+
+Reset link (valid 24 hours, single-use):
+{reset_url}
+
+If you didn't request this, ignore this email — your current password stays active.
 
 — Team Cravitoo
 """
