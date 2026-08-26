@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Edit, Save, X, Settings, Mail, Trash2, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { Store, Edit, Save, X, Settings, Mail, Trash2, Send, CheckCircle2, AlertCircle, Clock, Sparkles } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -19,6 +19,8 @@ const MasterVendors = () => {
   const [resendBusy, setResendBusy] = useState(false);
   const [resendResult, setResendResult] = useState(null);       // {ok, message}
   const [resendLog, setResendLog] = useState([]);
+  const [sanitizing, setSanitizing] = useState(false);
+  const [sanitizeResult, setSanitizeResult] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -100,6 +102,29 @@ const MasterVendors = () => {
     } catch (_) { /* silent */ }
   };
 
+  const sanitizeMappings = async () => {
+    if (!window.confirm(
+      'Clean up stale vendor-site mappings?\n\n' +
+      'This scans every "active" mapping and deactivates any that points ' +
+      'to a suspended, inactive, or deleted vendor. Safe to run — it does ' +
+      'not delete data, only marks stale rows as inactive.'
+    )) return;
+    setSanitizing(true);
+    setSanitizeResult(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/admin/vendor-site-mappings/sanitize`,
+        {},
+        { withCredentials: true },
+      );
+      setSanitizeResult({ ok: true, n: data.stale_mappings_deactivated || 0 });
+    } catch (e) {
+      setSanitizeResult({ ok: false, message: e?.response?.data?.detail || 'Sanitize failed' });
+    } finally {
+      setSanitizing(false);
+    }
+  };
+
   const doResend = async () => {
     if (!resendVendor) return;
     const email = (resendEmail || '').trim().toLowerCase();
@@ -149,7 +174,48 @@ const MasterVendors = () => {
               <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">Vendors</h1>
               <p className="text-text-secondary mt-2">Manage platform vendors & commission rates</p>
             </div>
+            <button
+              data-testid="sanitize-mappings-btn"
+              onClick={sanitizeMappings}
+              disabled={sanitizing}
+              title="Deactivate mappings pointing to suspended / deleted vendors so they stop appearing under site vendor lists"
+              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" />
+              {sanitizing ? 'Cleaning…' : 'Clean up site mappings'}
+            </button>
           </div>
+
+          {sanitizeResult && (
+            <div
+              data-testid={sanitizeResult.ok ? 'sanitize-success' : 'sanitize-error'}
+              className={`mb-6 flex items-start gap-2 rounded-xl p-3.5 text-sm ${
+                sanitizeResult.ok
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border border-red-200 text-red-800'
+              }`}
+            >
+              {sanitizeResult.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+              <div className="flex-1">
+                {sanitizeResult.ok ? (
+                  sanitizeResult.n === 0 ? (
+                    <span>All vendor-site mappings are already clean. Nothing to fix.</span>
+                  ) : (
+                    <span>Cleaned up <strong>{sanitizeResult.n}</strong> stale mapping{sanitizeResult.n === 1 ? '' : 's'}. Those vendors will no longer appear on their sites&apos; vendor lists.</span>
+                  )
+                ) : (
+                  <span>{sanitizeResult.message}</span>
+                )}
+              </div>
+              <button
+                onClick={() => setSanitizeResult(null)}
+                className="text-current hover:opacity-70"
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
             <table className="w-full">
