@@ -3307,8 +3307,58 @@ async def update_vendor(vendor_id: str, payload: Dict[str, Any], user: dict = De
     if "phone" in cleaned:
         cleaned["contact_phone"] = cleaned["phone"]
     await db.vendors.update_one({"_id": safe_objectid(vendor_id, "Vendor")}, {"$set": cleaned})
+
+    # Cascade status → vendor_site_mappings. Suspending or inactivating a
+    # vendor must remove them from every site's vendor list. Reactivating
+    # restores their mappings. Without this, a stale mapping row (created
+    # months ago or by the demo seed) can keep an "unassigned" vendor
+    # appearing under a site.
+    if "status" in cleaned:
+        new_status = cleaned["status"]
+        if new_status in ("inactive", "suspended"):
+            await db.vendor_site_mappings.update_many(
+                {"vendor_id": vendor_id, "status": "active"},
+                {"$set": {"status": "inactive",
+                          "deactivated_at": datetime.now(timezone.utc),
+                          "deactivated_by": user["id"]}},
+            )
+        elif new_status == "active":
+            await db.vendor_site_mappings.update_many(
+                {"vendor_id": vendor_id, "status": "inactive"},
+                {"$set": {"status": "active"},
+                 "$unset": {"deactivated_at": "", "deactivated_by": ""}},
+            )
+
     await audit_log(user, "vendor", vendor_id, "updated", cleaned)
     return {"message": "Vendor updated"}
+
+
+@api_router.post("/admin/vendor-site-mappings/sanitize")
+async def sanitize_vendor_site_mappings(user: dict = Depends(get_current_user)):
+    """One-shot cleanup: marks every mapping pointing to a non-existent or
+    non-active vendor as 'inactive'. Safe to call multiple times.
+    Returns the counts so admin can see what was fixed."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    # Get IDs of all currently-active vendors
+    active_vendors = await db.vendors.find({"status": "active"}, {"_id": 1}).to_list(10000)
+    active_vendor_ids = {str(v["_id"]) for v in active_vendors}
+
+    stale_cur = db.vendor_site_mappings.find({"status": "active"})
+    stale_updates = 0
+    async for m in stale_cur:
+        if m.get("vendor_id") not in active_vendor_ids:
+            await db.vendor_site_mappings.update_one(
+                {"_id": m["_id"]},
+                {"$set": {"status": "inactive",
+                          "deactivated_at": datetime.now(timezone.utc),
+                          "deactivated_by": user["id"],
+                          "deactivation_reason": "vendor_not_active"}},
+            )
+            stale_updates += 1
+    await audit_log(user, "vendor_site_mapping", "*", "sanitized",
+                    {"stale_mappings_deactivated": stale_updates})
+    return {"success": True, "stale_mappings_deactivated": stale_updates}
 
 
 # ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============
