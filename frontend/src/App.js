@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import MagicLinkConsumer from './pages/MagicLinkConsumer';
 import RegisterPage from './pages/RegisterPage';
 
 import EmployeeDashboard from './pages/employee/Dashboard';
@@ -106,6 +107,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LandingPage />} />
       <Route path="/login" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} />
+      <Route path="/auth/magic/:token" element={<MagicLinkConsumer />} />
       <Route path="/register" element={user ? <Navigate to={getDefaultRoute()} replace /> : <RegisterPage />} />
       
       {/* Employee Routes */}

@@ -412,6 +412,64 @@ Lost or didn't receive the code? Just request a new one — codes expire after 1
     return html, text
 
 
+def render_vendor_magic_link_email(*, name: str, vendor_name: str, magic_url: str, expires_hours: int = 168) -> Tuple[str, str]:
+    """One-tap sign-in email for vendors. Combines welcome + onboarding link
+    in a single message so partial delivery failures can't happen. Link is
+    single-use, expires in `expires_hours` (default 7 days)."""
+    safe_name = (name or "Partner").split()[0][:40]
+    safe_vendor = (vendor_name or "your business")[:80]
+    days = max(1, expires_hours // 24)
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Welcome to Cravitoo Partner Panel</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#FFF7F0;color:#1F1410;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#FFF7F0;"><tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid rgba(255,90,31,0.15);border-radius:16px;overflow:hidden;">
+    <tr><td style="background:linear-gradient(135deg,#FF5A1F 0%,#FF7A3F 100%);padding:20px 32px;color:#ffffff;">
+      <p style="margin:0;font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.9;">Cravitoo Partner Panel</p>
+      <p style="margin:6px 0 0 0;font-size:20px;font-weight:700;">Your account is ready, {safe_name}</p>
+    </td></tr>
+    <tr><td style="padding:32px;">
+      <p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+        Welcome aboard. <strong>{safe_vendor}</strong> is now onboarded on Cravitoo. Tap the button below to sign in to your Vendor Panel — no OTP needed this time.
+      </p>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:24px 0;"><tr><td align="center">
+        <a href="{magic_url}" style="display:inline-block;background:#FF5A1F;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:600;font-size:15px;">Open Vendor Panel →</a>
+      </td></tr></table>
+      <p style="margin:0 0 12px 0;font-size:13px;color:#7C6B60;line-height:1.6;">
+        This one-tap link is valid for <strong>{days} day{'s' if days != 1 else ''}</strong> and can be used only once. After that, sign in with your Email Code at
+        <a href="https://app.cravitoo.com/login" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com/login</a>.
+      </p>
+      <p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;font-size:14px;">What you can do next</p>
+      <ul style="padding-left:20px;margin:0 0 16px 0;color:#52443A;line-height:1.8;font-size:14px;">
+        <li>Upload / edit your daily menu with photos</li>
+        <li>Receive new orders in real time (already-paid, no cash to handle)</li>
+        <li>Scan the employee's collection code to mark orders collected</li>
+        <li>View daily settlements + earnings</li>
+      </ul>
+      <p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">
+        Didn't request this? You can safely ignore this email — the link expires automatically.
+      </p>
+    </td></tr>
+    <tr><td style="background:#FFF7EE;padding:16px 32px;text-align:center;color:#9C8B80;font-size:12px;">
+      Cravitoo · Smart Corporate Cafeteria · <a href="https://app.cravitoo.com" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com</a>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+    text = f"""Welcome to Cravitoo Partner Panel, {safe_name}.
+
+{safe_vendor} is now onboarded on Cravitoo.
+
+Sign in with one tap (no OTP needed):
+{magic_url}
+
+This link is valid for {days} day{'s' if days != 1 else ''} and can be used only once.
+After that, sign in with your Email Code at https://app.cravitoo.com/login
+
+— Team Cravitoo
+"""
+    return html, text
+
+
 
 def render_order_confirmation_email(name: str, order_id: str, vendor_name: str, items: list, total: float, pickup_time: Optional[str] = None) -> Tuple[str, str]:
     """Order placed confirmation email."""

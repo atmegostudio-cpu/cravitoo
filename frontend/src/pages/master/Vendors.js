@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Edit, Save, X, Settings, Mail, Trash2 } from 'lucide-react';
+import { Store, Edit, Save, X, Settings, Mail, Trash2, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -14,6 +14,11 @@ const MasterVendors = () => {
   const [saving, setSaving] = useState(false);
   const [profileEdit, setProfileEdit] = useState(null);
   const [pForm, setPForm] = useState({});
+  const [resendVendor, setResendVendor] = useState(null);       // vendor row when modal is open
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendResult, setResendResult] = useState(null);       // {ok, message}
+  const [resendLog, setResendLog] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +86,45 @@ const MasterVendors = () => {
       await load();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Failed to delete vendor');
+    }
+  };
+
+  const openResend = async (v) => {
+    setResendVendor(v);
+    setResendEmail(v.email || '');
+    setResendResult(null);
+    setResendLog([]);
+    try {
+      const { data } = await axios.get(`${API}/admin/vendors/${v.id}/email-log`, { withCredentials: true });
+      setResendLog(data || []);
+    } catch (_) { /* silent */ }
+  };
+
+  const doResend = async () => {
+    if (!resendVendor) return;
+    const email = (resendEmail || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setResendResult({ ok: false, message: 'Please enter a valid email address.' });
+      return;
+    }
+    setResendBusy(true);
+    setResendResult(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/admin/vendors/${resendVendor.id}/resend-onboarding`,
+        { email },
+        { withCredentials: true },
+      );
+      setResendResult({ ok: true, message: data.message || `Sent to ${data.delivered_to}` });
+      // refresh log
+      const { data: log } = await axios.get(`${API}/admin/vendors/${resendVendor.id}/email-log`, { withCredentials: true });
+      setResendLog(log || []);
+      // reload the vendor list so email badge updates
+      load();
+    } catch (e) {
+      setResendResult({ ok: false, message: e?.response?.data?.detail || 'Failed to send' });
+    } finally {
+      setResendBusy(false);
     }
   };
 
@@ -223,6 +267,14 @@ const MasterVendors = () => {
                           <Settings className="h-4 w-4" />
                         </button>
                         <button
+                          onClick={() => openResend(v)}
+                          data-testid={`resend-onboarding-${v.id}`}
+                          title="Resend Vendor Panel onboarding link"
+                          className="text-indigo-600 hover:text-white hover:bg-indigo-600 p-1.5 rounded transition-colors"
+                        >
+                          <Send className="h-4 w-4" />
+                        </button>
+                        <button
                           onClick={() => deleteVendor(v)}
                           data-testid={`delete-vendor-${v.id}`}
                           title="Permanently delete this vendor and all their data"
@@ -282,6 +334,109 @@ const MasterVendors = () => {
                 <button onClick={() => setProfileEdit(null)} className="flex-1 px-4 py-2.5 border border-border-light rounded-xl font-medium">Cancel</button>
                 <button data-testid="save-vendor-profile-btn" onClick={saveProfile} disabled={saving} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resendVendor && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => !resendBusy && setResendVendor(null)}
+          data-testid="resend-modal"
+        >
+          <div className="bg-card rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-border-light">
+              <div>
+                <h2 className="font-heading text-lg font-semibold text-text-primary flex items-center gap-2">
+                  <Send className="h-4 w-4 text-indigo-600" />
+                  Resend Vendor Panel access
+                </h2>
+                <p className="text-xs text-text-muted mt-0.5 truncate max-w-xs">for <strong>{resendVendor.name}</strong></p>
+              </div>
+              <button data-testid="resend-modal-close" onClick={() => setResendVendor(null)} className="text-text-muted hover:text-text-primary">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Send to</label>
+                <input
+                  data-testid="resend-email-input"
+                  type="email"
+                  autoFocus
+                  value={resendEmail}
+                  onChange={(e) => setResendEmail(e.target.value)}
+                  disabled={resendBusy}
+                  placeholder="vendor@company.com"
+                  className="mt-1 w-full px-3 py-2.5 border border-border-light rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <p className="text-[11px] text-text-muted mt-1.5">
+                  Works for corporate and approved non-corporate emails. Vendor gets a <strong>one-tap sign-in link</strong> (valid 7 days, single-use).
+                </p>
+              </div>
+
+              {resendResult && (
+                <div
+                  data-testid={resendResult.ok ? 'resend-success' : 'resend-error'}
+                  className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
+                    resendResult.ok
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border border-red-200 text-red-800'
+                  }`}
+                >
+                  {resendResult.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                  <span>{resendResult.message}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  data-testid="resend-cancel-btn"
+                  onClick={() => setResendVendor(null)}
+                  disabled={resendBusy}
+                  className="flex-1 bg-background hover:bg-background/80 border border-border-light text-text-primary px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+                >
+                  Close
+                </button>
+                <button
+                  data-testid="resend-send-btn"
+                  onClick={doResend}
+                  disabled={resendBusy || !resendEmail}
+                  className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50"
+                >
+                  {resendBusy ? 'Sending…' : <><Send className="h-4 w-4" /> Send link</>}
+                </button>
+              </div>
+
+              {resendLog.length > 0 && (
+                <div className="pt-3 border-t border-border-light">
+                  <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-2">Recent attempts</p>
+                  <ul className="space-y-1.5">
+                    {resendLog.slice(0, 5).map((r, idx) => (
+                      <li key={idx} data-testid={`resend-log-${idx}`} className="flex items-start gap-2 text-xs">
+                        {r.status === 'sent' ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                        ) : r.status === 'no_email_on_file' ? (
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-text-primary truncate">
+                            <span className="font-medium">{r.email || '(no email)'}</span>
+                            {r.error && <span className="text-red-600"> · {r.error.slice(0, 60)}</span>}
+                          </p>
+                          <p className="text-text-muted flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(r.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </div>

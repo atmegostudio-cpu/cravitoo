@@ -3306,6 +3306,237 @@ async def update_vendor(vendor_id: str, payload: Dict[str, Any], user: dict = De
     return {"message": "Vendor updated"}
 
 
+# ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============
+#
+# The original approval flow silently swallowed Resend delivery failures and
+# skipped vendors with no email on file. Master Admins now have a re-triggerable
+# action that:
+#   • lets them override the email address (typos / no-email-on-file cases)
+#   • fires ONE combined welcome+magic-link email (single failure surface)
+#   • logs every attempt to `vendor_email_log` so it's audit-visible
+#   • rate-limits to 3 sends per vendor per hour
+
+class _ResendOnboardingBody(BaseModel):
+    email: Optional[str] = None   # override / fill-in
+
+
+def _generate_magic_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+async def _log_vendor_email(vendor_id: str, email: str, subject: str,
+                            status: str, message_id: Optional[str],
+                            error: Optional[str], sent_by_admin: str):
+    await db.vendor_email_log.insert_one({
+        "vendor_id": vendor_id,
+        "email": email,
+        "subject": subject,
+        "status": status,             # 'sent' | 'failed' | 'no_email_on_file'
+        "message_id": message_id,
+        "error": error,
+        "sent_by_admin": sent_by_admin,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+
+@api_router.post("/admin/vendors/{vendor_id}/resend-onboarding")
+async def resend_vendor_onboarding(
+    vendor_id: str,
+    body: _ResendOnboardingBody,
+    user: dict = Depends(get_current_user),
+):
+    """Master Admin only. Re-send the vendor's onboarding email as a one-tap
+    magic-link. Optional `email` override handles typos / no-email-on-file
+    onboarding records."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin can resend onboarding")
+
+    vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    # Rate-limit: max 3 sends per vendor per hour
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent = await db.vendor_email_log.count_documents({
+        "vendor_id": vendor_id,
+        "status": "sent",
+        "created_at": {"$gte": one_hour_ago},
+    })
+    if recent >= 3:
+        raise HTTPException(status_code=429, detail="Too many resend attempts — please wait an hour")
+
+    # Resolve target email — priority: body → linked user → vendor doc → onboarding doc
+    override = (body.email or "").strip().lower()
+    target_email = override
+    if not target_email:
+        vu = await db.users.find_one({"vendor_id": vendor_id, "role": "vendor"})
+        if vu:
+            target_email = (vu.get("email") or "").strip().lower()
+    if not target_email:
+        target_email = ((vendor.get("email") or vendor.get("contact_email") or "")).strip().lower()
+    if not target_email:
+        onb = await db.vendor_onboarding.find_one({"vendor_id": vendor_id})
+        if onb:
+            target_email = ((onb.get("email") or "")).strip().lower()
+    if not target_email:
+        await _log_vendor_email(vendor_id, "", "Resend attempted", "no_email_on_file", None,
+                                "No email available on any related record", user["id"])
+        raise HTTPException(status_code=400,
+            detail="This vendor has no email on file. Provide one in the request body: {\"email\": \"...\"}.")
+
+    # Validate email
+    if "@" not in target_email or " " in target_email:
+        raise HTTPException(status_code=400, detail=f"Invalid email address: {target_email}")
+
+    # Ensure a vendor user row exists (create if missing — mirrors approval flow)
+    existing = await db.users.find_one({"email": target_email})
+    if not existing:
+        import secrets as _secrets
+        try:
+            from passlib.hash import bcrypt as _bcrypt
+            pwd_hash = _bcrypt.hash(_secrets.token_urlsafe(24))
+        except Exception:
+            pwd_hash = ""
+        insert_res = await db.users.insert_one({
+            "email": target_email,
+            "password_hash": pwd_hash,
+            "name": vendor.get("contact_person") or vendor.get("name") or "Vendor",
+            "role": "vendor",
+            "vendor_id": vendor_id,
+            "created_at": datetime.now(timezone.utc),
+            "failed_attempts": 0,
+            "is_active": True,
+            "created_via": "admin_resend_onboarding",
+        })
+        vendor_user_id = str(insert_res.inserted_id)
+    else:
+        # Ensure the existing user is linked to this vendor + reactivated
+        await db.users.update_one({"_id": existing["_id"]},
+            {"$set": {"vendor_id": vendor_id, "role": "vendor", "is_active": True}})
+        vendor_user_id = str(existing["_id"])
+
+    # Optionally sync the email onto the vendor doc if the admin overrode it
+    if override and override != (vendor.get("email") or "").strip().lower():
+        await db.vendors.update_one(
+            {"_id": safe_objectid(vendor_id, "Vendor")},
+            {"$set": {"email": override, "contact_email": override}},
+        )
+
+    # Create the magic link (single-use, 7-day expiry)
+    token = _generate_magic_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.vendor_magic_links.insert_one({
+        "token": token,
+        "vendor_user_id": vendor_user_id,
+        "vendor_id": vendor_id,
+        "email": target_email,
+        "expires_at": expires_at,
+        "used_at": None,
+        "created_by_admin": user["id"],
+        "created_at": datetime.now(timezone.utc),
+    })
+    public_base = os.environ.get("PUBLIC_APP_URL", "https://app.cravitoo.com").rstrip("/")
+    magic_url = f"{public_base}/auth/magic/{token}"
+
+    # Send the ONE combined email
+    subject = f"You're onboarded on Cravitoo — Sign in to your Vendor Panel"
+    try:
+        import email_service as _es
+        html, text = _es.render_vendor_magic_link_email(
+            name=vendor.get("contact_person") or vendor.get("name") or "Partner",
+            vendor_name=vendor.get("name") or "your business",
+            magic_url=magic_url,
+        )
+        # send_email returns (bool, error_message)
+        result = _es.send_email(target_email, subject, html, text)
+        # tuple unwrap
+        if isinstance(result, tuple):
+            success, err = result
+        else:
+            success, err = bool(result), None
+    except Exception as e:
+        success, err = False, str(e)
+
+    await _log_vendor_email(
+        vendor_id, target_email, subject,
+        "sent" if success else "failed", None, err, user["id"],
+    )
+    await audit_log(user, "vendor", vendor_id,
+                    "onboarding_resent" if success else "onboarding_resend_failed",
+                    {"email": target_email, "error": err if not success else None})
+
+    if not success:
+        raise HTTPException(status_code=502,
+            detail=f"Could not send email to {target_email}: {err or 'Resend delivery failure'}")
+
+    return {
+        "success": True,
+        "delivered_to": target_email,
+        "expires_at": expires_at.isoformat(),
+        "message": f"Onboarding link sent to {target_email}. It is valid for 7 days.",
+    }
+
+
+@api_router.get("/admin/vendors/{vendor_id}/email-log")
+async def vendor_email_log(vendor_id: str, user: dict = Depends(get_current_user)):
+    """Last 10 resend attempts for a vendor (Master Admin only)."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+    rows = await db.vendor_email_log.find({"vendor_id": vendor_id}).sort("created_at", -1).limit(10).to_list(10)
+    return [{
+        "email": r.get("email"),
+        "subject": r.get("subject"),
+        "status": r.get("status"),
+        "error": r.get("error"),
+        "created_at": r.get("created_at").isoformat() if r.get("created_at") else None,
+    } for r in rows]
+
+
+@api_router.post("/auth/magic/{token}/consume")
+async def consume_magic_link(token: str, response: Response, request: Request):
+    """Public — consumes a single-use magic link and issues a session cookie.
+    Called by the frontend `/auth/magic/:token` route on mount."""
+    doc = await db.vendor_magic_links.find_one({"token": token})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Link not found or already consumed")
+    if doc.get("used_at"):
+        raise HTTPException(status_code=410, detail="This link was already used. Please sign in with Email OTP.")
+    expires_at = doc.get("expires_at")
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=410, detail="This link expired. Ask your admin to resend it.")
+
+    user = await db.users.find_one({"_id": safe_objectid(doc["vendor_user_id"], "User")})
+    if not user or user.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="This vendor account is disabled. Contact your admin.")
+
+    # Consume atomically — first caller wins, second gets the 410 above
+    claim = await db.vendor_magic_links.find_one_and_update(
+        {"_id": doc["_id"], "used_at": None},
+        {"$set": {"used_at": datetime.now(timezone.utc)}},
+    )
+    if claim is None:
+        raise HTTPException(status_code=410, detail="This link was already used. Please sign in with Email OTP.")
+
+    access = create_access_token(str(user["_id"]), user["email"], user["role"])
+    refresh = create_refresh_token(str(user["_id"]))
+    secure_cookie = is_secure_request(request)
+    samesite_value = "none" if secure_cookie else "lax"
+    response.set_cookie("access_token", access, httponly=True, secure=secure_cookie,
+                        samesite=samesite_value, max_age=900, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=secure_cookie,
+                        samesite=samesite_value, max_age=31536000, path="/")
+    return {
+        "success": True,
+        "role": user["role"],
+        "email": user["email"],
+        "name": user.get("name"),
+        "vendor_id": user.get("vendor_id"),
+    }
+
+
 @api_router.delete("/vendors/{vendor_id}")
 async def delete_vendor(vendor_id: str, user: dict = Depends(get_current_user)):
     """Hard-delete a vendor and cascade-clean every child record.
