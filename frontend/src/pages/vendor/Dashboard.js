@@ -84,7 +84,16 @@ const VendorDashboard = () => {
           </div>
 
           <div>
-            <h2 className="font-heading text-2xl font-medium text-text-primary mb-4">Recent Orders</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-heading text-2xl font-medium text-text-primary">Recent Orders</h2>
+              <a
+                href="/vendor/reports"
+                data-testid="vendor-reports-link"
+                className="text-sm text-primary hover:text-primary-hover font-medium underline underline-offset-2"
+              >
+                View Sales Report →
+              </a>
+            </div>
             <div className="space-y-4">
               {recentOrders.map((order) => (
                 <div key={order.id} data-testid={`vendor-order-${order.id}`} className="bg-card border border-border-light rounded-xl p-6">

@@ -23,6 +23,7 @@ import VendorMenu from './pages/vendor/Menu';
 import VendorVerifyPickup from './pages/vendor/VerifyPickup';
 import VendorAIInsights from './pages/vendor/AIInsights';
 import VendorKiosk from './pages/vendor/Kiosk';
+import VendorReports from './pages/vendor/Reports';
 
 import CorporateAdminDashboard from './pages/admin/Dashboard';
 import CorporateBulkPreOrder from './pages/admin/BulkPreOrder';
@@ -183,6 +184,11 @@ function AppRoutes() {
       <Route path="/vendor/kiosk" element={
         <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorKiosk />
+        </ProtectedRoute>
+      } />
+      <Route path="/vendor/reports" element={
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
+          <VendorReports />
         </ProtectedRoute>
       } />
       
