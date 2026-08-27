@@ -69,13 +69,13 @@ const VendorReservations = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="mb-8 flex flex-wrap justify-between items-start gap-3">
-            <div>
-              <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="mb-6 sm:mb-8 flex flex-wrap justify-between items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary">
                 Tomorrow's Reservations
               </h1>
-              <p className="text-text-secondary mt-2 flex items-center gap-2">
+              <p className="text-text-secondary mt-2 flex items-center gap-2 text-sm sm:text-base">
                 <Calendar className="h-4 w-4" /> {data?.date}
               </p>
             </div>
@@ -83,19 +83,19 @@ const VendorReservations = () => {
               onClick={handleExport}
               disabled={!data?.reservations?.length}
               data-testid="export-csv-btn"
-              className="bg-primary hover:bg-primary-hover disabled:opacity-40 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+              className="bg-primary hover:bg-primary-hover disabled:opacity-40 text-white px-4 sm:px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
             >
-              Export Kitchen List (CSV)
+              Export CSV
             </button>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+          <div className="mb-5 sm:mb-6 flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             <span className="text-xs text-text-muted">Sales reports (last 30 days):</span>
             <ExportButtons endpoint="/exports/vendor-sales" filename="cravitoo-vendor-sales" testidPrefix="vendor-sales" />
           </div>
 
           {/* Head-count cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 sm:mb-6">
             {Object.entries(MEAL_META).map(([meal, meta]) => {
               const c = data?.counts?.[meal] || { reserved: 0, consumed: 0 };
               const Icon = meta.icon;
@@ -140,14 +140,15 @@ const VendorReservations = () => {
 
           {/* Detailed list */}
           <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
-            <div className="p-5 border-b border-border-light">
-              <h2 className="font-heading text-xl font-semibold text-text-primary">Customer List</h2>
-              <p className="text-sm text-text-secondary">Showing all active reservations for tomorrow</p>
+            <div className="p-4 sm:p-5 border-b border-border-light">
+              <h2 className="font-heading text-lg sm:text-xl font-semibold text-text-primary">Customer List</h2>
+              <p className="text-xs sm:text-sm text-text-secondary">Showing all active reservations for tomorrow</p>
             </div>
             {data?.reservations?.length === 0 ? (
               <p data-testid="empty-reservations" className="p-8 text-center text-text-muted">No reservations yet for tomorrow.</p>
             ) : (
-              <table className="w-full">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px]">
                 <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
                   <tr>
                     <th className="text-left px-5 py-3">Meal</th>
@@ -178,6 +179,7 @@ const VendorReservations = () => {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

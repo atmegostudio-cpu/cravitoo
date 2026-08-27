@@ -72,16 +72,16 @@ const VendorOrders = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <div className="flex items-start justify-between flex-wrap gap-4 mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="flex items-start justify-between flex-wrap gap-3 mb-6 sm:mb-8">
+            <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary">
               Order Management
             </h1>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <Link
                 to="/vendor/kiosk"
                 data-testid="enter-kiosk-btn"
-                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-3 rounded-2xl font-semibold shadow-lg transition-all"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-5 py-3 rounded-2xl text-sm sm:text-base font-semibold shadow-lg transition-all"
                 title="Full-screen counter mode — locks to Scan & Collect"
               >
                 <Maximize2 className="h-5 w-5" /> Kiosk Mode
@@ -89,7 +89,7 @@ const VendorOrders = () => {
               <button
                 data-testid="open-scanner-btn"
                 onClick={() => setScannerOpen(true)}
-                className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-3 rounded-2xl font-semibold shadow-lg shadow-primary/30 transition-all"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 sm:px-5 py-3 rounded-2xl text-sm sm:text-base font-semibold shadow-lg shadow-primary/30 transition-all"
               >
                 <ScanLine className="h-5 w-5" /> Scan &amp; Collect
               </button>
@@ -103,26 +103,26 @@ const VendorOrders = () => {
           />
 
           {orders.length === 0 ? (
-            <div data-testid="no-vendor-orders" className="bg-card border border-border-light rounded-xl p-12 text-center">
+            <div data-testid="no-vendor-orders" className="bg-card border border-border-light rounded-xl p-8 sm:p-12 text-center">
               <Package className="h-16 w-16 text-text-muted mx-auto mb-4" />
               <p className="text-text-secondary">No orders yet</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {orders.map((order) => (
-                <div key={order.id} data-testid={`vendor-order-detail-${order.id}`} className="bg-card border border-border-light rounded-xl p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-heading text-lg font-medium text-text-primary mb-1">Order #{order.id.slice(-8)}</h3>
+                <div key={order.id} data-testid={`vendor-order-detail-${order.id}`} className="bg-card border border-border-light rounded-xl p-4 sm:p-6">
+                  <div className="flex flex-wrap justify-between items-start gap-2 mb-4">
+                    <div className="min-w-0">
+                      <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary mb-1">Order #{order.id.slice(-8)}</h3>
                       {order.collection_code && (
                         <p className="text-xs font-mono font-bold text-primary mb-1" data-testid={`vendor-collection-code-${order.id}`}>
                           {order.collection_code}
                         </p>
                       )}
-                      <p className="text-text-secondary text-sm">{new Date(order.created_at).toLocaleString()}</p>
+                      <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString()}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-heading text-xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>
+                      <p className="font-heading text-lg sm:text-xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>
                       <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-medium ${
                         order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                       }`}>

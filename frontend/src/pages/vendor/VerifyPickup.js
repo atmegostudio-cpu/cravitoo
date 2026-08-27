@@ -48,15 +48,15 @@ const VendorVerifyPickup = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-2xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary mb-2">
             Verify Pickup
           </h1>
-          <p className="text-text-secondary text-lg mb-8">
+          <p className="text-text-secondary text-sm sm:text-lg mb-6 sm:mb-8">
             Scan or enter the customer's pickup QR code
           </p>
 
-          <div className="bg-card border border-border-light rounded-2xl p-8">
+          <div className="bg-card border border-border-light rounded-2xl p-5 sm:p-8">
             <div className="flex items-center justify-center mb-6">
               <div className="bg-primary-light rounded-full p-6">
                 <QrCode className="h-16 w-16 text-primary" />

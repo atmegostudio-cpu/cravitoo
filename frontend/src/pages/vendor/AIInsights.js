@@ -40,19 +40,19 @@ const VendorAIInsights = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <div className="flex items-center space-x-3 mb-2">
-            <Sparkles className="h-8 w-8 text-primary" />
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+            <Sparkles className="h-7 w-7 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+            <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary">
               AI Insights
             </h1>
           </div>
-          <p className="text-text-secondary text-lg mb-8">
+          <p className="text-text-secondary text-sm sm:text-lg mb-6 sm:mb-8">
             Powered by GPT-5.2 — Make data-driven decisions
           </p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div data-testid="forecast-card" className="bg-card border border-border-light rounded-2xl p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <div data-testid="forecast-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center space-x-3">
                   <div className="bg-primary-light rounded-xl p-3">
@@ -93,7 +93,7 @@ const VendorAIInsights = () => {
               )}
             </div>
 
-            <div data-testid="wastage-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="wastage-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center space-x-3">
                   <div className="bg-red-100 rounded-xl p-3">

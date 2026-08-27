@@ -187,18 +187,18 @@ const VendorMenuRequests = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-            <div>
-              <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="flex justify-between items-start mb-6 sm:mb-8 flex-wrap gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary">
                 Menu Change Requests
               </h1>
-              <p className="text-text-secondary mt-2">Submit menu, price, or description changes for Cravitoo approval</p>
+              <p className="text-text-secondary mt-2 text-sm sm:text-base">Submit menu, price, or description changes for Cravitoo approval</p>
             </div>
             <button
               onClick={() => setShowForm(true)}
               data-testid="new-menu-request-btn"
-              className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+              className="bg-primary hover:bg-primary-hover text-white px-4 sm:px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 flex-shrink-0"
             >
               <Plus className="h-4 w-4" />
               <span>New Request</span>

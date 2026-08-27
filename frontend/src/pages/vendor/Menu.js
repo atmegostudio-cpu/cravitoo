@@ -156,16 +156,16 @@ const VendorMenu = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="mb-6">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <div className="mb-5 sm:mb-6">
+            <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary">
               Menu
             </h1>
-            <p className="text-text-secondary mt-2">View your menu and toggle items in/out of stock</p>
+            <p className="text-text-secondary mt-2 text-sm sm:text-base">View your menu and toggle items in/out of stock</p>
           </div>
 
           {/* Cravitoo-managed banner */}
-          <div data-testid="cravitoo-managed-banner" className="mb-8 p-5 bg-primary-light border border-primary/20 rounded-2xl flex items-start space-x-4">
+          <div data-testid="cravitoo-managed-banner" className="mb-6 sm:mb-8 p-4 sm:p-5 bg-primary-light border border-primary/20 rounded-2xl flex items-start space-x-3 sm:space-x-4">
             <div className="bg-primary text-white rounded-full p-2 flex-shrink-0">
               <Lock className="h-5 w-5" />
             </div>
@@ -198,7 +198,7 @@ const VendorMenu = () => {
           {/* Photo audit (only meaningful when there are items) */}
           {items.length > 0 && <PhotoAuditCard items={items} onRequestPhoto={handleRequestPhoto} />}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {items.map((item) => (
               <div key={item.id} data-testid={`vendor-menu-item-${item.id}`} className="bg-card border border-border-light rounded-xl overflow-hidden hover:shadow-md transition-all duration-200">
                 {item.image_url ? (

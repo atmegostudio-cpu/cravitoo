@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -177,8 +178,9 @@ const Navbar = () => {
         </div>
       </div>
 
-      {/* Mobile slide-in drawer */}
-      {mobileOpen && (
+      {/* Mobile slide-in drawer — rendered via portal so backdrop-filter on <nav>
+          doesn't clip fixed-positioning to the navbar's own bounds. */}
+      {mobileOpen && createPortal(
         <div className="md:hidden fixed inset-0 z-[60]" data-testid="mobile-menu-drawer">
           <button
             aria-label="Close menu"
@@ -252,7 +254,8 @@ const Navbar = () => {
               to { transform: translateX(0); }
             }
           `}</style>
-        </div>
+        </div>,
+        document.body,
       )}
     </nav>
   );

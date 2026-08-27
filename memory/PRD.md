@@ -35,6 +35,19 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Feb 27, 2026 — Vendor Panel Mobile Responsiveness (COMPLETED)
+
+- **Root-cause bug fixed**: Mobile hamburger drawer was clipped to only 64px height (matched the navbar). Caused by `backdrop-filter` (`glass` class) on the parent `<nav>`, which creates a new containing block for `position: fixed` descendants. **Fix**: `Navbar.js` now renders the drawer via `createPortal(..., document.body)`, escaping the nav's containing block. Drawer now occupies the full 844px viewport height.
+- **Responsive polish** across the Vendor Panel (Dashboard, Orders, Menu, Reports, Reservations, AI Insights, Menu Requests, Verify Pickup):
+  - Standardized container padding to `px-4 sm:px-6 py-6 sm:py-8`
+  - H1 sizing `text-3xl sm:text-4xl lg:text-5xl` with `tracking-tight sm:tracking-tighter` so long titles ("Menu Change Requests", "Order Management", "Tomorrow's Reservations") no longer overflow at 320-390px widths
+  - KPI/card grids: Dashboard `grid-cols-1 sm:grid-cols-2 md:grid-cols-3`; Menu `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`
+  - Reports filters converted to `grid-cols-2 sm:flex` so From/To/Counter/Payment stack cleanly on phones with preset chips as full-width row
+  - Tables (Reports per-counter, Reports order details, Reservations customer list) wrapped in `overflow-x-auto` with explicit `min-w-[560px]/[720px]` so they horizontally scroll inside cards instead of stretching the viewport
+  - Orders page header actions become full-width side-by-side (`flex-1 sm:flex-none`) on mobile
+- **Testing** (iteration_29): 100% pass at 390×844 (iPhone), 768×1024 (iPad), 1440×900 (desktop). No horizontal overflow on any vendor page. Drawer opens/closes correctly, all 7 nav links reachable, desktop layout unchanged.
+
+
 ## Feb 2026 — Code Review Fixes: 3 HIGH-severity defects (COMPLETED)
 
 ### P0-1: AI Photo Apply endpoint saved a broken image URL

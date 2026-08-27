@@ -45,13 +45,13 @@ const VendorDashboard = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary mb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary mb-6 sm:mb-8">
             Vendor Dashboard
           </h1>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div data-testid="total-orders-card" className="bg-card border border-border-light rounded-2xl p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            <div data-testid="total-orders-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="bg-primary-light rounded-xl p-3">
                   <ShoppingBag className="h-6 w-6 text-primary" />
@@ -62,7 +62,7 @@ const VendorDashboard = () => {
               <p className="text-text-secondary text-sm">Total Orders</p>
             </div>
 
-            <div data-testid="total-revenue-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="total-revenue-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="bg-green-100 rounded-xl p-3">
                   <DollarSign className="h-6 w-6 text-green-600" />
@@ -72,7 +72,7 @@ const VendorDashboard = () => {
               <p className="text-text-secondary text-sm">Total Revenue</p>
             </div>
 
-            <div data-testid="avg-order-card" className="bg-card border border-border-light rounded-2xl p-6">
+            <div data-testid="avg-order-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="bg-accent-light rounded-xl p-3">
                   <TrendingUp className="h-6 w-6 text-accent-hover" />
@@ -84,8 +84,8 @@ const VendorDashboard = () => {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-heading text-2xl font-medium text-text-primary">Recent Orders</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <h2 className="font-heading text-xl sm:text-2xl font-medium text-text-primary">Recent Orders</h2>
               <a
                 href="/vendor/reports"
                 data-testid="vendor-reports-link"
@@ -94,13 +94,13 @@ const VendorDashboard = () => {
                 View Sales Report →
               </a>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {recentOrders.map((order) => (
-                <div key={order.id} data-testid={`vendor-order-${order.id}`} className="bg-card border border-border-light rounded-xl p-6">
-                  <div className="flex justify-between items-start">
+                <div key={order.id} data-testid={`vendor-order-${order.id}`} className="bg-card border border-border-light rounded-xl p-4 sm:p-6">
+                  <div className="flex flex-wrap justify-between items-start gap-2">
                     <div>
                       <p className="font-medium text-text-primary mb-1">Order #{order.id.slice(-8)}</p>
-                      <p className="text-text-secondary text-sm">{new Date(order.created_at).toLocaleString()}</p>
+                      <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString()}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-text-primary mb-2">₹{order.total_amount.toFixed(2)}</p>

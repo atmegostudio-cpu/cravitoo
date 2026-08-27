@@ -112,52 +112,52 @@ export default function VendorReports() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8" data-testid="vendor-reports-page">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-          <div>
-            <h1 className="font-heading text-4xl font-semibold text-text-primary flex items-center gap-2">
-              <FileText className="h-8 w-8 text-primary" /> Sales Report
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8" data-testid="vendor-reports-page">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-5 sm:mb-6">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-semibold text-text-primary flex items-center gap-2">
+              <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" /> Sales Report
             </h1>
-            <p className="text-sm text-text-muted mt-1">Track sales across all your counters — download combined or per-counter reports.</p>
+            <p className="text-xs sm:text-sm text-text-muted mt-1">Track sales across all your counters — download combined or per-counter reports.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button
               data-testid="download-csv-all"
               onClick={() => download('csv')}
               disabled={!!downloading}
-              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium disabled:opacity-50"
             >
-              <Download className="h-4 w-4" /> {downloading === 'csv-all' ? 'Downloading…' : 'Download CSV'}
+              <Download className="h-4 w-4" /> {downloading === 'csv-all' ? 'Downloading…' : 'CSV'}
             </button>
             <button
               data-testid="download-pdf-all"
               onClick={() => download('pdf')}
               disabled={!!downloading}
-              className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium disabled:opacity-50"
             >
-              <Download className="h-4 w-4" /> {downloading === 'pdf-all' ? 'Downloading…' : 'Download PDF'}
+              <Download className="h-4 w-4" /> {downloading === 'pdf-all' ? 'Downloading…' : 'PDF'}
             </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-card border border-border-light rounded-2xl p-4 mb-6">
+        <div className="bg-card border border-border-light rounded-2xl p-4 mb-5 sm:mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Filter className="h-4 w-4 text-text-muted" />
             <span className="text-xs uppercase tracking-wider font-semibold text-text-muted">Filters</span>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-3">
             <div>
               <label className="block text-[11px] font-medium text-text-secondary mb-1">From</label>
               <input data-testid="filter-from" type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                className="px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-text-secondary mb-1">To</label>
               <input data-testid="filter-to" type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                className="px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
             </div>
-            <div className="flex gap-1">
+            <div className="col-span-2 flex flex-wrap gap-1">
               {rangePresets.map(p => (
                 <button key={p.label} data-testid={`preset-${p.days}`} onClick={() => applyPreset(p.days)}
                   className="text-xs px-2.5 py-1.5 bg-background border border-border-light rounded-lg hover:bg-primary-light hover:border-primary transition-colors">
@@ -169,7 +169,7 @@ export default function VendorReports() {
               <div>
                 <label className="block text-[11px] font-medium text-text-secondary mb-1">Counter</label>
                 <select data-testid="filter-counter" value={counter} onChange={(e) => { setCounter(e.target.value); setPage(1); }}
-                  className="px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
+                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
                   <option value="">All counters</option>
                   {counters.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -178,7 +178,7 @@ export default function VendorReports() {
             <div>
               <label className="block text-[11px] font-medium text-text-secondary mb-1">Payment</label>
               <select data-testid="filter-payment" value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }}
-                className="px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
+                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
                 <option value="all">All</option>
                 <option value="paid">Paid</option>
                 <option value="pending">Pending</option>
@@ -189,7 +189,7 @@ export default function VendorReports() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5 sm:mb-6">
           {cards.map(c => (
             <div key={c.label} data-testid={`kpi-${c.label.toLowerCase().replace(/ /g, '-')}`}
               className={`rounded-xl p-4 ring-1 ${c.color.split(' ').filter(x => x.includes('ring')).join(' ')} bg-card`}>
@@ -206,10 +206,10 @@ export default function VendorReports() {
 
         {/* Per-counter breakdown */}
         {perCounter.length > 1 && (
-          <div className="bg-card border border-border-light rounded-2xl p-5 mb-6" data-testid="per-counter-card">
-            <h2 className="font-heading text-lg font-semibold text-text-primary mb-3">Per-counter breakdown</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+          <div className="bg-card border border-border-light rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6" data-testid="per-counter-card">
+            <h2 className="font-heading text-base sm:text-lg font-semibold text-text-primary mb-3">Per-counter breakdown</h2>
+            <div className="-mx-4 sm:mx-0 overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wider text-text-muted border-b border-border-light">
                     <th className="text-left py-2">Counter</th>
@@ -252,12 +252,12 @@ export default function VendorReports() {
 
         {/* Orders table */}
         <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border-light flex items-center justify-between">
-            <h2 className="font-heading text-lg font-semibold text-text-primary">Order details</h2>
+          <div className="p-4 sm:p-5 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-heading text-base sm:text-lg font-semibold text-text-primary">Order details</h2>
             <span className="text-xs text-text-muted">{total} order{total === 1 ? '' : 's'} in this range</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[720px]">
               <thead className="bg-background">
                 <tr className="text-[11px] uppercase tracking-wider text-text-muted">
                   <th className="text-left px-4 py-2.5">Date / Time</th>
