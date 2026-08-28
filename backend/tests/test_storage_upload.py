@@ -33,7 +33,7 @@ import requests
 
 BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://corporate-feast.preview.emergentagent.com",
+    "https://vendor-mobile-ready.preview.emergentagent.com",
 ).rstrip("/")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")

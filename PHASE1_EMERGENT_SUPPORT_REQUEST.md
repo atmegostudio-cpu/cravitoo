@@ -4,7 +4,7 @@ Hi Emergent Support,
 
 Job ID:               <please paste from the info button in the Emergent UI>
 Production URL:       https://app.cravitoo.com
-Preview URL:          https://corporate-feast.preview.emergentagent.com
+Preview URL:          https://vendor-mobile-ready.preview.emergentagent.com
 Pending release:      "Phase 1 — Critical Security Fix" (privilege escalation,
                       demo gating, order state machine, expired-session loop fix)
 
