@@ -1120,14 +1120,38 @@ async def create_vendor(data: VendorCreate, user: dict = Depends(get_current_use
     }
 
 @api_router.get("/vendors")
-async def get_vendors():
+async def get_vendors(user: dict = Depends(get_current_user)):
     """List active vendors with contact + mapping summary.
 
     Returns BOTH `email`/`phone` (canonical) and `contact_email`/`contact_phone`
     (legacy) for every row so older clients keep working.
+
+    Employees only ever see vendors that are ACTIVELY mapped to their own
+    site — an unmapped, suspended, or inactive vendor (or a mapping that was
+    deactivated) must never leak into a site's menu. Admin roles keep the
+    full platform-wide list they need for management screens.
     """
+    vendor_filter = {"status": "active"}
+    if user.get("role") == "employee":
+        emp_site_id = user.get("site_id")
+        if not emp_site_id:
+            return []
+        active_maps = await db.vendor_site_mappings.find(
+            {"site_id": emp_site_id, "status": "active"},
+            {"vendor_id": 1},
+        ).to_list(1000)
+        mapped_oids = []
+        for m in active_maps:
+            try:
+                mapped_oids.append(ObjectId(m["vendor_id"]))
+            except Exception:
+                pass
+        if not mapped_oids:
+            return []
+        vendor_filter["_id"] = {"$in": mapped_oids}
+
     vendors = await db.vendors.find(
-        {"status": "active"},
+        vendor_filter,
         {
             "_id": 1, "name": 1, "description": 1, "cuisine_type": 1,
             "email": 1, "phone": 1, "contact_email": 1, "contact_phone": 1,
@@ -3209,22 +3233,17 @@ async def upload_menu_image(
     except Exception:
         raise HTTPException(status_code=400, detail="File is not a valid image")
     mime = f"image/{'jpeg' if ext == 'jpg' else ext}"
-    # Try persistent object storage first; only fall back to (ephemeral) local
-    # disk if object storage is completely unavailable.
+    # Persist to Emergent Object Storage (durable across redeploys). The
+    # serve_upload route decodes the `s_`-prefixed token back to the path.
+    from storage import path_to_url, put_object
+    from starlette.concurrency import run_in_threadpool
+    storage_path = f"cravitoo/menu-images/{fname}"
     try:
-        from storage import path_to_url, put_object
-        from starlette.concurrency import run_in_threadpool
-        storage_path = f"cravitoo/menu-images/{fname}"
         result = await run_in_threadpool(put_object, storage_path, content, mime)
-        return {"url": path_to_url(result["path"]), "filename": os.path.basename(result["path"]), "size": len(content)}
     except Exception as e:
-        logger.warning(f"Object storage put failed for menu image, falling back to local: {e}")
-    fpath = UPLOAD_DIR / fname
-    with open(fpath, "wb") as f:
-        f.write(content)
-    base = os.environ.get('PUBLIC_BACKEND_URL', '').rstrip('/')
-    url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
-    return {"url": url, "filename": fname, "size": len(content)}
+        logger.error(f"Object storage put failed for menu image: {e}")
+        raise HTTPException(status_code=502, detail="Could not save image to storage. Please try again.")
+    return {"url": path_to_url(result["path"]), "filename": os.path.basename(result["path"]), "size": len(content)}
 
 
 @api_router.get("/uploads/{filename}")

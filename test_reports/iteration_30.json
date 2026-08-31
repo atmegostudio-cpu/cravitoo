@@ -1,0 +1,21 @@
+{
+  "summary": "Validated the vendor-site-mapping visibility fix on GET /api/vendors. Backend: 3/3 pytest cases pass — (a) unauthenticated request returns 401, (b) employee qa_employee@gatetest.com sees exactly the 7 actively-mapped active vendors and the suspended vendor (6a8946e88de95440e23f21cb), inactive-mapping vendor (6a89470ca3d33f4be9f1272c), and cross-site vendor (6a85521d239a34f6433984ea) are excluded, (c) master admin still sees the platform-wide 9 active vendors. Frontend: employee /employee/menu renders exactly the 7 expected vendor-tab-{id} elements, no hidden vendors leak. Note: task description referenced /menu but the actual route is /employee/menu.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_vendor_site_scoping.py",
+    "/app/test_reports/pytest/vendor_scoping.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GET /api/vendors correctly scopes employee view via vendor_site_mappings status=active + vendors.status=active; ObjectId conversion is wrapped in try/except which is defensive.",
+    "Consider unifying with sites.list_site_vendors to avoid duplicated filtering logic across two endpoints (DRY)."
+  ],
+  "updated_files": ["/app/backend/tests/test_vendor_site_scoping.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Employee qa_employee@gatetest.com/employee123; Admin admin@cravitoo.com/admin123",
+  "seed_data_creation": "Re-ran /app/backend/scripts/setup_vendor_mapping_test.py to ensure fixture state (8 active mappings, 1 inactive mapping, 1 suspended vendor, 1 cross-site vendor).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression test at /app/backend/tests/test_vendor_site_scoping.py; run setup_vendor_mapping_test.py first if IDs drift."
+}

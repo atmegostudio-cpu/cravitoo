@@ -35,6 +35,13 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Aug 31, 2026 — Vendor-Site Mapping Visibility Bug (COMPLETED)
+
+- **Bug**: Employees saw vendors that were NOT actively mapped to their own site. Unmapped, suspended, and inactive-mapping vendors all leaked into the employee Browse Menu as vendor tabs.
+- **Root cause**: All employee-facing pages (Menu, Dashboard, BulkOrder, Subscriptions) called the global, unauthenticated `GET /api/vendors`, which returned every active vendor platform-wide with no site scoping.
+- **Fix** (`server.py` `get_vendors`, ~L1122): endpoint now requires auth (`Depends(get_current_user)`). For `role == "employee"` it restricts results to vendors that have an **active** `vendor_site_mappings` row for the employee's own `site_id` AND whose `vendors.status == "active"`. Admin roles (master/super/site/corp) keep the full list for management screens. Single backend change fixes all employee-facing pages at once.
+- **Verified (iteration_30)**: 100% backend + frontend. Employee sees exactly the 7 correctly-mapped active vendors; suspended vendor, inactive-mapping vendor, and cross-site vendor excluded. Master admin still sees all 9 active vendors. Unauth = 401. Regression test: `/app/backend/tests/test_vendor_site_scoping.py`.
+
 ## Feb 27, 2026 — Vendor Panel Mobile Responsiveness (COMPLETED)
 
 - **Root-cause bug fixed**: Mobile hamburger drawer was clipped to only 64px height (matched the navbar). Caused by `backdrop-filter` (`glass` class) on the parent `<nav>`, which creates a new containing block for `position: fixed` descendants. **Fix**: `Navbar.js` now renders the drawer via `createPortal(..., document.body)`, escaping the nav's containing block. Drawer now occupies the full 844px viewport height.

@@ -68,9 +68,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD
         user: dict = Depends(get_current_user),
     ):
         """Vendor attaches a photo to their menu-change request (e.g. proposed dish photo).
-        Stored in UPLOAD_DIR with `mcr_` prefix; URL set on the request's `image_url` field."""
-        if UPLOAD_DIR is None:
-            raise HTTPException(status_code=500, detail="Upload storage is not configured.")
+        Persisted to Emergent Object Storage; URL set on the request's `image_url` field."""
         req = await db.menu_change_requests.find_one({"_id": safe_objectid(request_id, "Menu request")})
         if not req:
             raise HTTPException(status_code=404, detail="Menu change request not found")
@@ -95,27 +93,29 @@ def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD
             raise HTTPException(status_code=400, detail="File must be under 5 MB")
 
         fname = f"mcr_{uuid.uuid4().hex}.{ext}"
-        fpath = UPLOAD_DIR / fname
+        mime = f"image/{'jpeg' if ext == 'jpg' else ext}"
+        from storage import path_to_url, put_object
+        from starlette.concurrency import run_in_threadpool
+        storage_path = f"cravitoo/menu-change-requests/{fname}"
         try:
-            with open(fpath, "wb") as f:
-                f.write(content)
+            result = await run_in_threadpool(put_object, storage_path, content, mime)
         except Exception as e:
-            logger.error(f"Failed to save menu-request photo {fname}: {e}")
-            raise HTTPException(status_code=500, detail="Could not save uploaded photo")
+            logger.error(f"Failed to save menu-request photo {fname} to storage: {e}")
+            raise HTTPException(status_code=502, detail="Could not save uploaded photo")
 
-        base = os.environ.get("PUBLIC_BACKEND_URL", "").rstrip("/")
-        url = f"{base}/api/uploads/{fname}" if base else f"/api/uploads/{fname}"
+        url = path_to_url(result["path"])
+        stored_fname = os.path.basename(result["path"])
 
         await db.menu_change_requests.update_one(
             {"_id": req["_id"]},
             {"$set": {
                 "image_url": url,
-                "image_filename": fname,
+                "image_filename": stored_fname,
                 "image_uploaded_at": datetime.now(timezone.utc),
                 "image_uploaded_by": user["email"],
             }},
         )
-        return {"image_url": url, "filename": fname, "size": len(content)}
+        return {"image_url": url, "filename": stored_fname, "size": len(content)}
 
     @r.post("/menu-change-requests")
     async def create_menu_change_request(data: MenuChangeRequestCreate, user: dict = Depends(get_current_user)):
