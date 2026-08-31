@@ -1265,7 +1265,24 @@ async def create_menu_item(data: MenuItemCreate, user: dict = Depends(get_curren
     return {"id": str(result.inserted_id), **payload, "vendor_id": target_vendor_id}
 
 @api_router.get("/menu/{vendor_id}")
-async def get_menu(vendor_id: str):
+async def get_menu(vendor_id: str, user: dict = Depends(get_current_user)):
+    # Menu Access Guard: an employee may only open the menu of a vendor that
+    # is ACTIVELY mapped to their own site AND is itself active. This blocks
+    # a stale/shared direct link from surfacing an unassigned, suspended, or
+    # cross-site vendor's menu. Admin/vendor roles are unrestricted.
+    if user.get("role") == "employee":
+        emp_site_id = user.get("site_id")
+        mapping = (
+            await db.vendor_site_mappings.find_one(
+                {"site_id": emp_site_id, "vendor_id": vendor_id, "status": "active"}
+            )
+            if emp_site_id else None
+        )
+        vendor_ok = await db.vendors.find_one(
+            {"_id": safe_objectid(vendor_id, "Vendor"), "status": "active"}, {"_id": 1}
+        )
+        if not mapping or not vendor_ok:
+            raise HTTPException(status_code=403, detail="This vendor is not available at your site")
     menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1, "image_source": 1}).to_list(1000)
     for item in menu_items:
         item["id"] = str(item.pop("_id"))
@@ -1775,6 +1792,63 @@ async def get_vendor_analytics(user: dict = Depends(get_current_user)):
         "total_revenue": total_revenue,
         "average_order_value": total_revenue / total_orders if total_orders > 0 else 0
     }
+
+@api_router.get("/analytics/vendor/today")
+async def get_vendor_today_analytics(user: dict = Depends(get_current_user)):
+    """Mobile command-center snapshot for a vendor: today's sales, the
+    top-selling item today, and outstanding (pending) payments."""
+    if user["role"] != "vendor":
+        raise HTTPException(status_code=403, detail="Only vendors can access analytics")
+    vendor_id = user.get("vendor_id")
+
+    # IST day boundary → UTC (created_at is stored as UTC datetime).
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(ist)
+    start_utc = now_ist.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+    today_match = {"vendor_id": vendor_id, "created_at": {"$gte": start_utc}}
+
+    today_orders = await db.orders.count_documents(today_match)
+    paid_pipe = [
+        {"$match": {**today_match, "payment_status": "paid"}},
+        {"$group": {"_id": None, "revenue": {"$sum": "$total_amount"}, "count": {"$sum": 1}}},
+    ]
+    paid_res = await db.orders.aggregate(paid_pipe).to_list(1)
+    today_revenue = paid_res[0]["revenue"] if paid_res else 0
+    today_paid_orders = paid_res[0]["count"] if paid_res else 0
+
+    # Top-selling item today (by units sold across all of today's orders).
+    top_pipe = [
+        {"$match": today_match},
+        {"$unwind": "$items"},
+        {"$group": {"_id": "$items.name", "qty": {"$sum": "$items.quantity"}}},
+        {"$sort": {"qty": -1}},
+        {"$limit": 1},
+    ]
+    top_res = await db.orders.aggregate(top_pipe).to_list(1)
+    top_item = (
+        {"name": top_res[0]["_id"], "quantity": int(top_res[0]["qty"])}
+        if top_res and top_res[0]["_id"] else None
+    )
+
+    # Outstanding pay-at-counter money owed to the vendor (all-time pending).
+    pending_pipe = [
+        {"$match": {"vendor_id": vendor_id, "payment_status": "pending"}},
+        {"$group": {"_id": None, "amount": {"$sum": "$total_amount"}, "count": {"$sum": 1}}},
+    ]
+    pending_res = await db.orders.aggregate(pending_pipe).to_list(1)
+    pending_amount = pending_res[0]["amount"] if pending_res else 0
+    pending_count = pending_res[0]["count"] if pending_res else 0
+
+    return {
+        "today_revenue": round(float(today_revenue), 2),
+        "today_orders": today_orders,
+        "today_paid_orders": today_paid_orders,
+        "top_item": top_item,
+        "pending_amount": round(float(pending_amount), 2),
+        "pending_count": pending_count,
+    }
+
 
 @api_router.get("/analytics/corporate")
 async def get_corporate_analytics(user: dict = Depends(get_current_user)):

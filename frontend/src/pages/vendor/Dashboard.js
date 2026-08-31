@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { TrendingUp, ShoppingBag, DollarSign } from 'lucide-react';
+import { TrendingUp, ShoppingBag, DollarSign, IndianRupee, Trophy, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const VendorDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
+  const [today, setToday] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -17,11 +18,13 @@ const VendorDashboard = () => {
 
   const fetchData = async () => {
     try {
-      const [analyticsRes, ordersRes] = await Promise.all([
+      const [analyticsRes, todayRes, ordersRes] = await Promise.all([
         axios.get(`${API}/analytics/vendor`, { withCredentials: true }),
+        axios.get(`${API}/analytics/vendor/today`, { withCredentials: true }),
         axios.get(`${API}/orders`, { withCredentials: true })
       ]);
       setAnalytics(analyticsRes.data);
+      setToday(todayRes.data);
       setRecentOrders(ordersRes.data.slice(0, 5));
     } catch (error) {
       logger.error('Error fetching data:', error);
@@ -49,6 +52,58 @@ const VendorDashboard = () => {
           <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary mb-6 sm:mb-8">
             Vendor Dashboard
           </h1>
+
+          <div data-testid="today-command-center" className="mb-6 sm:mb-8">
+            <h2 className="font-heading text-lg sm:text-xl font-medium text-text-primary mb-3 sm:mb-4">Today at a Glance</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+              <div data-testid="today-sales-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="bg-primary-light rounded-xl p-2.5">
+                    <IndianRupee className="h-5 w-5 text-primary" />
+                  </div>
+                  <p className="text-text-secondary text-sm font-medium">Today's Sales</p>
+                </div>
+                <p data-testid="today-sales-amount" className="text-3xl font-heading font-semibold text-text-primary mb-1">
+                  ₹{(today?.today_revenue ?? 0).toFixed(2)}
+                </p>
+                <p className="text-text-secondary text-xs">
+                  {today?.today_paid_orders ?? 0} paid · {today?.today_orders ?? 0} orders today
+                </p>
+              </div>
+
+              <div data-testid="today-top-item-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="bg-accent-light rounded-xl p-2.5">
+                    <Trophy className="h-5 w-5 text-accent-hover" />
+                  </div>
+                  <p className="text-text-secondary text-sm font-medium">Top Item Today</p>
+                </div>
+                {today?.top_item ? (
+                  <>
+                    <p data-testid="today-top-item-name" className="text-xl font-heading font-semibold text-text-primary mb-1 truncate">
+                      {today.top_item.name}
+                    </p>
+                    <p className="text-text-secondary text-xs">{today.top_item.quantity} sold</p>
+                  </>
+                ) : (
+                  <p data-testid="today-top-item-empty" className="text-text-secondary text-sm mt-2">No orders yet today</p>
+                )}
+              </div>
+
+              <div data-testid="pending-payments-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="bg-yellow-100 rounded-xl p-2.5">
+                    <Clock className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <p className="text-text-secondary text-sm font-medium">Pending Payments</p>
+                </div>
+                <p data-testid="pending-payments-amount" className="text-3xl font-heading font-semibold text-text-primary mb-1">
+                  ₹{(today?.pending_amount ?? 0).toFixed(2)}
+                </p>
+                <p className="text-text-secondary text-xs">{today?.pending_count ?? 0} order(s) to collect</p>
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div data-testid="total-orders-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">

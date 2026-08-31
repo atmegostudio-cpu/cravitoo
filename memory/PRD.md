@@ -35,6 +35,12 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Aug 31, 2026 — Vendor Analytics Widget + Menu Access Guard (COMPLETED)
+
+- **Vendor Analytics Widget** (`vendor/Dashboard.js` + `GET /api/analytics/vendor/today`): a "Today at a Glance" command-center row on the Vendor Dashboard with 3 cards — Today's Sales (paid ₹ + paid/total order counts, IST day boundary), Top Item Today (name + units sold, or empty state), and Pending Payments (outstanding all-time pending ₹ + order count to collect). Endpoint is vendor-role only (403 otherwise).
+- **Menu Access Guard** (`GET /api/menu/{vendor_id}`): now requires auth. For `role == "employee"`, returns 403 unless the vendor has an active `vendor_site_mappings` row for the employee's site AND the vendor is active — blocks stale/shared direct links to unassigned, suspended, or cross-site vendors. Admin/vendor roles unrestricted.
+- **Verified (iteration_31)**: 9 backend pytest cases + frontend UI, 100% pass. Regression test `/app/backend/tests/test_vendor_today_and_menu_guard.py`. Seed scripts: `scripts/setup_vendor_today_test.py`, `scripts/setup_vendor_mapping_test.py`.
+
 ## Aug 31, 2026 — Vendor-Site Mapping Visibility Bug (COMPLETED)
 
 - **Bug**: Employees saw vendors that were NOT actively mapped to their own site. Unmapped, suspended, and inactive-mapping vendors all leaked into the employee Browse Menu as vendor tabs.
