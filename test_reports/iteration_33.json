@@ -1,0 +1,28 @@
+{
+  "summary": "Iter 33: verified all 4 new features backend+frontend end-to-end. Backend pytest 13/13 PASS (/app/backend/tests/test_iter33_new_features.py). Frontend Playwright smoke PASS: (1) Vendor Orders counter filter — counter-filter-row, counter-filter-all, counter-filter-Counter 1 chips, vendor-order-counter badge on CRV-AUDA01, Counter-1 chip filters correctly. (2) Corporate Dashboard for CorpA — corporate-today-section, corp-today-orders='1' (1 paid), corp-today-spend='₹210.00', corp-today-sites='1', corp-per-site-table with AUDIT_SiteA row (1 order / ₹210.00). Vendor+employee correctly get 403 on GET /api/analytics/corporate/today. CorpA does NOT see CorpB. (3) Meal Prices — meal-prices-panel + 4 inputs load prior seeded values (111/150.5/70/95), edit veg_meal→123 saved via PATCH and persists after reload. Negative rejected (400). Non-master cannot mutate meal_prices. (4) Repair Links — repair-site-links-btn triggers POST /api/admin/integrity/backfill-sites; alert 'Repair complete. Scanned 4, linked company on 0, city on 0, still unresolved 3.'; endpoint master-only, idempotent, correct response schema.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_new_features.py",
+    "/app/test_reports/pytest/iter33_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Corporate Dashboard page emits several 403 console errors (existing analytics endpoints the corporate_admin role cannot access, e.g., pre-existing /analytics/* calls). These aren't caused by the new corporate/today endpoint (which succeeds) but the UI logs 'Error fetching data/analytics' via console.error on every page load — consider suppressing or gating those legacy calls for corporate_admin.",
+    "server.py is still ~5020 lines (grew from ~4770). Backfill-sites + corporate/today were added inline; routers/ pattern exists (sites.py) — recommend moving these into routers/analytics.py and routers/admin_integrity.py to stop the file from bloating further.",
+    "backfill_site_links imports 'from collections import Counter as _Counter' inside the function on every call — trivial but should be a top-of-file import.",
+    "update_site allowed-list logic for non-master silently drops meal_prices via `cleaned` filter; consider explicit 403 when a non-master sends meal_prices to make API contract clearer (currently client sees generic 200/400 depending on other fields)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter33_new_features.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Verified all creds from review_request work: admin@cravitoo.com/admin123, audit_corpadmin_a@corpa.com/Audit#1234, audit_vendor1@corpa.com/Audit#1234, audit_emp_a@corpa.com/Audit#1234.",
+  "seed_data_creation": "None. Used pre-seeded AUDIT hierarchy (CRV-AUDA01 tagged counter='Counter 1'). Meal prices for AUDIT_SiteA now persisted as {veg_meal:123, non_veg_meal:150.5, veg_salad:70, non_veg_salad:95}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression file for these 4 features: /app/backend/tests/test_iter33_new_features.py (13 tests). Login response token key is 'access_token'. Order number is exposed as 'collection_code' (e.g. CRV-AUDA01), not 'order_number'. Frontend testids validated: counter-filter-row, counter-filter-all, counter-filter-'Counter 1', vendor-order-counter-<id>, corporate-today-section, corp-today-orders, corp-today-spend, corp-today-sites, corp-per-site-table, meal-prices-panel, meal-price-{veg_meal,non_veg_meal,veg_salad,non_veg_salad}, save-meal-prices-btn, repair-site-links-btn.",
+  "rca of the issue": "N/A — no issues found."
+}

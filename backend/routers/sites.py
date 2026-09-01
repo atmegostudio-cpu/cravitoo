@@ -239,10 +239,25 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             raise HTTPException(status_code=403, detail="Access denied")
         allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone",
                    "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
-        # `status` field can only be changed by master_admin
+        # `status` and per-site `meal_prices` can only be changed by master_admin
         if is_master_admin(user):
-            allowed = allowed | {"status"}
+            allowed = allowed | {"status", "meal_prices"}
         cleaned = {k: v for k, v in updates.items() if k in allowed}
+        # Sanitize meal_prices → dict of the 4 known meal types coerced to float.
+        if "meal_prices" in cleaned:
+            raw = cleaned["meal_prices"] or {}
+            valid_keys = {"veg_meal", "non_veg_meal", "veg_salad", "non_veg_salad"}
+            mp = {}
+            for k, v in (raw.items() if isinstance(raw, dict) else []):
+                if k in valid_keys:
+                    try:
+                        fv = float(v)
+                    except (TypeError, ValueError):
+                        raise HTTPException(status_code=400, detail=f"meal_prices.{k} must be a number")
+                    if fv < 0:
+                        raise HTTPException(status_code=400, detail=f"meal_prices.{k} cannot be negative")
+                    mp[k] = round(fv, 2)
+            cleaned["meal_prices"] = mp
         if not cleaned:
             raise HTTPException(status_code=400, detail="No valid fields to update")
         await db.sites.update_one({"_id": safe_objectid(site_id, "Site")}, {"$set": cleaned})

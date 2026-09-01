@@ -984,6 +984,13 @@ const SiteLifecyclePanel = ({ site, reload, currentUser }) => {
   );
 };
 
+const MEAL_PRICE_FIELDS = [
+  { key: 'veg_meal', label: 'Veg Meal', def: 120 },
+  { key: 'non_veg_meal', label: 'Non-Veg Meal', def: 150 },
+  { key: 'veg_salad', label: 'Veg Salad', def: 100 },
+  { key: 'non_veg_salad', label: 'Non-Veg Salad', def: 130 },
+];
+
 const SettingsTab = ({ site, reload }) => {
   const [form, setForm] = useState({
     allow_pre_order: site.allow_pre_order,
@@ -993,6 +1000,14 @@ const SettingsTab = ({ site, reload }) => {
     status: site.status || 'active',
   });
   const [saving, setSaving] = useState(false);
+
+  const [mealPrices, setMealPrices] = useState(() => {
+    const mp = site.meal_prices || {};
+    const out = {};
+    MEAL_PRICE_FIELDS.forEach((f) => { out[f.key] = mp[f.key] ?? f.def; });
+    return out;
+  });
+  const [savingPrices, setSavingPrices] = useState(false);
 
   const save = async () => {
     setSaving(true);
@@ -1004,7 +1019,20 @@ const SettingsTab = ({ site, reload }) => {
     finally { setSaving(false); }
   };
 
+  const savePrices = async () => {
+    setSavingPrices(true);
+    try {
+      const payload = {};
+      MEAL_PRICE_FIELDS.forEach((f) => { payload[f.key] = Number(mealPrices[f.key]) || 0; });
+      await axios.patch(`${API}/sites/${site.id}`, { meal_prices: payload }, { withCredentials: true });
+      await reload();
+      alert('Meal prices updated');
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+    finally { setSavingPrices(false); }
+  };
+
   return (
+    <div className="space-y-6">
     <div className="bg-card border border-border-light rounded-2xl p-6 max-w-xl">
       <h3 className="font-heading text-xl font-medium mb-6">Site Settings</h3>
       <div className="space-y-3 mb-6">
@@ -1026,6 +1054,32 @@ const SettingsTab = ({ site, reload }) => {
       <button data-testid="save-settings-btn" onClick={save} disabled={saving} className="px-5 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">
         {saving ? 'Saving...' : 'Save Settings'}
       </button>
+    </div>
+
+    <div className="bg-card border border-border-light rounded-2xl p-6 max-w-xl" data-testid="meal-prices-panel">
+      <h3 className="font-heading text-xl font-medium mb-1">Meal Prices</h3>
+      <p className="text-text-muted text-sm mb-5">Per-meal-type prices (INR) used for this site's monthly billing. Leave defaults if unsure.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        {MEAL_PRICE_FIELDS.map((f) => (
+          <div key={f.key}>
+            <label className="block text-sm font-medium text-text-secondary mb-1">{f.label}</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">₹</span>
+              <input
+                data-testid={`meal-price-${f.key}`}
+                type="number" min="0" step="1"
+                value={mealPrices[f.key]}
+                onChange={(e) => setMealPrices({ ...mealPrices, [f.key]: e.target.value })}
+                className="w-full pl-7 pr-3 py-2.5 border border-border-light rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <button data-testid="save-meal-prices-btn" onClick={savePrices} disabled={savingPrices} className="px-5 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">
+        {savingPrices ? 'Saving...' : 'Save Meal Prices'}
+      </button>
+    </div>
     </div>
   );
 };

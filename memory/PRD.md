@@ -35,6 +35,15 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 1, 2026 — Vendor Counter View + Company Orders Dashboard + Per-Site Meal Prices + Site Repair (COMPLETED)
+
+Four connected-platform enhancements, all verified 100% (iteration_33: 13/13 backend pytest + frontend smoke):
+
+- **Vendor Counter View** (`vendor/Orders.js` + `GET /api/orders` now returns `counter`): a counter filter chip row (All counters + one chip per counter from `GET /api/vendor/counters`) lets multi-counter vendors filter their order list; each order shows a counter badge. Sales/Reports already had per-counter filtering.
+- **Company Orders Dashboard** (`admin/Dashboard.js` + `GET /api/analytics/corporate/today`): corporate admins get a live "Today across your sites" section — today's orders, paid spend, active-site count, and a per-site breakdown table. Strictly company-scoped (Corp A never sees Corp B); non-admin roles 403.
+- **Per-Site Meal Prices** (`master/SiteDetail.js` Settings tab + `PATCH /api/sites/{id}` `meal_prices`): Master Admin edits each site's 4 meal-type prices (veg_meal/non_veg_meal/veg_salad/non_veg_salad); master-only, floats coerced, negatives rejected. Feeds the monthly billing engine (`billing._site_prices`).
+- **Site Data Repair** (`master/Sites.js` "Repair Links" + `POST /api/admin/integrity/backfill-sites`): master-only, idempotent relink of sites missing `company_id`/`city_id` (from site employees → allowed_domains → vendor_onboarding, then city from company). Companion to the earlier order backfill.
+
 ## Sep 1, 2026 — System Hierarchy Audit: Order Linkage + Role Scoping (COMPLETED)
 
 Full audit of the chain **Client(Company) → City → Site → Vendor → Counter → Menu → Employee → Order**. Ran a live data-integrity scan (`scripts/integrity_audit.py`) that surfaced concrete gaps; fixed the code-level ones:

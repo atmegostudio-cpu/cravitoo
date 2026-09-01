@@ -1665,7 +1665,7 @@ async def get_orders(user: dict = Depends(get_current_user)):
         query["site_id"] = {"$in": assigned}
     # master_admin: no filter — sees every order.
 
-    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
+    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
     for order in orders:
         order["id"] = str(order.pop("_id"))
     return orders
@@ -1897,6 +1897,67 @@ async def get_corporate_analytics(user: dict = Depends(get_current_user)):
     return {
         "total_orders": total_orders,
         "total_spend": total_spend
+    }
+
+
+@api_router.get("/analytics/corporate/today")
+async def get_corporate_today(user: dict = Depends(get_current_user)):
+    """Live command-center for a corporate admin: today's orders + spend for
+    their company, broken down per site. Scoped strictly to the caller's
+    company_id (super_admin sees their assigned sites)."""
+    if user["role"] not in ["corporate_admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    match: dict = {}
+    if user["role"] == "corporate_admin":
+        company_id = user.get("company_id")
+        if not company_id:
+            return {"today_orders": 0, "today_paid_orders": 0, "today_spend": 0.0, "per_site": []}
+        match["company_id"] = company_id
+    else:  # super_admin
+        assigned = user.get("assigned_sites") or []
+        if not assigned:
+            return {"today_orders": 0, "today_paid_orders": 0, "today_spend": 0.0, "per_site": []}
+        match["site_id"] = {"$in": assigned}
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    start_utc = datetime.now(ist).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    match["created_at"] = {"$gte": start_utc}
+
+    today_orders = await db.orders.count_documents(match)
+    paid_res = await db.orders.aggregate([
+        {"$match": {**match, "payment_status": "paid"}},
+        {"$group": {"_id": None, "spend": {"$sum": "$total_amount"}, "count": {"$sum": 1}}},
+    ]).to_list(1)
+    today_spend = paid_res[0]["spend"] if paid_res else 0
+    today_paid_orders = paid_res[0]["count"] if paid_res else 0
+
+    per_site_rows = await db.orders.aggregate([
+        {"$match": match},
+        {"$group": {
+            "_id": "$site_id",
+            "orders": {"$sum": 1},
+            "spend": {"$sum": {"$cond": [{"$eq": ["$payment_status", "paid"]}, "$total_amount", 0]}},
+        }},
+    ]).to_list(500)
+    per_site = []
+    for row in per_site_rows:
+        sid = row["_id"]
+        name = "Unassigned"
+        if sid:
+            s = await db.sites.find_one({"_id": safe_objectid(sid, "Site")}, {"name": 1})
+            name = (s or {}).get("name", "Unknown site")
+        per_site.append({
+            "site_id": sid, "site_name": name,
+            "orders": row["orders"], "spend": round(float(row["spend"]), 2),
+        })
+    per_site.sort(key=lambda r: r["spend"], reverse=True)
+
+    return {
+        "today_orders": today_orders,
+        "today_paid_orders": today_paid_orders,
+        "today_spend": round(float(today_spend), 2),
+        "per_site": per_site,
     }
 
 # Review Routes
@@ -3554,6 +3615,96 @@ async def backfill_order_links(user: dict = Depends(get_current_user)):
                      "fixed_company": fixed_company, "unresolved": unresolved})
     return {"success": True, "scanned": scanned, "fixed_site": fixed_site,
             "fixed_company": fixed_company, "unresolved": unresolved}
+
+
+@api_router.post("/admin/integrity/backfill-sites")
+async def backfill_site_links(user: dict = Depends(get_current_user)):
+    """Master-admin one-shot repair: relink any Site missing `company_id` or
+    `city_id`. Safe / idempotent.
+
+    Resolution order for company_id:
+      1. Most-common company_id among employees stationed at the site.
+      2. An `allowed_domains` rule scoped to this site (its company_id).
+      3. A `vendor_onboarding` row for this site (its company link, if any).
+    city_id is then taken from the resolved company's own `city_id`, or from
+    an `allowed_domains` rule for the site.
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    from collections import Counter as _Counter
+
+    scanned = 0
+    fixed_company = 0
+    fixed_city = 0
+    unresolved = 0
+
+    company_city_cache: dict = {}
+
+    async def _city_for_company(cid: str):
+        if not cid:
+            return None
+        if cid in company_city_cache:
+            return company_city_cache[cid]
+        co = await db.companies.find_one({"_id": safe_objectid(cid, "Company")}, {"city_id": 1})
+        val = (co or {}).get("city_id")
+        company_city_cache[cid] = val
+        return val
+
+    cursor = db.sites.find({"$or": [
+        {"company_id": {"$in": [None, ""]}}, {"company_id": {"$exists": False}},
+        {"city_id": {"$in": [None, ""]}}, {"city_id": {"$exists": False}},
+    ]})
+    async for s in cursor:
+        scanned += 1
+        sid = str(s["_id"])
+        company_id = s.get("company_id")
+        city_id = s.get("city_id")
+
+        # 1. Employees at this site.
+        if not company_id:
+            emp_companies = [u.get("company_id") for u in await db.users.find(
+                {"site_id": sid, "role": "employee", "company_id": {"$nin": [None, ""]}},
+                {"company_id": 1}).to_list(2000)]
+            if emp_companies:
+                company_id = _Counter(emp_companies).most_common(1)[0][0]
+
+        # 2. allowed_domains scoped to site.
+        if not company_id:
+            ad = await db.allowed_domains.find_one({"site_id": sid, "company_id": {"$nin": [None, ""]}},
+                                                   {"company_id": 1, "city_id": 1})
+            if ad:
+                company_id = ad.get("company_id")
+                city_id = city_id or ad.get("city_id")
+
+        # 3. vendor_onboarding for site.
+        if not company_id:
+            vo = await db.vendor_onboarding.find_one({"site_id": sid, "company_id": {"$nin": [None, ""]}},
+                                                     {"company_id": 1, "city_id": 1})
+            if vo:
+                company_id = vo.get("company_id")
+                city_id = city_id or vo.get("city_id")
+
+        if not city_id and company_id:
+            city_id = await _city_for_company(company_id)
+
+        update: dict = {}
+        if company_id and not s.get("company_id"):
+            update["company_id"] = company_id
+            fixed_company += 1
+        if city_id and not s.get("city_id"):
+            update["city_id"] = city_id
+            fixed_city += 1
+        if update:
+            await db.sites.update_one({"_id": s["_id"]}, {"$set": update})
+        elif not company_id and not city_id:
+            unresolved += 1
+
+    await audit_log(user, "sites", "*", "backfilled_links",
+                    {"scanned": scanned, "fixed_company": fixed_company,
+                     "fixed_city": fixed_city, "unresolved": unresolved})
+    return {"success": True, "scanned": scanned, "fixed_company": fixed_company,
+            "fixed_city": fixed_city, "unresolved": unresolved}
 
 
 # ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============

@@ -10,11 +10,14 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const VendorOrders = () => {
   const [orders, setOrders] = useState([]);
+  const [counters, setCounters] = useState([]);
+  const [counterFilter, setCounterFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     fetchOrders();
+    fetchCounters();
   }, []);
 
   const fetchOrders = async () => {
@@ -27,6 +30,19 @@ const VendorOrders = () => {
       setLoading(false);
     }
   };
+
+  const fetchCounters = async () => {
+    try {
+      const { data } = await axios.get(`${API}/vendor/counters`, { withCredentials: true });
+      setCounters(data || []);
+    } catch (error) {
+      logger.error('Error fetching counters:', error);
+    }
+  };
+
+  const visibleOrders = counterFilter
+    ? orders.filter((o) => (o.counter || '') === counterFilter)
+    : orders;
 
   const updateStatus = async (orderId, newStatus) => {
     try {
@@ -102,14 +118,37 @@ const VendorOrders = () => {
             onSuccess={() => fetchOrders()}
           />
 
-          {orders.length === 0 ? (
+          {counters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-5" data-testid="counter-filter-row">
+              <span className="text-sm font-medium text-text-secondary mr-1">Counter:</span>
+              <button
+                data-testid="counter-filter-all"
+                onClick={() => setCounterFilter('')}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${counterFilter === '' ? 'bg-primary text-white' : 'bg-card border border-border-light text-text-secondary hover:border-primary/40'}`}
+              >
+                All counters
+              </button>
+              {counters.map((c) => (
+                <button
+                  key={c}
+                  data-testid={`counter-filter-${c}`}
+                  onClick={() => setCounterFilter(c)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${counterFilter === c ? 'bg-primary text-white' : 'bg-card border border-border-light text-text-secondary hover:border-primary/40'}`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {visibleOrders.length === 0 ? (
             <div data-testid="no-vendor-orders" className="bg-card border border-border-light rounded-xl p-8 sm:p-12 text-center">
               <Package className="h-16 w-16 text-text-muted mx-auto mb-4" />
-              <p className="text-text-secondary">No orders yet</p>
+              <p className="text-text-secondary">{counterFilter ? `No orders for ${counterFilter}` : 'No orders yet'}</p>
             </div>
           ) : (
             <div className="space-y-3 sm:space-y-4">
-              {orders.map((order) => (
+              {visibleOrders.map((order) => (
                 <div key={order.id} data-testid={`vendor-order-detail-${order.id}`} className="bg-card border border-border-light rounded-xl p-4 sm:p-6">
                   <div className="flex flex-wrap justify-between items-start gap-2 mb-4">
                     <div className="min-w-0">
@@ -120,6 +159,11 @@ const VendorOrders = () => {
                         </p>
                       )}
                       <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString()}</p>
+                      {order.counter && (
+                        <span data-testid={`vendor-order-counter-${order.id}`} className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">
+                          {order.counter}
+                        </span>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="font-heading text-lg sm:text-xl font-semibold text-primary">₹{order.total_amount.toFixed(2)}</p>

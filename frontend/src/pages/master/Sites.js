@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2 } from 'lucide-react';
+import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2, Wrench } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -44,6 +44,20 @@ const MasterSites = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [repairing, setRepairing] = useState(false);
+
+  const repairLinks = async () => {
+    setRepairing(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/integrity/backfill-sites`, {}, { withCredentials: true });
+      await fetchSites();
+      alert(`Repair complete. Scanned ${data.scanned}, linked company on ${data.fixed_company}, city on ${data.fixed_city}, still unresolved ${data.unresolved}.`);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Repair failed');
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const fetchSites = useCallback(async () => {
     try {
@@ -111,13 +125,24 @@ const MasterSites = () => {
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
             <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">Sites</h1>
-            <button
-              data-testid="create-site-btn"
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover transition-all"
-            >
-              <Plus className="h-4 w-4" /> New Site
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                data-testid="repair-site-links-btn"
+                onClick={repairLinks}
+                disabled={repairing}
+                className="flex items-center gap-2 bg-card border border-border-light text-text-secondary px-4 py-2.5 rounded-xl font-medium hover:border-primary/40 disabled:opacity-50 transition-all"
+                title="Relink any older sites missing their city or company"
+              >
+                <Wrench className="h-4 w-4" /> {repairing ? 'Repairing…' : 'Repair Links'}
+              </button>
+              <button
+                data-testid="create-site-btn"
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover transition-all"
+              >
+                <Plus className="h-4 w-4" /> New Site
+              </button>
+            </div>
           </div>
 
           {sites.length === 0 && (
