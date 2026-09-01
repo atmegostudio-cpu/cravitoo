@@ -1,0 +1,24 @@
+{
+  "summary": "Iter 32: order-to-hierarchy linkage + role-based order scoping + regressions. Wrote /app/backend/tests/test_order_hierarchy_scoping.py (9 pytest cases) — ALL PASS. Frontend smoke on employee A (Browse Menu shows AUDIT_Vendor1 + AUDIT_Vendor2 tabs; Orders page shows CRV-AUDA01 Paid ₹210) and vendor1 Dashboard ('Today at a Glance' with data-testid today-command-center rendering ₹210 sales, top item AUDIT_Paneer 2 sold, ₹120 pending, 2 total orders, ₹105 AOV) — all green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_order_hierarchy_scoping.py",
+    "/app/test_reports/pytest/iter32_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~4770 lines — still not modularized (routers). Not blocking but debt is compounding.",
+    "integrity_audit.py shows 10 legacy orders missing company_id and 1 missing site_id + 1 with bad vendor ref. After running POST /api/admin/integrity/backfill-orders (master) the AUDIT orders are fine, but legacy orders remain 'unresolved' because their owning users lack company_id/site_id (e.g., reg-e0d561@techcorp.com, u2@lcflow-7be658.com, qa_employee@gatetest.com). Recommend a secondary user-linkage backfill or explicit doc that these are demo/orphan users so future audits stay green.",
+    "Several older Sites (LCTest_/GateTest_/LCFlow_/TEST_) have no city_id / company_id — hierarchy integrity issues at Site level not covered by the new order backfill. Consider a /api/admin/integrity/backfill-sites companion.",
+    "1 mapping row (id 6a8946e88de95440e23f21cc) is ACTIVE while its vendor is suspended — mapping state should be reconciled when a vendor is suspended."
+  ],
+  "updated_files": ["/app/backend/tests/test_order_hierarchy_scoping.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "As provided in review_request; verified working. All AUDIT accounts login with Audit#1234; master admin admin@cravitoo.com/admin123.",
+  "seed_data_creation": "None — used pre-seeded AUDIT hierarchy (CRV-AUDA01, CRV-AUDB01). Backfill endpoint invoked twice for idempotency check (2nd call returned fixed_site=0, fixed_company=0).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression file for this iteration: /app/backend/tests/test_order_hierarchy_scoping.py — 9 tests. Verified: (a) master sees all orders and AUDIT orders carry site_id+company_id; (b) corp_admin_a=1 order CRV-AUDA01; (c) site_admin_a=1 order CRV-AUDA01; (d) emp_a=1 order CRV-AUDA01; (e) corp_a never sees CRV-AUDB01; (f) emp_a vendors include V1+V2, emp_b only V1; (g) menu guard: emp_b 200 on V1, 403 on V2; (h) backfill endpoint master-only, returns success/scanned/fixed_site/fixed_company/unresolved, idempotent. Frontend: vendor1 dashboard has data-testid today-command-center.",
+  "rca of the issue": "N/A — no issues found."
+}

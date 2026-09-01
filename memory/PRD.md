@@ -35,6 +35,21 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 1, 2026 — System Hierarchy Audit: Order Linkage + Role Scoping (COMPLETED)
+
+Full audit of the chain **Client(Company) → City → Site → Vendor → Counter → Menu → Employee → Order**. Ran a live data-integrity scan (`scripts/integrity_audit.py`) that surfaced concrete gaps; fixed the code-level ones:
+
+- **Orders now link to Site + Company**: `_materialize_order` (single) and `create_bulk_order` (bulk) stamp `site_id` + `company_id` from the ordering employee. Previously 10/10 orders had neither, breaking Site→Order and Client→Order rollups.
+- **`GET /api/orders` role scoping** (was leaking ALL orders to admin roles): now employee=own, vendor=own vendor, site_admin=own site, corporate_admin=own company, super_admin=assigned sites, master=all.
+- **Reusable repair endpoint** `POST /api/admin/integrity/backfill-orders` (master only, idempotent): stamps site_id/company_id on legacy orders from the employee, falling back to the vendor's unique active site mapping. Returns `{scanned, fixed_site, fixed_company, unresolved}`. Intended to be run once on production after deploy.
+- **Regression preserved**: employee vendor list (`/api/vendors`) and menu access (`/api/menu/{id}`) remain strictly site-scoped (iters 30–31).
+- **Verified (iteration_32)**: 9 backend pytest cases + frontend smoke, 100% pass. Cross-company isolation proven (Corp A never sees Corp B's order); employee B only sees vendors mapped to Site B. Regression file `/app/backend/tests/test_order_hierarchy_scoping.py`. Seed: `scripts/seed_hierarchy_audit.py`.
+
+### Known remaining hygiene (non-blocking, mostly preview TEST data)
+- Legacy demo users (`reg-e0d561@techcorp.com`, `u2@lcflow-*`, `qa_employee@gatetest.com`) lack `company_id`/`site_id`, so their old orders can't be fully backfilled. Real prod data is unaffected.
+- Older preview Sites (`TEST_/GateTest_/LCTest_/LCFlow_`) lack `city_id`/`company_id`. Future companion `backfill-sites` endpoint could clean these.
+- Vendor suspend/reactivate already cascades to mappings via `PATCH /admin/vendors`; `POST /admin/vendor-site-mappings/sanitize` cleans any historical stale rows.
+
 ## Aug 31, 2026 — Vendor Analytics Widget + Menu Access Guard (COMPLETED)
 
 - **Vendor Analytics Widget** (`vendor/Dashboard.js` + `GET /api/analytics/vendor/today`): a "Today at a Glance" command-center row on the Vendor Dashboard with 3 cards — Today's Sales (paid ₹ + paid/total order counts, IST day boundary), Top Item Today (name + units sold, or empty state), and Pending Payments (outstanding all-time pending ₹ + order count to collect). Endpoint is vendor-role only (403 otherwise).

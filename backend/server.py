@@ -1395,6 +1395,11 @@ async def _materialize_order(
     order_doc = {
         "user_id": user["id"],
         "vendor_id": vendor_id,
+        # Hierarchy linkage — stamp the employee's site + company so the order
+        # rolls up correctly through Client → City → Site → ... → Order for
+        # scoping and reporting at every admin level.
+        "site_id": user.get("site_id"),
+        "company_id": user.get("company_id"),
         "items": validated_items,
         "total_amount": total_amount,
         "status": "pending",
@@ -1635,12 +1640,32 @@ async def orders_reconciliation(user: dict = Depends(get_current_user)):
 @api_router.get("/orders")
 async def get_orders(user: dict = Depends(get_current_user)):
     query = {}
-    if user["role"] == "employee":
+    role = user["role"]
+    if role == "employee":
         query["user_id"] = user["id"]
-    elif user["role"] == "vendor":
+    elif role == "vendor":
         query["vendor_id"] = user.get("vendor_id")
-    
-    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
+    elif role == "site_admin":
+        # Site admin only sees orders placed at their own site.
+        sid = user.get("site_id")
+        if not sid:
+            return []
+        query["site_id"] = sid
+    elif role == "corporate_admin":
+        # Corporate admin only sees their company's orders.
+        cid = user.get("company_id")
+        if not cid:
+            return []
+        query["company_id"] = cid
+    elif role == "super_admin":
+        # Super admin sees orders across only their assigned sites.
+        assigned = user.get("assigned_sites") or []
+        if not assigned:
+            return []
+        query["site_id"] = {"$in": assigned}
+    # master_admin: no filter — sees every order.
+
+    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
     for order in orders:
         order["id"] = str(order.pop("_id"))
     return orders
@@ -2336,6 +2361,8 @@ async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_curr
         order_doc = {
             "user_id": str(target_user["_id"]),
             "vendor_id": data.vendor_id,
+            "site_id": target_user.get("site_id"),
+            "company_id": target_user.get("company_id"),
             "items": validated_items,
             "total_amount": order_total,
             "status": "pending",
@@ -3452,6 +3479,81 @@ async def sanitize_vendor_site_mappings(user: dict = Depends(get_current_user)):
     await audit_log(user, "vendor_site_mapping", "*", "sanitized",
                     {"stale_mappings_deactivated": stale_updates})
     return {"success": True, "stale_mappings_deactivated": stale_updates}
+
+
+@api_router.post("/admin/integrity/backfill-orders")
+async def backfill_order_links(user: dict = Depends(get_current_user)):
+    """Master-admin one-shot repair: stamp `site_id` + `company_id` on any
+    legacy order that is missing them, so orders link up the full hierarchy
+    (Client → City → Site → ... → Order). Safe / idempotent — re-runnable.
+
+    Resolution order for each order:
+      1. From the ordering employee's user record (`user_id`).
+      2. Fallback: from the vendor's UNIQUE active site mapping (single-site
+         vendors), then company from that site.
+    """
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    site_company_cache: dict = {}
+
+    async def _company_for_site(sid: str):
+        if not sid:
+            return None
+        if sid in site_company_cache:
+            return site_company_cache[sid]
+        s = await db.sites.find_one({"_id": safe_objectid(sid, "Site")}, {"company_id": 1})
+        cid = (s or {}).get("company_id")
+        site_company_cache[sid] = cid
+        return cid
+
+    scanned = 0
+    fixed_site = 0
+    fixed_company = 0
+    unresolved = 0
+    cursor = db.orders.find({"$or": [{"site_id": {"$in": [None, ""]}}, {"site_id": {"$exists": False}},
+                                     {"company_id": {"$in": [None, ""]}}, {"company_id": {"$exists": False}}]})
+    async for o in cursor:
+        scanned += 1
+        site_id = o.get("site_id")
+        company_id = o.get("company_id")
+
+        # 1. From the ordering employee.
+        if (not site_id or not company_id) and o.get("user_id"):
+            u = await db.users.find_one({"_id": safe_objectid(o["user_id"], "User")},
+                                        {"site_id": 1, "company_id": 1}) if len(str(o.get("user_id"))) == 24 else None
+            if u:
+                site_id = site_id or u.get("site_id")
+                company_id = company_id or u.get("company_id")
+
+        # 2. Fallback from the vendor's unique active mapping.
+        if not site_id and o.get("vendor_id"):
+            maps = await db.vendor_site_mappings.find(
+                {"vendor_id": o["vendor_id"], "status": "active"}, {"site_id": 1}
+            ).to_list(5)
+            if len(maps) == 1:
+                site_id = maps[0].get("site_id")
+
+        if not company_id and site_id:
+            company_id = await _company_for_site(site_id)
+
+        update: dict = {}
+        if site_id and not o.get("site_id"):
+            update["site_id"] = site_id
+            fixed_site += 1
+        if company_id and not o.get("company_id"):
+            update["company_id"] = company_id
+            fixed_company += 1
+        if update:
+            await db.orders.update_one({"_id": o["_id"]}, {"$set": update})
+        elif not site_id and not company_id:
+            unresolved += 1
+
+    await audit_log(user, "orders", "*", "backfilled_links",
+                    {"scanned": scanned, "fixed_site": fixed_site,
+                     "fixed_company": fixed_company, "unresolved": unresolved})
+    return {"success": True, "scanned": scanned, "fixed_site": fixed_site,
+            "fixed_company": fixed_company, "unresolved": unresolved}
 
 
 # ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============
