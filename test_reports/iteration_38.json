@@ -1,0 +1,26 @@
+{
+  "summary": "Validated the 'blank employee menu' bug fix end-to-end. Backend: 8/8 pytest cases pass covering /api/admin/integrity/employee-menu-report (master-only + 403 for non-master), /api/admin/integrity/backfill-employee-sites (idempotent + 403), and single-site auto-fallback in /api/vendors. Frontend: verified /employee/menu with all three seeded accounts.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_employee_menu_integrity.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is >5100 lines — recommended to split integrity endpoints into a router module (routers/admin_integrity.py) for maintainability."
+  ],
+  "updated_files": ["/app/backend/tests/test_employee_menu_integrity.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com/admin123; diag_multi@diag.com, diag_zero@diag.com, diag_single@diag.com — all with Diag#1234",
+  "seed_data_creation": "Scenario already seeded by /app/backend/scripts/scenario_diag.py (attempt to re-run failed with duplicate-key, confirming pre-seed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_employee_menu_integrity.py. Run with REACT_APP_BACKEND_URL exported (frontend/.env value). diag_multi still returns 'unresolved' from backfill (2-site company, no domain rule) — this is expected and asserted.",
+  "verified_flows": [
+    "diag_multi@diag.com /employee/menu -> shows data-testid='no-vendors-empty-state' with 'No menu available yet' copy (no blank white body).",
+    "diag_zero@diag.com /employee/menu -> vendor tab 'DIAG_Vendor' + 'Diag Dish' menu item render.",
+    "diag_single@diag.com /employee/menu -> single-site auto-fallback yields DIAG_Vendor tab (no empty-state).",
+    "Master admin diagnostic + backfill endpoints return well-formed JSON; non-master roles receive 403 on both."
+  ]
+}

@@ -454,6 +454,15 @@ const EmployeeMenu = () => {
             <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tighter font-semibold text-text-primary mb-4">
               Browse Menu
             </h1>
+            {vendors.length === 0 ? (
+              <div data-testid="no-vendors-empty-state" className="bg-card border border-border-light rounded-2xl p-8 sm:p-12 text-center">
+                <ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                <h2 className="font-heading text-lg font-semibold text-text-primary mb-2">No menu available yet</h2>
+                <p className="text-text-secondary text-sm max-w-md mx-auto">
+                  Your account isn't linked to a site with active vendors yet. Please contact your Cravitoo admin to get your office site assigned.
+                </p>
+              </div>
+            ) : (
             <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-2 snap-x snap-mandatory">
               {vendors.map((vendor) => (
                 <button
@@ -470,7 +479,10 @@ const EmployeeMenu = () => {
                 </button>
               ))}
             </div>
+            )}
           </div>
+
+          {vendors.length > 0 && (
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
             <div className="lg:col-span-2">
@@ -596,6 +608,7 @@ const EmployeeMenu = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 

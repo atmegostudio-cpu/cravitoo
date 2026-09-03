@@ -35,6 +35,17 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Demo Data Wipe + Empty-Menu Root-Cause Fix (COMPLETED)
+
+**Preview wiped to a clean slate**: `scripts/wipe_demo_data.py` emptied all operational collections and removed every non-master user — only `admin@cravitoo.com` remains. (Ascendion is the real client on the DEPLOYED app; that DB is separate and untouched.)
+
+**Root cause of blank/empty employee menu**: an employee whose `site_id` is missing (their `allowed_domains` rule had no site_id, or a multi-site company) gets an empty vendor list from `GET /api/vendors`, and the employee menu had no empty-state → blank white screen. Fixes (verified iteration_38, 8/8 backend + frontend):
+- **Single-site auto-fallback** in `GET /api/vendors`: employee with no `site_id` but whose company has exactly ONE site is auto-resolved to it.
+- **Diagnostic** `GET /api/admin/integrity/employee-menu-report` (master-only): lists employees_no_site / site_deleted / zero_active_vendors, domains_missing_site_id, vendors_all_items_unavailable.
+- **Repair** `POST /api/admin/integrity/backfill-employee-sites` (master-only, idempotent): sets `site_id` from the domain rule or the company's unique site; multi-site/no-company employees returned as `unresolved` for manual assignment.
+- **Friendly empty-state** in `employee/Menu.js` (`data-testid='no-vendors-empty-state'`): "No menu available yet — contact your Cravitoo admin" instead of a blank page.
+- Run the diagnostic + backfill on PRODUCTION (as master admin) after deploy to fix the real Ascendion employees. Regression: `/app/backend/tests/test_employee_menu_integrity.py`.
+
 ## Sep 3, 2026 — Test Data Purge (COMPLETED)
 
 Purged leftover legacy test/demo data from the preview DB via `scripts/purge_test_data.py` (cascade-safe). Preserved: master admin (admin@cravitoo.com) + clean AUDIT_* hierarchy. Deleted: 4 sites (TEST_Site/LCTest/GateTest/LCFlow), 1 company (TEST_Corp), 2 test cities, 10 TEST__vendor_* + 10 approve_*@example.com vendor logins, 6 orphan demo users, and all their child rows (30 menu_items, 10 mappings, 9 orders, 117 vendor_onboarding, meal_schedules, order_status_history). Also removed 1 orphan order (CRV-559035) referencing a deleted vendor.

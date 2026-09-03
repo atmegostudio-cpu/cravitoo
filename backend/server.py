@@ -1134,6 +1134,15 @@ async def get_vendors(user: dict = Depends(get_current_user)):
     vendor_filter = {"status": "active"}
     if user.get("role") == "employee":
         emp_site_id = user.get("site_id")
+        # Fallback: an employee with no site but whose company has exactly ONE
+        # site is auto-resolved to it, so single-site companies work even before
+        # a backfill runs. Multi-site / no-company employees still get [].
+        if not emp_site_id and user.get("company_id"):
+            company_sites = await db.sites.find(
+                {"company_id": user["company_id"]}, {"_id": 1}
+            ).to_list(5)
+            if len(company_sites) == 1:
+                emp_site_id = str(company_sites[0]["_id"])
         if not emp_site_id:
             return []
         active_maps = await db.vendor_site_mappings.find(
@@ -3705,6 +3714,106 @@ async def backfill_site_links(user: dict = Depends(get_current_user)):
                      "fixed_city": fixed_city, "unresolved": unresolved})
     return {"success": True, "scanned": scanned, "fixed_company": fixed_company,
             "fixed_city": fixed_city, "unresolved": unresolved}
+
+
+@api_router.get("/admin/integrity/employee-menu-report")
+async def employee_menu_report(user: dict = Depends(get_current_user)):
+    """Master-admin read-only diagnostic: which employees will see an empty
+    menu, and why. Covers no-site, deleted-site, zero-active-vendor-mappings,
+    domains missing a site_id, and vendors whose items are all unavailable."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    site_ids = {str(s["_id"]) for s in await db.sites.find({}, {"_id": 1}).to_list(5000)}
+    active_by_site: dict = {}
+    async for m in db.vendor_site_mappings.find({"status": "active"}, {"site_id": 1}):
+        active_by_site[m.get("site_id")] = active_by_site.get(m.get("site_id"), 0) + 1
+
+    no_site, deleted_site, zero_vendors = [], [], []
+    async for u in db.users.find({"role": "employee"}, {"email": 1, "site_id": 1, "company_id": 1}):
+        sid = u.get("site_id")
+        rec = {"email": u.get("email"), "company_id": u.get("company_id"), "site_id": sid}
+        if not sid:
+            no_site.append(rec)
+        elif sid not in site_ids:
+            deleted_site.append(rec)
+        elif active_by_site.get(sid, 0) == 0:
+            zero_vendors.append(rec)
+
+    domains_missing_site = []
+    async for d in db.allowed_domains.find({"$or": [{"site_id": {"$in": [None, ""]}}, {"site_id": {"$exists": False}}]}):
+        domains_missing_site.append({"domain": d.get("domain") or d.get("email"), "company_id": d.get("company_id")})
+
+    vendors_all_unavailable = []
+    async for v in db.vendors.find({"status": "active"}, {"name": 1}):
+        vid = str(v["_id"])
+        total = await db.menu_items.count_documents({"vendor_id": vid})
+        avail = await db.menu_items.count_documents({"vendor_id": vid, "is_available": True})
+        if total > 0 and avail == 0:
+            vendors_all_unavailable.append({"vendor_id": vid, "name": v.get("name"), "items": total})
+
+    return {
+        "employees_no_site": no_site,
+        "employees_site_deleted": deleted_site,
+        "employees_zero_active_vendors": zero_vendors,
+        "domains_missing_site_id": domains_missing_site,
+        "vendors_all_items_unavailable": vendors_all_unavailable,
+        "summary": {
+            "no_site": len(no_site), "site_deleted": len(deleted_site),
+            "zero_vendors": len(zero_vendors),
+            "domains_missing_site_id": len(domains_missing_site),
+            "vendors_all_unavailable": len(vendors_all_unavailable),
+        },
+    }
+
+
+@api_router.post("/admin/integrity/backfill-employee-sites")
+async def backfill_employee_sites(user: dict = Depends(get_current_user)):
+    """Master-admin repair: set site_id on employees who are missing it.
+    Resolution: (1) their email-domain rule's site_id, else (2) their company's
+    UNIQUE site. Multi-site / no-company employees are returned as unresolved
+    for manual assignment. Idempotent."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    from routers.allowed_domains import find_allowed_domain
+
+    company_single_site: dict = {}
+
+    async def _single_site_for_company(cid: str):
+        if not cid:
+            return None
+        if cid in company_single_site:
+            return company_single_site[cid]
+        sites = await db.sites.find({"company_id": cid}, {"_id": 1}).to_list(5)
+        val = str(sites[0]["_id"]) if len(sites) == 1 else None
+        company_single_site[cid] = val
+        return val
+
+    fixed = 0
+    unresolved = []
+    async for u in db.users.find({"role": "employee", "$or": [{"site_id": {"$in": [None, ""]}}, {"site_id": {"$exists": False}}]},
+                                 {"email": 1, "company_id": 1}):
+        site_id = None
+        dom = await find_allowed_domain(db, (u.get("email") or "").lower())
+        if dom and dom.get("site_id"):
+            site_id = dom.get("site_id")
+        if not site_id:
+            site_id = await _single_site_for_company(u.get("company_id"))
+        if site_id:
+            update = {"site_id": site_id}
+            if not u.get("company_id"):
+                s = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")}, {"company_id": 1})
+                if s and s.get("company_id"):
+                    update["company_id"] = s["company_id"]
+            await db.users.update_one({"_id": u["_id"]}, {"$set": update})
+            fixed += 1
+        else:
+            unresolved.append({"email": u.get("email"), "company_id": u.get("company_id")})
+
+    await audit_log(user, "users", "*", "backfilled_employee_sites",
+                    {"fixed": fixed, "unresolved": len(unresolved)})
+    return {"success": True, "fixed": fixed, "unresolved": unresolved}
 
 
 # ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============
