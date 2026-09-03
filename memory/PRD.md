@@ -35,6 +35,15 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — "Fix Employee Menus" Admin Panel (COMPLETED)
+
+Added a self-service panel on the Master Dashboard (`master/Dashboard.js` → `FixEmployeeMenus`) so admins resolve blank-menu issues without touching APIs:
+- **Check employee** (email → `GET /api/admin/integrity/employee-visibility`): plain verdict (OK / NO_SITE / SITE_NOT_FOUND / NO_ACTIVE_VENDOR_MAPPINGS / MENU_EMPTY_OR_VENDOR_INACTIVE) + per-vendor item counts.
+- **Scan everyone** (`employee-menu-report`): summary counts of all affected employees/domains/vendors.
+- **Auto-fix sites** (`backfill-employee-sites`): one-click repair; lists any multi-site employees still needing manual assignment.
+- Verified iteration_39: backend 8/8 (100%), frontend flows pass. Fixed one MEDIUM UX bug (backfill success message was cleared by the report refresh — now set after it). test testids: fix-employee-menus-panel, fem-email-input, fem-check-btn, fem-verdict, fem-report-btn, fem-report, fem-backfill-btn, fem-message.
+- Production runbook unchanged: deploy, then use this panel to fix the real Ascendion employees.
+
 ## Sep 3, 2026 — Ascendion Empty-Menu Investigation + Per-Employee Tracer (COMPLETED)
 
 Investigated why Ascendion employees can't see a live/mapped/uploaded menu. **Code paths verified consistent** — onboarding, Excel upload, `GET /vendors`, `GET /menu`, and the admin `list_site_vendors` all use string IDs + `status:"active"` and the SAME mapping filter, so if an admin sees the vendor under the site, an employee with the same `site_id` will too. Conclusion: the break is a **production data mismatch** (employee `site_id` null or pointing at a different site than the vendor mapping), which can't be seen from preview.

@@ -1,0 +1,35 @@
+{
+  "summary": "Focused validation of Master Dashboard 'Fix Employee Menus' panel (frontend) + its 3 admin/integrity endpoints (backend). All 8 pytest cases pass. UI flows verified end-to-end (panel visible, per-employee check for OK & NO_SITE, scan report, backfill mutation, and single-site auto-fallback post-backfill). One minor UX bug discovered: the backfill success message is set and then immediately cleared by runReport() which does setMsg(''), so users never see the '✓ Fixed N employee(s)…' confirmation.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "FixEmployeeMenus (master/Dashboard.js line 441-442)",
+        "issue": "runBackfill() sets success msg with setMsg('✓ Fixed …') then awaits runReport() which starts with setMsg(''), wiping the confirmation before it renders. Users see the report refresh but no visible success text (fem-message never appears). Fix: either call runReport() first then set msg, or make runReport accept a `preserveMsg` flag, or drop the setMsg('') in runReport.",
+        "selector": "[data-testid=\"fem-message\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_employee_menu_integrity.py",
+    "/app/test_reports/pytest/it39.xml"
+  ],
+  "action_items": [
+    "Fix FixEmployeeMenus backfill success message being clobbered by runReport() setMsg(''). Simplest patch: remove `setMsg('')` from runReport (only clear msg in runCheck/runBackfill entry) OR set msg AFTER awaiting runReport."
+  ],
+  "critical_code_review_comments": [
+    "Dashboard.js is 745 lines — FixEmployeeMenus (110+ lines) should be extracted into src/pages/master/components/FixEmployeeMenus.jsx.",
+    "runReport clears msg unconditionally, which causes the backfill success toast to disappear immediately (see UI bug above). Chain-callers must be able to opt out of msg reset."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "test_credentials": "admin@cravitoo.com / admin123; diag_zero@diag.com / Diag#1234; diag_multi@diag.com; diag_single@diag.com",
+  "seed_data_creation": "Scenario already seeded in prior iteration; not re-run. diag_single already had a site assigned from iteration_38's backfill — this correctly demonstrates the idempotent single-site auto-fallback (verdict OK, DIAG_Vendor 1/1 items).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "FixEmployeeMenus panel is functionally correct. Only outstanding item is the UX message-clobber. Backend endpoints /api/admin/integrity/{employee-visibility,employee-menu-report,backfill-employee-sites} return proper 200/403 (8/8 pytest). diag_multi remains unresolved by design (multi-site company, needs manual assignment or domain rule). Backend tests: `REACT_APP_BACKEND_URL=<url> pytest backend/tests/test_employee_menu_integrity.py`.",
+  "rca of the issue": "runBackfill (Dashboard.js:436-446) sequence: setMsg('✓ Fixed …') → await runReport(). runReport (line 426-434) begins with setMsg(''), synchronously overwriting the success text. Because React batches within the same tick and the runReport network call is fast (<200ms), the user sees only the empty-msg state. Repro: click Auto-fix sites → observe no fem-message renders, but fem-report still updates (backfill did succeed server-side; verified via Scan summary reflecting the change and via backend pytest). Mitigation: delete `setMsg('')` from runReport OR set the ✓ message AFTER `await runReport()` in runBackfill."
+}

@@ -184,6 +184,9 @@ const MasterDashboard = () => {
               Photos are now managed per-item via Upload / Generate / Remove
               on Master → Sites → {site} → Menu tab and on the Vendor Panel. */}
 
+          {/* Fix Employee Menus — diagnostic + repair for blank/empty employee menus */}
+          <FixEmployeeMenus />
+
           {/* Email deliverability probe */}
           <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3" data-testid="email-health-toolbar">
             <div className="flex-1 min-w-0">
@@ -395,6 +398,121 @@ const MasterDashboard = () => {
         </div>
       </div>
     </>
+  );
+};
+
+// ============== FIX EMPLOYEE MENUS ==============
+
+const FixEmployeeMenus = () => {
+  const [email, setEmail] = useState('');
+  const [trace, setTrace] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [report, setReport] = useState(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const runCheck = async () => {
+    if (!email.includes('@')) { setMsg('Enter a valid employee email'); return; }
+    setChecking(true); setTrace(null); setMsg('');
+    try {
+      const { data } = await axios.get(`${API}/admin/integrity/employee-visibility?email=${encodeURIComponent(email.trim())}`, { withCredentials: true });
+      setTrace(data);
+    } catch (e) {
+      setMsg(`✗ ${e.response?.data?.detail || 'Lookup failed'}`);
+    } finally { setChecking(false); }
+  };
+
+  const runReport = async () => {
+    setLoadingReport(true); setMsg('');
+    try {
+      const { data } = await axios.get(`${API}/admin/integrity/employee-menu-report`, { withCredentials: true });
+      setReport(data);
+    } catch (e) {
+      setMsg(`✗ ${e.response?.data?.detail || 'Report failed'}`);
+    } finally { setLoadingReport(false); }
+  };
+
+  const runBackfill = async () => {
+    if (!window.confirm('Auto-assign the correct site to employees who are missing one? Safe and re-runnable.')) return;
+    setBackfilling(true); setMsg('');
+    try {
+      const { data } = await axios.post(`${API}/admin/integrity/backfill-employee-sites`, {}, { withCredentials: true });
+      await runReport();
+      setMsg(`✓ Fixed ${data.fixed} employee(s). ${data.unresolved.length} still need manual site assignment${data.unresolved.length ? ': ' + data.unresolved.map((u) => u.email).join(', ') : '.'}`);
+    } catch (e) {
+      setMsg(`✗ ${e.response?.data?.detail || 'Backfill failed'}`);
+    } finally { setBackfilling(false); }
+  };
+
+  const verdictOk = trace && trace.verdict?.startsWith('OK');
+
+  return (
+    <div className="mb-6 rounded-2xl border border-teal-200 bg-teal-50 p-5" data-testid="fix-employee-menus-panel">
+      <h3 className="font-heading font-semibold text-teal-900 flex items-center gap-2">
+        <Users className="h-4 w-4" /> Fix Employee Menus
+      </h3>
+      <p className="text-sm text-teal-800 mt-0.5 mb-3">
+        Diagnose why an employee sees a blank menu, then repair it. Check one employee by email, or scan everyone and auto-assign missing sites.
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
+        <input
+          data-testid="fem-email-input"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && runCheck()}
+          placeholder="employee@company.com"
+          className="flex-1 px-3 py-2 border border-teal-200 rounded-lg text-sm"
+        />
+        <button data-testid="fem-check-btn" onClick={runCheck} disabled={checking} className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2">
+          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Check employee
+        </button>
+        <button data-testid="fem-report-btn" onClick={runReport} disabled={loadingReport} className="bg-white border border-teal-300 text-teal-800 hover:bg-teal-100 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          {loadingReport ? 'Scanning…' : 'Scan everyone'}
+        </button>
+        <button data-testid="fem-backfill-btn" onClick={runBackfill} disabled={backfilling} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2">
+          {backfilling ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Auto-fix sites
+        </button>
+      </div>
+
+      {msg && <p data-testid="fem-message" className={`text-xs font-medium mb-2 ${msg.startsWith('✓') ? 'text-emerald-700' : 'text-red-600'}`}>{msg}</p>}
+
+      {trace && (
+        <div data-testid="fem-trace" className={`rounded-xl p-4 mb-3 text-sm ${verdictOk ? 'bg-emerald-100 border border-emerald-200' : 'bg-amber-100 border border-amber-200'}`}>
+          <p className="font-medium text-text-primary">{trace.email}</p>
+          <p className="text-xs text-text-secondary mb-2">
+            site: {trace.site_name || trace.effective_site_id || '—'}
+            {trace.resolved_via_single_site_fallback ? ' (auto-resolved)' : ''} · active vendors on site: {trace.active_mappings_on_site ?? 0}
+          </p>
+          <p data-testid="fem-verdict" className={`font-semibold ${verdictOk ? 'text-emerald-800' : 'text-amber-900'}`}>{trace.verdict}</p>
+          {Array.isArray(trace.vendors) && trace.vendors.length > 0 && (
+            <ul className="mt-2 text-xs text-text-secondary list-disc pl-5">
+              {trace.vendors.map((v) => (
+                <li key={v.vendor_id}>{v.name} — status {v.vendor_status}, {v.menu_items_available}/{v.menu_items_total} items available</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {report && (
+        <div data-testid="fem-report" className="rounded-xl p-4 bg-white border border-teal-200 text-sm">
+          <p className="font-medium text-text-primary mb-2">Scan summary</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            <span data-testid="fem-sum-nosite" className="px-2 py-1 rounded bg-red-50 text-red-700">No site: <strong>{report.summary.no_site}</strong></span>
+            <span className="px-2 py-1 rounded bg-red-50 text-red-700">Deleted site: <strong>{report.summary.site_deleted}</strong></span>
+            <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">Zero vendors: <strong>{report.summary.zero_vendors}</strong></span>
+            <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">Domains w/o site: <strong>{report.summary.domains_missing_site_id}</strong></span>
+            <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">Vendors all-unavailable: <strong>{report.summary.vendors_all_unavailable}</strong></span>
+          </div>
+          {report.employees_no_site.length > 0 && (
+            <p className="text-xs text-text-secondary mt-2">No-site employees: {report.employees_no_site.map((e) => e.email).join(', ')}</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 
