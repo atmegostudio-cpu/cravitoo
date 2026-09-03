@@ -35,6 +35,12 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Test Data Purge (COMPLETED)
+
+Purged leftover legacy test/demo data from the preview DB via `scripts/purge_test_data.py` (cascade-safe). Preserved: master admin (admin@cravitoo.com) + clean AUDIT_* hierarchy. Deleted: 4 sites (TEST_Site/LCTest/GateTest/LCFlow), 1 company (TEST_Corp), 2 test cities, 10 TEST__vendor_* + 10 approve_*@example.com vendor logins, 6 orphan demo users, and all their child rows (30 menu_items, 10 mappings, 9 orders, 117 vendor_onboarding, meal_schedules, order_status_history). Also removed 1 orphan order (CRV-559035) referencing a deleted vendor.
+
+**Final state — integrity audit 100% clean**: companies=2 (AUDIT A/B), cities=1 (AUDIT_City), sites=2 (AUDIT A/B), vendors=2 (AUDIT 1/2), users=6, orders=2 — NO broken/missing/duplicate links anywhere. Backend healthy.
+
 ## Sep 3, 2026 — Full-System QA Sweep (COMPLETED, no critical bugs)
 
 Comprehensive regression across the whole hierarchy Clients→Cities→Sites→Vendors→Counters→Menus→Employees→Orders→Payments (iteration_37: 23/23 backend pytest + frontend smoke, 100%). Findings:
