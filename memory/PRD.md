@@ -35,6 +35,12 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Vendor New-Order Chime Mute Toggle (COMPLETED)
+
+- Added a **Sound On / Muted** toggle button on the Vendor Orders header (`data-testid='toggle-order-sound-btn'`, Volume2/VolumeX icons) for quiet hours.
+- State persists in `localStorage['cravitoo_order_sound']` ('on'/'off'). `VendorOrderNotifier.beep()` checks this key and skips the chime when muted (toasts + bell badge still work). Default = on.
+- Verified: frontend compiles clean; logic is a localStorage guard on the already-tested notifier (iteration_40). Visual screenshot only showed the SPA loading spinner (preview screenshot-tool limitation), so not visually confirmed — offer testing_agent if visual proof needed.
+
 ## Sep 3, 2026 — Vendor Order Notifications + Richer Order Details (COMPLETED)
 
 - **Order now stamps `employee_name` + `employee_email`** at creation (`_materialize_order` + bulk); `GET /api/orders` returns them and resolves legacy orders from the users collection ("Walk-in / Kiosk" when none).

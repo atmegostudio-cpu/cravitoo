@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Package, ScanLine, Maximize2, User } from 'lucide-react';
+import { Package, ScanLine, Maximize2, User, Volume2, VolumeX } from 'lucide-react';
 import logger from '../../lib/logger';
 import CollectionScanner from '../../components/CollectionScanner';
 
@@ -14,6 +14,7 @@ const VendorOrders = () => {
   const [counterFilter, setCounterFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [soundOn, setSoundOn] = useState(() => localStorage.getItem('cravitoo_order_sound') !== 'off');
 
   useEffect(() => {
     fetchOrders();
@@ -94,6 +95,15 @@ const VendorOrders = () => {
               Order Management
             </h1>
             <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <button
+                data-testid="toggle-order-sound-btn"
+                onClick={() => { const n = !soundOn; setSoundOn(n); localStorage.setItem('cravitoo_order_sound', n ? 'on' : 'off'); }}
+                title={soundOn ? 'New-order chime is ON — tap to mute (quiet hours)' : 'New-order chime is OFF — tap to unmute'}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm sm:text-base font-semibold transition-all ${soundOn ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+              >
+                {soundOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+                <span className="hidden sm:inline">{soundOn ? 'Sound On' : 'Muted'}</span>
+              </button>
               <Link
                 to="/vendor/kiosk"
                 data-testid="enter-kiosk-btn"

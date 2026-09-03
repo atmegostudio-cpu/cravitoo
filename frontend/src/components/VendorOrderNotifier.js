@@ -15,6 +15,7 @@ const VendorOrderNotifier = () => {
   const bootstrapped = useRef(false);
 
   const beep = useCallback(() => {
+    if (localStorage.getItem('cravitoo_order_sound') === 'off') return; // vendor muted the chime
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
