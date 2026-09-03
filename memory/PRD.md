@@ -35,6 +35,13 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Ascendion Empty-Menu Investigation + Per-Employee Tracer (COMPLETED)
+
+Investigated why Ascendion employees can't see a live/mapped/uploaded menu. **Code paths verified consistent** — onboarding, Excel upload, `GET /vendors`, `GET /menu`, and the admin `list_site_vendors` all use string IDs + `status:"active"` and the SAME mapping filter, so if an admin sees the vendor under the site, an employee with the same `site_id` will too. Conclusion: the break is a **production data mismatch** (employee `site_id` null or pointing at a different site than the vendor mapping), which can't be seen from preview.
+- Confirmed `get_current_user` reads the user **fresh from DB each request** (server.py L190) → a `site_id` fix applies on the next request, **no re-login required**.
+- New master-only tracer `GET /api/admin/integrity/employee-visibility?email=` walks Client→Site→Vendor→Menu for one employee and returns a precise verdict: NO_SITE / SITE_NOT_FOUND / NO_ACTIVE_VENDOR_MAPPINGS / MENU_EMPTY_OR_VENDOR_INACTIVE / OK, plus per-vendor menu counts. Self-tested via curl (OK + NO_SITE verdicts).
+- Production runbook: after deploy, as master admin call `employee-visibility?email=<the Ascendion employee>` to see the exact break, then fix with `backfill-employee-sites` (auto) or manual site assignment; use `employee-menu-report` for the full list.
+
 ## Sep 3, 2026 — Demo Data Wipe + Empty-Menu Root-Cause Fix (COMPLETED)
 
 **Preview wiped to a clean slate**: `scripts/wipe_demo_data.py` emptied all operational collections and removed every non-master user — only `admin@cravitoo.com` remains. (Ascendion is the real client on the DEPLOYED app; that DB is separate and untouched.)

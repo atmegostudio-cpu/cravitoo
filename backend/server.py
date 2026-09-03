@@ -3816,6 +3816,75 @@ async def backfill_employee_sites(user: dict = Depends(get_current_user)):
     return {"success": True, "fixed": fixed, "unresolved": unresolved}
 
 
+@api_router.get("/admin/integrity/employee-visibility")
+async def employee_visibility_trace(email: str, user: dict = Depends(get_current_user)):
+    """Master-admin: trace the full Client→Site→Vendor→Menu chain for ONE
+    employee and pinpoint exactly why they can/can't see a menu."""
+    if not is_master_admin(user):
+        raise HTTPException(status_code=403, detail="Only master admin")
+
+    emp = await db.users.find_one({"email": (email or "").lower().strip(), "role": "employee"})
+    if not emp:
+        raise HTTPException(status_code=404, detail=f"No employee found with email {email}")
+
+    trace: dict = {"email": emp.get("email"), "company_id": emp.get("company_id"), "site_id": emp.get("site_id")}
+    site_id = emp.get("site_id")
+    resolved_via_fallback = False
+
+    # Mirror the runtime single-site fallback used by GET /vendors.
+    if not site_id and emp.get("company_id"):
+        csites = await db.sites.find({"company_id": emp["company_id"]}, {"_id": 1}).to_list(5)
+        if len(csites) == 1:
+            site_id = str(csites[0]["_id"])
+            resolved_via_fallback = True
+    trace["effective_site_id"] = site_id
+    trace["resolved_via_single_site_fallback"] = resolved_via_fallback
+
+    if not site_id:
+        trace["verdict"] = "NO_SITE — employee has no site_id and no unique company site. Assign a site (run backfill-employee-sites or set manually)."
+        return trace
+
+    site = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")})
+    if not site:
+        trace["verdict"] = f"SITE_NOT_FOUND — site_id {site_id} does not exist (stale/deleted). Reassign the employee to a valid site."
+        return trace
+    trace["site_name"] = site.get("name")
+    trace["site_lifecycle_status"] = site.get("lifecycle_status", "live")
+
+    maps = await db.vendor_site_mappings.find({"site_id": site_id, "status": "active"}).to_list(500)
+    trace["active_mappings_on_site"] = len(maps)
+    if not maps:
+        # Is the vendor mapped but under a DIFFERENT site_id? Surface that.
+        any_maps = await db.vendor_site_mappings.count_documents({"site_id": site_id})
+        trace["verdict"] = ("NO_ACTIVE_VENDOR_MAPPINGS — this site has no active vendor mappings"
+                            + (f" ({any_maps} inactive present)" if any_maps else "")
+                            + ". Check the vendor is mapped to THIS exact site_id and the mapping status is 'active'.")
+        return trace
+
+    vendors_report = []
+    visible = 0
+    for m in maps:
+        vid = m.get("vendor_id")
+        v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1, "status": 1})
+        total = await db.menu_items.count_documents({"vendor_id": vid})
+        avail = await db.menu_items.count_documents({"vendor_id": vid, "is_available": True})
+        v_active = bool(v) and v.get("status") == "active"
+        row = {"vendor_id": vid, "name": (v or {}).get("name"), "vendor_status": (v or {}).get("status"),
+               "vendor_active": v_active, "menu_items_total": total, "menu_items_available": avail}
+        if v_active and avail > 0:
+            visible += 1
+        vendors_report.append(row)
+    trace["vendors"] = vendors_report
+    trace["visible_vendor_count"] = visible
+
+    if visible == 0:
+        trace["verdict"] = ("MENU_EMPTY_OR_VENDOR_INACTIVE — vendors are mapped but either vendor.status != 'active' "
+                            "or all their menu_items have is_available=false / none exist. Check vendor status and item availability.")
+    else:
+        trace["verdict"] = f"OK — this employee should see {visible} vendor(s) with a live menu. If they still can't, have them re-login (stale session/site_id in token)."
+    return trace
+
+
 # ============== MASTER ADMIN: RESEND VENDOR ONBOARDING (MAGIC LINK) ==============
 #
 # The original approval flow silently swallowed Resend delivery failures and
