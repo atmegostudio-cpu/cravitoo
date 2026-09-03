@@ -1283,7 +1283,7 @@ async def get_menu(vendor_id: str, user: dict = Depends(get_current_user)):
         )
         if not mapping or not vendor_ok:
             raise HTTPException(status_code=403, detail="This vendor is not available at your site")
-    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1, "image_source": 1}).to_list(1000)
+    menu_items = await db.menu_items.find({"vendor_id": vendor_id, "is_available": True}, {"_id": 1, "name": 1, "description": 1, "category": 1, "price": 1, "image_url": 1, "is_vegetarian": 1, "is_available": 1, "allergens": 1, "image_source": 1, "counter": 1}).to_list(1000)
     for item in menu_items:
         item["id"] = str(item.pop("_id"))
         if "allergens" not in item or item["allergens"] is None:

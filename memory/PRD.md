@@ -35,6 +35,15 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Menu Approval: Notifications + Per-Row Edit + Counter Column + History Log (COMPLETED)
+
+Four follow-ups on the vendor menu-approval workflow, verified 100% (iteration_36: 33/33 backend pytest + full frontend flow):
+
+- **Approval Notifications**: on approve/reject, a best-effort Resend email goes to the submitting vendor with the decision + admin's reason (`_notify_vendor_menu_decision` in `routers/sites.py`, wrapped in try/except so email failure never breaks the API).
+- **Per-Row Edit Before Approve** (`PATCH /api/admin/menu-uploads/{id}/items`): admin edits prices / drops items / changes counter on a PENDING upload before publishing (pending-only, master/site-access, dedupes by name, validates price≥0). Admin Menu tab shows an inline editable table (edit-name/price/counter/remove + Save) per pending upload.
+- **Counter Column in Excel**: template now has 8 columns incl `counter`; both `parse_menu_workbook` and the admin direct `upload_menu_excel` read it; `GET /menu/{vendor_id}` projection now returns `counter`. Multi-counter menus import already tagged.
+- **Approval History Log** (`GET /api/admin/menu-uploads?status=decided&site_id=`): returns approved+rejected with decided_by/decided_at/decision_note. Admin Menu tab has a collapsible "Approval History" card with client-side search. Regression file `/app/backend/tests/test_iter36_menu_enhancements.py`.
+
 ## Sep 3, 2026 — Vendor Bulk Menu Upload (approval flow) + Template / Preview / Version History (COMPLETED)
 
 Four connected menu-management additions, verified 100% (iteration_35: 20/20 backend pytest + full frontend flow):

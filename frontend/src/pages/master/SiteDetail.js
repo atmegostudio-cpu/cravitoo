@@ -437,6 +437,11 @@ const MenuTab = ({ siteId }) => {
   const [versions, setVersions] = useState([]);
   const [previewDiff, setPreviewDiff] = useState(null);
   const [previewing, setPreviewing] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editItems, setEditItems] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
   const [aiPhotoItem, setAiPhotoItem] = useState(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
@@ -636,6 +641,41 @@ const MenuTab = ({ siteId }) => {
     } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Reject failed')); }
   };
 
+  const openEdit = (p) => {
+    setEditingId(p.id);
+    setEditItems((p.items || []).map((it) => ({ ...it })));
+  };
+  const updateEditItem = (idx, field, val) => {
+    setEditItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: val } : it)));
+  };
+  const removeEditItem = (idx) => setEditItems((prev) => prev.filter((_, i) => i !== idx));
+  const saveEditedItems = async (id) => {
+    try {
+      await axios.patch(`${API}/admin/menu-uploads/${id}/items`, { items: editItems }, { withCredentials: true });
+      setUploadMsg('✓ Pending upload updated');
+      setEditingId(null);
+      await load();
+    } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Save failed')); }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/menu-uploads?status=decided&site_id=${siteId}`, { withCredentials: true });
+      setHistory(data);
+    } catch (e) { logger.error(e); }
+  };
+  const toggleHistory = async () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next) await loadHistory();
+  };
+  const filteredHistory = history.filter((h) => {
+    const q = historyQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [h.vendor_name, h.file_name, h.decided_by, h.status, h.submitted_by]
+      .some((v) => (v || '').toLowerCase().includes(q));
+  });
+
   const toggleAvailable = async (item) => {
     try {
       await axios.patch(`${API}/menu/${item.id}/site-control`, { is_available: !item.is_available }, { withCredentials: true });
@@ -734,7 +774,7 @@ const MenuTab = ({ siteId }) => {
         <button data-testid="download-template-btn" onClick={downloadTemplate} className="text-sm text-primary font-medium hover:underline mb-3 inline-flex items-center gap-1">
           <Upload className="h-4 w-4 rotate-180" /> Download Excel template
         </button>
-        <p className="text-text-muted text-xs mb-4">Required columns: <code>name, description, category, price</code>. Optional: <code>is_vegetarian, image_url, meal_periods</code> (comma-separated).</p>
+        <p className="text-text-muted text-xs mb-4">Required columns: <code>name, description, category, price</code>. Optional: <code>is_vegetarian, image_url, meal_periods</code> (comma-separated), <code>counter</code> (for multi-counter vendors).</p>
         <form onSubmit={uploadExcel} className="flex flex-col md:flex-row gap-3">
           <select
             data-testid="upload-vendor-select"
@@ -806,20 +846,106 @@ const MenuTab = ({ siteId }) => {
           </h3>
           <div className="space-y-3">
             {pendingUploads.map((p) => (
-              <div key={p.id} data-testid={`pending-upload-${p.id}`} className="flex items-center justify-between gap-3 p-3 border border-border-light rounded-lg flex-wrap">
-                <div className="min-w-0">
-                  <p className="text-text-primary font-medium text-sm">{p.vendor_name} · {p.item_count} items</p>
-                  <p className="text-text-muted text-xs">{p.file_name} · by {p.submitted_by}</p>
+              <div key={p.id} data-testid={`pending-upload-${p.id}`} className="p-3 border border-border-light rounded-lg">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-text-primary font-medium text-sm">{p.vendor_name} · {p.item_count} items</p>
+                    <p className="text-text-muted text-xs">{p.file_name} · by {p.submitted_by}</p>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <button data-testid={`edit-upload-${p.id}`} onClick={() => (editingId === p.id ? setEditingId(null) : openEdit(p))} className="px-3 py-1.5 text-sm border border-border-light rounded-lg text-text-secondary hover:border-primary/40">{editingId === p.id ? 'Close editor' : 'Edit items'}</button>
+                    <button data-testid={`approve-upload-${p.id}`} onClick={() => approveUpload(p.id)} className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Approve &amp; Publish</button>
+                    <button data-testid={`reject-upload-${p.id}`} onClick={() => rejectUpload(p.id)} className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Reject</button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button data-testid={`approve-upload-${p.id}`} onClick={() => approveUpload(p.id)} className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Approve &amp; Publish</button>
-                  <button data-testid={`reject-upload-${p.id}`} onClick={() => rejectUpload(p.id)} className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Reject</button>
-                </div>
+                {editingId === p.id && (
+                  <div data-testid={`edit-items-${p.id}`} className="mt-3 border-t border-border-light pt-3">
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[520px] text-sm">
+                        <thead>
+                          <tr className="text-left text-text-muted">
+                            <th className="py-1 pr-3 font-medium">Item</th>
+                            <th className="py-1 pr-3 font-medium">Price</th>
+                            <th className="py-1 pr-3 font-medium">Counter</th>
+                            <th className="py-1 font-medium"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {editItems.map((it, idx) => (
+                            <tr key={idx} className="border-t border-border-light/60">
+                              <td className="py-1.5 pr-3">
+                                <input data-testid={`edit-name-${idx}`} value={it.name} onChange={(e) => updateEditItem(idx, 'name', e.target.value)} className="w-full px-2 py-1 border border-border-light rounded" />
+                              </td>
+                              <td className="py-1.5 pr-3">
+                                <input data-testid={`edit-price-${idx}`} type="number" min="0" value={it.price} onChange={(e) => updateEditItem(idx, 'price', e.target.value)} className="w-24 px-2 py-1 border border-border-light rounded" />
+                              </td>
+                              <td className="py-1.5 pr-3">
+                                <input data-testid={`edit-counter-${idx}`} value={it.counter || ''} onChange={(e) => updateEditItem(idx, 'counter', e.target.value)} className="w-28 px-2 py-1 border border-border-light rounded" placeholder="—" />
+                              </td>
+                              <td className="py-1.5">
+                                <button data-testid={`edit-remove-${idx}`} onClick={() => removeEditItem(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button data-testid={`save-edit-${p.id}`} onClick={() => saveEditedItems(p.id)} disabled={editItems.length === 0} className="px-4 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50">Save changes</button>
+                      <span className="text-text-muted text-xs">{editItems.length} item(s) will be published on approve</span>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Approval history log */}
+      <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="approval-history-card">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-heading text-xl font-medium">Approval History</h3>
+          <button data-testid="toggle-history-btn" onClick={toggleHistory} className="text-sm text-primary font-medium hover:underline">{showHistory ? 'Hide' : 'Show'}</button>
+        </div>
+        {showHistory && (
+          <div className="mt-4">
+            <input data-testid="history-search" value={historyQuery} onChange={(e) => setHistoryQuery(e.target.value)} placeholder="Search by vendor, file, admin or status…" className="w-full px-3 py-2 border border-border-light rounded-lg mb-3 text-sm" />
+            {filteredHistory.length === 0 ? (
+              <p data-testid="history-empty" className="text-text-secondary text-sm">No approval history yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="text-left text-text-muted border-b border-border-light">
+                      <th className="py-2 pr-3 font-medium">When</th>
+                      <th className="py-2 pr-3 font-medium">Vendor</th>
+                      <th className="py-2 pr-3 font-medium">Items</th>
+                      <th className="py-2 pr-3 font-medium">Decision</th>
+                      <th className="py-2 pr-3 font-medium">By</th>
+                      <th className="py-2 font-medium">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHistory.map((h) => (
+                      <tr key={h.id} data-testid={`history-row-${h.id}`} className="border-b border-border-light/60">
+                        <td className="py-2 pr-3 text-text-secondary whitespace-nowrap">{h.decided_at ? new Date(h.decided_at).toLocaleString() : '—'}</td>
+                        <td className="py-2 pr-3 text-text-primary">{h.vendor_name}</td>
+                        <td className="py-2 pr-3 text-text-secondary">{h.item_count}</td>
+                        <td className="py-2 pr-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${h.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{h.status}</span>
+                        </td>
+                        <td className="py-2 pr-3 text-text-secondary">{h.decided_by || '—'}</td>
+                        <td className="py-2 text-text-muted">{h.decision_note || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {versions.length > 0 && (
         <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="menu-versions-card">

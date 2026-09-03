@@ -1,0 +1,37 @@
+{
+  "summary": "Iter-36: 4 menu enhancements verified end-to-end. Backend: 13/13 new pytest tests pass (/app/backend/tests/test_iter36_menu_enhancements.py) covering (1) counter column in template (8 headers) + parsed correctly through both vendor bulk-upload flow and admin direct upload; (2) PATCH /api/admin/menu-uploads/{id}/items — edit price / drop items / change counter / RBAC 403 for vendor + employee, 400 after approve, live menu reflects edits & dropped items removed after approve; (3) GET /api/admin/menu-uploads?status=decided returns rows with decided_by/decided_at/decision_note/vendor_name/item_count and vendor is 403; (4) Approval notification best-effort — approve + reject both return 200 with Resend configured. Regression: full previous suite still passes (20/20 test_menu_bulk_approval.py). Frontend Playwright on /master/sites/{SITE_A} Menu tab: approval-history-card, toggle-history-btn, history-search (filters correctly: matching term → shows rows, non-matching → 0 rows), history-row-{id} all present (15 decided rows). edit-upload-{id} button expands editable table with edit-name-{idx}/edit-price-{idx}/edit-counter-{idx}/edit-remove-{idx} + save-edit-{id}; edit + save succeeded; approve after edit succeeded with green 'Upload approved — menu is now live' confirmation. Vendor submit UI with counter column also succeeded (rej.xlsx pending → approved).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Master SiteDetail Menu tab — 'Upload Menu via Excel' card helper text", "issues": ["Helper text still lists optional columns as 'is_vegetarian, image_url, meal_periods (comma-separated)' — does NOT mention the new optional 'counter' column. Minor doc drift; template itself carries the 8-column header correctly."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter36_menu_enhancements.py",
+    "/app/backend/tests/test_menu_bulk_approval.py",
+    "/app/test_reports/pytest/iter36.xml"
+  ],
+  "action_items": [
+    "(Cosmetic) Update helper text under 'Upload Menu via Excel' card in master/SiteDetail to mention optional 'counter' column."
+  ],
+  "critical_code_review_comments": [
+    "admin_edit_menu_upload_items correctly (a) requires pending status → 400 otherwise, (b) enforces master/site-access RBAC → 403 for vendor+employee, (c) dedupes by lower(name), (d) validates price>=0 with 400 on non-numeric, (e) rewrites item_count. Good.",
+    "_notify_vendor_menu_decision is fully wrapped in try/except so email failure never breaks the approve/reject API. Correct best-effort semantics.",
+    "admin_list_menu_uploads with status='decided' expands to $in:[approved,rejected] and joins vendor name. decided_at is emitted only if set — for backfilled pre-iter36 rows it will be None; acceptable.",
+    "parse_menu_workbook + upload_menu_excel both read the optional 'counter' column identically (headers.index lookup w/ None fallback). No duplication risk. MENU_TEMPLATE_HEADERS is the single source of truth.",
+    "GET /menu/{vendor_id} projection now includes 'counter' (server.py ~1267). Verified via approve → live menu contains counter values.",
+    "Minor: after PATCH items, no version snapshot is recorded (snapshots are only on approve/replace). Since the pending doc itself is updated in place, this is fine; if later requirement asks for edit history, add an audit trail on menu_upload_requests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter36_menu_enhancements.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 new + 20/20 regression = 33/33)", "frontend": "100% — all new data-testids resolved & flow works"},
+  "test_credentials": "admin@cravitoo.com/admin123, audit_vendor1@corpa.com/Audit#1234, audit_emp_a@corpa.com/Audit#1234",
+  "seed_data_creation": "Ephemeral test items on AUDIT_SiteA/AUDIT_Vendor1: ITER36_CtrDosa/CtrIdli/DirectCtr, EDIT_A/B (EDIT_C dropped), NOTIFY_Approve, NOTIFY_Reject (rejected), REG36_Alpha, UIEDIT_A (UI flow). Multiple menu_upload_requests decisioned; approval history now has ~15+ rows for SiteA.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New endpoints: PATCH /api/admin/menu-uploads/{id}/items and GET /api/admin/menu-uploads?status=decided[&site_id]. Excel template now has 8 headers incl 'counter'. GET /api/menu/{vendor_id} response items now carry a 'counter' field (nullable). UI: master SiteDetail Menu tab has approval-history-card (toggle-history-btn hide/show, history-search, history-row-{id}) + per-pending-upload edit-upload-{id} → edit-name/price/counter/remove-{idx} + save-edit-{id}. Reuse /app/backend/tests/test_iter36_menu_enhancements.py for regression.",
+  "rca of the issue": "N/A — all 4 enhancements + regressions working as designed."
+}

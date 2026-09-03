@@ -32,7 +32,7 @@ from models import (
 logger = logging.getLogger(__name__)
 
 MENU_TEMPLATE_HEADERS = ["name", "description", "category", "price",
-                         "is_vegetarian", "image_url", "meal_periods"]
+                         "is_vegetarian", "image_url", "meal_periods", "counter"]
 
 
 def build_menu_template_xlsx() -> bytes:
@@ -42,11 +42,11 @@ def build_menu_template_xlsx() -> bytes:
     ws.title = "Menu"
     ws.append(MENU_TEMPLATE_HEADERS)
     ws.append(["Paneer Butter Masala", "Cottage cheese in rich tomato gravy",
-               "Main Course", 180, "yes", "", "lunch,dinner"])
+               "Main Course", 180, "yes", "", "lunch,dinner", "Counter 1"])
     ws.append(["Masala Dosa", "Crispy dosa with spiced potato filling",
-               "Breakfast", 90, "yes", "", "breakfast"])
+               "Breakfast", 90, "yes", "", "breakfast", "Counter 2"])
     ws.append(["Chicken Biryani", "Fragrant basmati rice with chicken",
-               "Main Course", 220, "no", "", "lunch,dinner"])
+               "Main Course", 220, "no", "", "lunch,dinner", "Counter 1"])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -71,6 +71,7 @@ def parse_menu_workbook(content: bytes):
     veg_i = headers.index("is_vegetarian") if "is_vegetarian" in headers else None
     img_i = headers.index("image_url") if "image_url" in headers else None
     meal_i = headers.index("meal_periods") if "meal_periods" in headers else None
+    counter_i = headers.index("counter") if "counter" in headers else None
 
     def _truthy(v):
         return str(v).strip().lower() in ("1", "true", "yes", "veg", "y", "vegetarian")
@@ -99,6 +100,7 @@ def parse_menu_workbook(content: bytes):
                 "show_price": True,
                 "meal_periods": meal_periods,
                 "image_url": str(row[img_i]).strip() if (img_i is not None and row[img_i]) else None,
+                "counter": str(row[counter_i]).strip() if (counter_i is not None and row[counter_i]) else None,
             })
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
@@ -602,6 +604,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         veg_idx = headers.index("is_vegetarian") if "is_vegetarian" in headers else None
         img_idx = headers.index("image_url") if "image_url" in headers else None
         meal_idx = headers.index("meal_periods") if "meal_periods" in headers else None
+        counter_idx = headers.index("counter") if "counter" in headers else None
 
         # Parse + validate every row FIRST so a bad file never partially wipes a menu.
         parsed = []
@@ -632,6 +635,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
                     "show_price": True,
                     "meal_periods": meal_periods,
                     "image_url": str(row[img_idx]).strip() if img_idx is not None and row[img_idx] else None,
+                    "counter": str(row[counter_idx]).strip() if (counter_idx is not None and row[counter_idx]) else None,
                     "created_at": datetime.now(timezone.utc),
                 })
             except Exception as e:
@@ -831,7 +835,9 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         if not (is_master_admin(user) or user.get("role") in ("site_admin", "city_admin", "super_admin")):
             raise HTTPException(status_code=403, detail="Access denied")
         q: dict = {}
-        if status:
+        if status == "decided":
+            q["status"] = {"$in": ["approved", "rejected"]}
+        elif status:
             q["status"] = status
         if site_id:
             q["site_id"] = site_id
@@ -851,9 +857,82 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
                 "site_id": d.get("site_id"), "item_count": d.get("item_count", 0),
                 "file_name": d.get("file_name"), "submitted_by": d.get("submitted_by"),
                 "items": d.get("items", []),
+                "decided_by": d.get("decided_by"), "decision_note": d.get("decision_note"),
+                "decided_at": d["decided_at"].isoformat() if isinstance(d.get("decided_at"), datetime) else d.get("decided_at"),
                 "created_at": d["created_at"].isoformat() if isinstance(d.get("created_at"), datetime) else d.get("created_at"),
             })
         return out
+
+    @r.patch("/admin/menu-uploads/{req_id}/items")
+    async def admin_edit_menu_upload_items(req_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+        """Admin tweaks a PENDING upload before publishing — adjust prices, drop
+        items, edit names. Body: {items:[{name, price, description?, category?,
+        is_vegetarian?, counter?, meal_periods?, image_url?}]}."""
+        req = await db.menu_upload_requests.find_one({"_id": safe_objectid(req_id, "Request")})
+        if not req:
+            raise HTTPException(status_code=404, detail="Upload request not found")
+        if not (is_master_admin(user) or can_access_site(user, req.get("site_id"))):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail=f"Already {req.get('status')}")
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list) or not raw_items:
+            raise HTTPException(status_code=400, detail="items must be a non-empty list")
+        cleaned = []
+        seen = set()
+        for it in raw_items:
+            name = str(it.get("name", "")).strip()
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            try:
+                price = float(it.get("price", 0))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"Invalid price for '{name}'")
+            if price < 0:
+                raise HTTPException(status_code=400, detail=f"Price cannot be negative for '{name}'")
+            mp = it.get("meal_periods") or ["lunch"]
+            if isinstance(mp, str):
+                mp = [m.strip().lower() for m in mp.split(",") if m.strip()]
+            cleaned.append({
+                "name": name,
+                "description": str(it.get("description", "")).strip(),
+                "category": str(it.get("category", "Main Course")).strip() or "Main Course",
+                "price": round(price, 2),
+                "is_vegetarian": bool(it.get("is_vegetarian", True)),
+                "is_available": True, "show_price": True,
+                "meal_periods": mp,
+                "image_url": it.get("image_url") or None,
+                "counter": (str(it.get("counter")).strip() or None) if it.get("counter") else None,
+            })
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="No valid items after edit")
+        await db.menu_upload_requests.update_one(
+            {"_id": req["_id"]},
+            {"$set": {"items": cleaned, "item_count": len(cleaned), "edited_by": user.get("email"),
+                      "edited_at": datetime.now(timezone.utc)}},
+        )
+        return {"item_count": len(cleaned), "items": cleaned}
+
+    def _notify_vendor_menu_decision(req: dict, decision: str, actor: dict, note: str = ""):
+        """Best-effort email to the vendor who submitted the upload."""
+        to = req.get("submitted_by")
+        if not to:
+            return
+        try:
+            import email_service
+            vname = req.get("vendor_name") or "your"
+            approved = decision == "approved"
+            title = "Menu upload approved ✅" if approved else "Menu upload needs changes"
+            intro = (f"Your menu upload (<strong>{req.get('file_name', 'menu')}</strong>, "
+                     f"{req.get('item_count', 0)} items) has been <strong>{decision}</strong> "
+                     f"by {actor.get('email', 'an admin')}.")
+            body = ("<p>Your updated menu is now live across the app.</p>" if approved
+                    else f"<p>Reason: {note or 'No reason provided.'}</p><p>Please review and re-submit.</p>")
+            html = email_service._brand_wrapper(title, intro, body)
+            email_service.send_email(to, f"Cravitoo — {title}", html)
+        except Exception as e:
+            logger.warning(f"menu decision email failed: {e}")
 
     @r.post("/admin/menu-uploads/{req_id}/approve")
     async def admin_approve_menu_upload(req_id: str, user: dict = Depends(get_current_user)):
@@ -870,6 +949,8 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             {"$set": {"status": "approved", "decided_by": user.get("email"),
                       "decided_at": datetime.now(timezone.utc)}},
         )
+        v = await db.vendors.find_one({"_id": safe_objectid(req["vendor_id"], "Vendor")}, {"name": 1})
+        _notify_vendor_menu_decision({**req, "vendor_name": (v or {}).get("name")}, "approved", user)
         return {"status": "approved", "applied": applied}
 
     @r.post("/admin/menu-uploads/{req_id}/reject")
@@ -887,6 +968,8 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             {"$set": {"status": "rejected", "decision_note": note,
                       "decided_by": user.get("email"), "decided_at": datetime.now(timezone.utc)}},
         )
+        v = await db.vendors.find_one({"_id": safe_objectid(req["vendor_id"], "Vendor")}, {"name": 1})
+        _notify_vendor_menu_decision({**req, "vendor_name": (v or {}).get("name")}, "rejected", user, note)
         return {"status": "rejected"}
 
     # Master Admin: Create Site Admin / Super Admin
