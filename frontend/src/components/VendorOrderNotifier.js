@@ -1,18 +1,44 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Bell } from 'lucide-react';
+import { Bell, BellRing } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const POLL_MS = 15000;
 
-// Vendor-only: polls for new orders, shows a toast + chime + unread bell badge.
+const notifSupported = () => typeof window !== 'undefined' && 'Notification' in window;
+
+// Vendor-only: polls for new orders, shows a toast + chime + unread bell badge,
+// AND a system browser notification (fires even when the tab is unfocused/background).
 const VendorOrderNotifier = () => {
   const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const [perm, setPerm] = useState(notifSupported() ? Notification.permission : 'unsupported');
   const seenIds = useRef(null); // Set of order ids already known
   const bootstrapped = useRef(false);
+
+  const requestPerm = useCallback(async () => {
+    if (!notifSupported()) return;
+    try {
+      const p = await Notification.requestPermission();
+      setPerm(p);
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  const showBrowserNotification = useCallback((order) => {
+    if (!notifSupported() || Notification.permission !== 'granted') return;
+    const first = order.items?.[0];
+    const label = first ? `${first.quantity}× ${first.name || 'item'}${order.items.length > 1 ? ` +${order.items.length - 1} more` : ''}` : 'New order';
+    try {
+      const n = new Notification('🔔 New order received', {
+        body: `${label}\nfrom ${order.employee_name || 'Walk-in / Kiosk'}`,
+        tag: `order-${order.id}`, // dedupes repeats for the same order
+        renotify: true,
+      });
+      n.onclick = () => { window.focus(); navigate('/vendor/orders'); n.close(); };
+    } catch (e) { /* some browsers require a service worker for persistent notifications */ }
+  }, [navigate]);
 
   const beep = useCallback(() => {
     if (localStorage.getItem('cravitoo_order_sound') === 'off') return; // vendor muted the chime
@@ -37,7 +63,8 @@ const VendorOrderNotifier = () => {
   }, []);
 
   const poll = useCallback(async () => {
-    if (document.hidden) return; // skip polling while the tab is in the background
+    // Keep polling even when the tab is hidden so background browser
+    // notifications still fire when the vendor isn't looking at the tab.
     try {
       const { data } = await axios.get(`${API}/orders`, { withCredentials: true });
       const ids = new Set(data.map((o) => o.id));
@@ -48,24 +75,36 @@ const VendorOrderNotifier = () => {
       }
       const fresh = data.filter((o) => !seenIds.current.has(o.id));
       if (fresh.length > 0) {
-        fresh.slice(0, 4).forEach(pushToast);
+        fresh.slice(0, 4).forEach((o) => { pushToast(o); showBrowserNotification(o); });
         setUnread((u) => u + fresh.length);
         beep();
       }
       seenIds.current = ids;
     } catch (e) { /* ignore transient errors */ }
-  }, [beep, pushToast]);
+  }, [beep, pushToast, showBrowserNotification]);
 
   useEffect(() => {
+    // Ask once for permission so background alerts can be shown.
+    if (notifSupported() && Notification.permission === 'default') requestPerm();
     poll();
     const iv = setInterval(poll, POLL_MS);
     return () => clearInterval(iv);
-  }, [poll]);
+  }, [poll, requestPerm]);
 
   const openOrders = () => { setUnread(0); navigate('/vendor/orders'); };
 
   return (
     <>
+      {perm !== 'granted' && perm !== 'unsupported' && (
+        <button
+          onClick={requestPerm}
+          data-testid="enable-browser-alerts-btn"
+          title="Enable desktop alerts for new orders (works even when this tab is in the background)"
+          className="hidden sm:flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-all"
+        >
+          <BellRing className="h-3.5 w-3.5" /> Enable alerts
+        </button>
+      )}
       <button
         onClick={openOrders}
         data-testid="vendor-notification-bell"

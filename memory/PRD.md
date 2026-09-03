@@ -35,6 +35,14 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Vendor Browser (Desktop) Notifications (COMPLETED)
+
+Extended `VendorOrderNotifier.js` to fire a **system browser Notification** on each new order, so vendors are alerted **even when the tab is unfocused/in the background**:
+- Requests `Notification` permission once on mount; an "Enable alerts" pill (`data-testid='enable-browser-alerts-btn'`) shows next to the bell when permission isn't granted yet.
+- Poller no longer skips when `document.hidden` (so background tabs still alert); on new orders it shows the in-app toast + system `Notification` (title/body with item + employee, `tag` dedupes) + chime (respects the mute toggle) + bell badge. Clicking the OS notification focuses the window and opens /vendor/orders.
+- **Scope note**: this covers unfocused/background *open* tabs. True fully-closed-browser push needs a Service Worker + VAPID keys + backend push (pywebpush) — logged as an optional follow-up, not built.
+- Frontend compiles clean. Browser-permission prompts can't be exercised by the screenshot/testing tools, so verified by compile + code inspection (the underlying new-order detection was fully tested in iteration_40).
+
 ## Sep 3, 2026 — Vendor New-Order Chime Mute Toggle (COMPLETED)
 
 - Added a **Sound On / Muted** toggle button on the Vendor Orders header (`data-testid='toggle-order-sound-btn'`, Volume2/VolumeX icons) for quiet hours.
