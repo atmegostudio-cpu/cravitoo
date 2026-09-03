@@ -35,6 +35,14 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Vendor Order Notifications + Richer Order Details (COMPLETED)
+
+- **Order now stamps `employee_name` + `employee_email`** at creation (`_materialize_order` + bulk); `GET /api/orders` returns them and resolves legacy orders from the users collection ("Walk-in / Kiosk" when none).
+- **Vendor Orders screen**: each card now shows the ordering employee's name (`vendor-order-employee-{id}`) and an itemized `quantity× name` list (`vendor-order-items-{id}`) alongside Order ID, code, time, total.
+- **Employee Orders screen**: shows "Ordered by {name}" (`order-employee-{id}`) plus existing item lines, Order ID, time.
+- **Vendor notifications** (`components/VendorOrderNotifier.js`, mounted in Navbar for role=vendor): navbar bell (`vendor-notification-bell`) with unread badge (`vendor-notification-count`), toast (`new-order-toast-{id}`) + WebAudio chime on each new order, via a 15s poll of `/api/orders` (skips when tab hidden; suppresses toasts on first bootstrap). Bell click → /vendor/orders and clears badge. Hidden for non-vendor roles.
+- Verified iteration_40: backend 100%, frontend 100% — new order inserted mid-session fired a toast within ~8s with correct item + employee. Helper: `scripts/insert_test_order.py`.
+
 ## Sep 3, 2026 — "Fix Employee Menus" Admin Panel (COMPLETED)
 
 Added a self-service panel on the Master Dashboard (`master/Dashboard.js` → `FixEmployeeMenus`) so admins resolve blank-menu issues without touching APIs:

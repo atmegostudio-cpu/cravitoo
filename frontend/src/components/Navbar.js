@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import VendorOrderNotifier from './VendorOrderNotifier';
 import NotificationBell from './NotificationBell';
 import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, KeyRound, Trash2, Menu as MenuIcon, X } from 'lucide-react';
 
@@ -161,6 +162,7 @@ const Navbar = () => {
           >
             <Shield className="h-4 w-4" />
           </Link>
+          {user?.role === 'vendor' && <VendorOrderNotifier />}
           <div className="text-right hidden sm:block">
             <p className="text-sm font-medium text-text-primary">{user?.name}</p>
             <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')}</p>

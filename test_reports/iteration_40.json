@@ -1,0 +1,23 @@
+{
+  "summary": "Verified vendor order notifications end-to-end: backend /orders returns employee_name + items for vendor and employee; vendor Orders UI shows employee name and itemized 'qty× name' list; VendorOrderNotifier bell renders on vendor pages and is hidden for employees; inserting a new order via scripts/insert_test_order.py caused the polling notifier to show a toast (within ~8s) with '2× Tea +1 more from diag_zero' + unread badge=1; clicking the bell navigates to /vendor/orders and clears the badge; employee Orders page shows 'Ordered by diag_zero' line. All acceptance criteria pass.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_employee_menu_integrity.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VendorOrderNotifier polls every 15s and unconditionally sends /api/orders even on non-vendor pages until unmount; fine, but consider skipping when document.hidden to save requests.",
+    "Notifier only inspects items[0] for the toast label ('2× Tea +1 more'); acceptable for a summary but items>1 users have to open the page to see the rest — already handled by the +N more suffix.",
+    "seenIds is memory-only; a hard refresh will re-bootstrap and suppress toasts for orders that arrived during reload. Acceptable trade-off for MVP polling."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Vendor diag_vendor@diag.com / Diag#1234; Employee diag_zero@diag.com / Diag#1234",
+  "seed_data_creation": "Re-used existing DIAG scenario; ran scripts/insert_test_order.py which inserted a new paid order (CRV-139579, 2× Tea + 1× Samosa) from diag_zero for DIAG_Vendor during the test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Notification feature works. Verified data-testids in play: vendor-notification-bell, vendor-notification-count, new-order-toast-{id}, vendor-order-employee-{id}, vendor-order-items-{id}, order-employee-{id}. Poll cadence 15s but first poll runs immediately; toast fired at ~8s after insert. Employee /orders returns their own orders; vendor /orders returns vendor's orders. To simulate a new order, cd /app/backend && python3 scripts/insert_test_order.py."
+}

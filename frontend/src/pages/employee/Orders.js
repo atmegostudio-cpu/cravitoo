@@ -134,6 +134,9 @@ const EmployeeOrders = () => {
                         <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary">Order #{order.id.slice(-8)}</h3>
                         {getStatusIcon(order.status)}
                       </div>
+                      {order.employee_name && (
+                        <p className="text-text-secondary text-xs sm:text-sm mb-0.5" data-testid={`order-employee-${order.id}`}>Ordered by {order.employee_name}</p>
+                      )}
                       <p className="text-text-secondary text-xs sm:text-sm">
                         {new Date(order.created_at).toLocaleDateString('en-IN', {
                           year: 'numeric',

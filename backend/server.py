@@ -1403,6 +1403,8 @@ async def _materialize_order(
     now = datetime.now(timezone.utc)
     order_doc = {
         "user_id": user["id"],
+        "employee_name": user.get("name") or user.get("email"),
+        "employee_email": user.get("email"),
         "vendor_id": vendor_id,
         # Hierarchy linkage — stamp the employee's site + company so the order
         # rolls up correctly through Client → City → Site → ... → Order for
@@ -1674,9 +1676,24 @@ async def get_orders(user: dict = Depends(get_current_user)):
         query["site_id"] = {"$in": assigned}
     # master_admin: no filter — sees every order.
 
-    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
+    orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "employee_name": 1, "employee_email": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
+    # Resolve employee names for legacy orders that were placed before we started
+    # stamping employee_name on the order document.
+    missing = {o.get("user_id") for o in orders if not o.get("employee_name") and o.get("user_id")}
+    name_map = {}
+    if missing:
+        oids = []
+        for uid in missing:
+            try:
+                oids.append(ObjectId(uid))
+            except Exception:
+                pass
+        async for u in db.users.find({"_id": {"$in": oids}}, {"name": 1, "email": 1}):
+            name_map[str(u["_id"])] = u.get("name") or u.get("email")
     for order in orders:
         order["id"] = str(order.pop("_id"))
+        if not order.get("employee_name"):
+            order["employee_name"] = name_map.get(order.get("user_id")) or "Walk-in / Kiosk"
     return orders
 
 @api_router.patch("/orders/{order_id}")
@@ -2430,6 +2447,8 @@ async def create_bulk_order(data: BulkOrderCreate, user: dict = Depends(get_curr
         
         order_doc = {
             "user_id": str(target_user["_id"]),
+            "employee_name": target_user.get("name") or target_user.get("email"),
+            "employee_email": target_user.get("email"),
             "vendor_id": data.vendor_id,
             "site_id": target_user.get("site_id"),
             "company_id": target_user.get("company_id"),

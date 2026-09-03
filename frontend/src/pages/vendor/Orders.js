@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Package, ScanLine, Maximize2 } from 'lucide-react';
+import { Package, ScanLine, Maximize2, User } from 'lucide-react';
 import logger from '../../lib/logger';
 import CollectionScanner from '../../components/CollectionScanner';
 
@@ -178,7 +178,18 @@ const VendorOrders = () => {
                   </div>
 
                   <div className="mb-4">
-                    <p className="text-sm font-medium text-text-primary mb-2">Items: {order.items.length}</p>
+                    <div className="flex items-center gap-2 mb-2" data-testid={`vendor-order-employee-${order.id}`}>
+                      <User className="h-4 w-4 text-text-muted" />
+                      <span className="text-sm font-medium text-text-primary">{order.employee_name || 'Walk-in / Kiosk'}</span>
+                    </div>
+                    <ul className="space-y-1" data-testid={`vendor-order-items-${order.id}`}>
+                      {order.items.map((item, i) => (
+                        <li key={i} className="flex justify-between text-sm">
+                          <span className="text-text-primary"><span className="font-semibold">{item.quantity}×</span> {item.name || 'Item'}</span>
+                          <span className="text-text-secondary">₹{((item.price || 0) * item.quantity).toFixed(2)}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
