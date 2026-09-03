@@ -1,0 +1,35 @@
+{
+  "summary": "Iter-37 broad regression sweep: auth+RBAC, hierarchy scoping (Client→City→Site→Vendor→Menu→Employee→Order), payments (Razorpay live-key intent + verify signature rejection), menu access, master-only site meal_prices, backfill-sites. Backend: 23/23 pytest tests pass in /app/backend/tests/test_iter37_full_regression.py (JUnit at /app/test_reports/pytest/iter37.xml). Frontend: verified corporate_admin login flow lands on /admin/dashboard and correctly shows scoped data (Corporate Dashboard: 1 order ₹210, AUDIT_SiteA, no CorpB spillover).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_full_regression.py",
+    "/app/test_reports/pytest/iter37.xml"
+  ],
+  "action_items": [
+    "(Minor / doc) PATCH /api/sites/{id} silently accepts a `meal_prices` object containing only unknown keys — the sanitiser drops all unknown keys and then persists an empty {} which OVERWRITES the previously stored prices with {}. Consider returning 400 when the resulting sanitized dict is empty (or leaving the field untouched) so external callers don't accidentally wipe prices by sending wrong key names (e.g. breakfast/lunch instead of veg_meal/non_veg_meal). Not a security issue but a data-loss footgun.",
+    "(Cosmetic) helper text under 'Upload Menu via Excel' still doesn't mention optional 'counter' column (carry-over from iter-36).",
+    "(RBAC ordering, low priority) POST /api/sites Pydantic validation runs before the master-only guard → corporate_admin hits a 422 (schema) instead of a 403. Not exploitable (still cannot create) but exposes the schema. Consider a lightweight role dependency earlier in the dependency chain."
+  ],
+  "critical_code_review_comments": [
+    "Employee /api/vendors scoping is tight: emp_b (SiteB/CorpB) sees ONLY AUDIT_Vendor1 (V2 is not mapped to SiteB) — verified. emp_a sees only AUDIT_Vendor* (no leakage of TEST_/GateTest vendors). Good.",
+    "Corporate scoping: corp_admin_a /api/orders returns only AUDIT_CorpA docs (single company_id in result set, CRV-AUDA01 present). No CorpB spillover. /api/analytics/corporate/today is 403 for employees. Good.",
+    "Seeded order CRV-AUDA01 has both site_id and company_id stamped (via _materialize_order). Rolls up correctly to corporate & site dashboards.",
+    "Payments: PAYMENT_MODE=RAZORPAY + live keys + mock off. POST /payments/razorpay/checkout-intent returns razorpay order id `order_...` with correct amount/intent_id (verified end-to-end without completing a charge). POST /payments/razorpay/verify with a forged signature is correctly rejected with 400 'Invalid payment signature' via hmac.compare_digest — signature guard is sound. Unknown razorpay_order_id → 404. Legacy /create-order returns 410. Offline POST /orders is blocked in RAZORPAY mode (non-200).",
+    "Menu access: GET /api/menu/{vendor_id} requires auth (401 otherwise). Employee CAN open mapped-vendor menu (200, list projection with counter field). Good.",
+    "Master-only meal_prices: PATCH by master persists valid keys (veg_meal/non_veg_meal/veg_salad/non_veg_salad); corp_admin PATCH is 403. Good.",
+    "backfill-sites: 200 for master, 403 for corp_admin. Good.",
+    "RBAC on admin endpoints: /api/admin/menu-uploads returns 401/403 for employee AND vendor. POST /api/sites is master-only (corp_admin blocked).",
+    "Data integrity: known legacy TEST_/GateTest/LCTest sites and demo users (u2@lcflow, qa_employee, nosite_emp, domainemp, reg-e0d561) are still present in DB without company/city — flagged as non-blocking artefacts per the review note. They do NOT leak into the AUDIT_* employee's vendor list."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_full_regression.py"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% (smoke-verified corp_admin dashboard scoping)"},
+  "test_credentials": "As per /app/memory/test_credentials.md — admin@cravitoo.com/admin123, audit_{corpadmin,siteadmin,emp,vendor1}_{a,b}@corp{a,b}.com/Audit#1234",
+  "seed_data_creation": "None new — reused seeded AUDIT_* hierarchy (CRV-AUDA01 order). No live razorpay charge attempted; only checkout-intent + forged-signature verify.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-usable regression pytest: /app/backend/tests/test_iter37_full_regression.py (23 tests covering auth, RBAC, employee-vendor scoping, corp/site order scoping, order linkage, razorpay intent/verify, meal_prices, backfill, menu template). Response of /api/orders is a plain list of dicts with fields user_id/vendor_id/site_id/company_id/total_amount/payment_status/status/collection_code/created_at/items/id — order human code lives in `collection_code` (NOT order_code). GET /api/sites/{id} does NOT return meal_prices in the projection unless set — patch with the valid key set {veg_meal, non_veg_meal, veg_salad, non_veg_salad}. Menu excel template endpoint is GET /api/admin/menu-excel-template (auth required, all authed roles allowed). Frontend cookie-based auth uses HttpOnly access_token+refresh_token cookies; when writing playwright tests, clear cookies + goto /login + dismiss the 'Got it' cookie banner BEFORE clicking submit to avoid stale-session redirects that make dashboards look like the wrong role.",
+  "rca of the issue": "N/A — no code bugs found; only one data-loss footgun in the meal_prices sanitiser (silently persists {} when caller sends only unknown keys) reported as low-priority action item."
+}

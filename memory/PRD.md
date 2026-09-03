@@ -35,6 +35,14 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Full-System QA Sweep (COMPLETED, no critical bugs)
+
+Comprehensive regression across the whole hierarchy Clients→Cities→Sites→Vendors→Counters→Menus→Employees→Orders→Payments (iteration_37: 23/23 backend pytest + frontend smoke, 100%). Findings:
+- **No code bugs / no broken flows.** Employee vendor+menu scoping, corporate/site order scoping, order site/company linkage, RBAC across all roles, Razorpay checkout-intent (live keys, mock off) + forged-signature rejection (hmac.compare_digest), menu management (replace/clear/template/preview/versions/approval/counter), per-site meal prices, and backfills all verified working.
+- **Ran non-destructive repairs**: sanitize deactivated 1 stale mapping (active→suspended vendor); backfill-sites/orders left only genuinely-orphan legacy TEST rows unresolved.
+- **Fixed 1 footgun**: `PATCH /sites/{id}` meal_prices now (a) rejects a payload whose keys are all unknown with 400 instead of silently persisting `{}` and wiping saved prices, and (b) merges partial updates onto existing prices so other meals aren't dropped. Regression: `/app/backend/tests/test_iter37_full_regression.py`.
+- **Known non-blocking data**: leftover TEST_/GateTest/LCTest/LCFlow sites + demo users (reg-e0d561, u2@lcflow, qa_employee, nosite_emp, domainemp) lack company/city — preview test artifacts only, they do NOT leak into real AUDIT/customer scoping.
+
 ## Sep 3, 2026 — Menu Approval: Notifications + Per-Row Edit + Counter Column + History Log (COMPLETED)
 
 Four follow-ups on the vendor menu-approval workflow, verified 100% (iteration_36: 33/33 backend pytest + full frontend flow):

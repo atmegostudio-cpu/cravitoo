@@ -333,7 +333,14 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
                     if fv < 0:
                         raise HTTPException(status_code=400, detail=f"meal_prices.{k} cannot be negative")
                     mp[k] = round(fv, 2)
-            cleaned["meal_prices"] = mp
+            if not mp:
+                # Caller sent a meal_prices object with no recognised keys — reject
+                # instead of silently persisting {} and wiping the saved prices.
+                raise HTTPException(status_code=400, detail="meal_prices must include at least one of: veg_meal, non_veg_meal, veg_salad, non_veg_salad")
+            # Merge onto existing prices so a partial update never drops other meals.
+            existing_site = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")}, {"meal_prices": 1})
+            existing_prices = (existing_site or {}).get("meal_prices") or {}
+            cleaned["meal_prices"] = {**existing_prices, **mp}
         if not cleaned:
             raise HTTPException(status_code=400, detail="No valid fields to update")
         await db.sites.update_one({"_id": safe_objectid(site_id, "Site")}, {"$set": cleaned})
