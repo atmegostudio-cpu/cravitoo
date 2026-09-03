@@ -1,0 +1,29 @@
+{
+  "summary": "Verified 4 menu-management additions (Excel template, upload preview diff, menu versions+restore, vendor bulk upload → admin approval) end-to-end. Backend: 20/20 pytest tests pass in /app/backend/tests/test_menu_bulk_approval.py covering template download (master + vendor + unauth), preview diff (no mutation + RBAC), full vendor-submit → admin-approve → live-menu-updated flow, reject flow (no mutation), version listing + restore + RBAC, and regression on /sites/{id}/menu/upload-excel replace mode idempotency. Frontend Playwright: vendor page /vendor/menu — vendor-bulk-upload-card renders with vendor-upload-site (2 sites: SiteA+SiteB), vendor-upload-file, vendor-upload-submit, vendor-download-template-btn (downloads 5146-byte cravitoo_menu_template.xlsx), vendor-submissions-list shows new submission as 'pending'. Master admin /master/sites/6a96d37822127a5e04873e36 → Menu tab — download-template-btn works, preview-upload-btn triggers preview-diff block showing '1 added / 0 updated / 2 removed (replace mode)' with diff-added/diff-updated/diff-removed sub-elements, pending-uploads-card lists submissions with approve-upload-{id}/reject-upload-{id} buttons (clicked approve → count went 2→1), menu-versions-card lists 4 snapshots (before_approve_upload, before_restore actions) each with restore-version-{id} button.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_menu_bulk_approval.py",
+    "/app/test_reports/pytest/menu_bulk_approval.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sites.py:_apply_menu snapshots BEFORE deleting → safe replay via restore. Correct.",
+    "menu_versions retention: keeps last 5 (olds[5:] deleted) after each snapshot — matches spec. Note the versions card UI title says 'last 5' but the current sample showed 4; correct because only 4 snapshots exist so far.",
+    "vendor_submit_menu_upload: verifies active mapping (correct), rejects unmapped sites with 403, size cap 5MB, parse errors returned. Good.",
+    "admin_approve_menu_upload/admin_reject_menu_upload correctly guard with is_master_admin OR can_access_site(req.site_id); vendors + employees → 403 (verified).",
+    "Preview endpoint reads existing menu with only {name:1} projection — efficient, no mutation. Good.",
+    "GET /api/menu/{vendor_id} requires auth (returns 'Not authenticated' otherwise) — consumers must pass token. Existing behavior; not a regression.",
+    "Minor: /admin/menu-uploads accepts status/site_id query, but for site_admins the auto-scope 'q[site_id]=user.site_id' will silently override a passed site_id filter only when NOT provided — fine. However a site_admin passing an explicit site_id for a site they don't access is not additionally checked (they will just see empty). Acceptable given RBAC on approve/reject."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_menu_bulk_approval.py"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com/admin123 (master), audit_vendor1@corpa.com/Audit#1234 (vendor), audit_emp_a@corpa.com/Audit#1234 (employee)",
+  "seed_data_creation": "Ephemeral: UI_Vendor_A/B, APPROVAL_Idli/Vada/Dosa, REJECT_Item1, PREVIEW_ItemA/B (not persisted), CHANGE_MarkerItem, REGR_A/B menu items at AUDIT_SiteA (replace-mode); overwritten by end of tests via restore/regression. 4 menu_versions snapshots created for AUDIT_Vendor1+AUDIT_SiteA.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "GET /api/menu/{vendor_id} REQUIRES auth (Bearer). Admin Menu tab has TWO input[type=file] elements: hidden 'site-menu-upload-input' (image accept) + visible 'upload-excel-file' (.xlsx). Always select the visible/target-testid input. Login token key='access_token'. AUDIT_SiteA=6a96d37822127a5e04873e36, AUDIT_Vendor1=6a96d37822127a5e04873e3c. Regression endpoint path is /sites/{id}/menu/upload-excel (NOT /menu/upload). menu_versions capped at 5 per (vendor,site).",
+  "rca of the issue": "N/A — all features working as designed."
+}

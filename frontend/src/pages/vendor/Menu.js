@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageIcon, Lock, MessageSquare, Camera, AlertCircle, ChevronDown, ChevronUp, Upload, FileSpreadsheet, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import logger from '../../lib/logger';
 import VegIndicator from '../../components/VegIndicator';
 import MenuImageUploader from '../../components/MenuImageUploader';
@@ -91,10 +91,64 @@ const VendorMenu = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [sites, setSites] = useState([]);
+  const [uploadSite, setUploadSite] = useState('');
+  const [upFile, setUpFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissions, setSubmissions] = useState([]);
 
   useEffect(() => {
     fetchMenu();
+    loadSites();
+    loadSubmissions();
   }, []);
+
+  const loadSites = async () => {
+    try {
+      const { data } = await axios.get(`${API}/sites`, { withCredentials: true });
+      setSites(data);
+      if (data.length > 0) setUploadSite(data[0].id);
+    } catch (e) { logger.error(e); }
+  };
+
+  const loadSubmissions = async () => {
+    try {
+      const { data } = await axios.get(`${API}/vendor/menu-uploads`, { withCredentials: true });
+      setSubmissions(data);
+    } catch (e) { logger.error(e); }
+  };
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/menu-excel-template`, { withCredentials: true, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'cravitoo_menu_template.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { setMessage('Could not download template'); }
+  };
+
+  const submitMenuUpload = async (e) => {
+    e.preventDefault();
+    if (!upFile || !uploadSite) { setMessage('Choose a site and an Excel file'); return; }
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', upFile);
+      const { data } = await axios.post(`${API}/vendor/menu-uploads?site_id=${uploadSite}`, fd, {
+        withCredentials: true, headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setMessage(`Submitted ${data.item_count} item(s) for admin approval. Your menu will go live only after approval.`);
+      setUpFile(null);
+      await loadSubmissions();
+    } catch (err) {
+      setMessage(err?.response?.data?.detail || 'Submission failed');
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
 
   const fetchMenu = async () => {
     try {
@@ -194,6 +248,54 @@ const VendorMenu = () => {
               {message}
             </div>
           )}
+
+          {/* Bulk menu upload → submit for admin approval */}
+          <div data-testid="vendor-bulk-upload-card" className="mb-6 sm:mb-8 bg-card border border-border-light rounded-2xl p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <h3 className="font-heading text-lg font-semibold text-text-primary flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-primary" /> Bulk Menu Upload (Excel)
+              </h3>
+              <button data-testid="vendor-download-template-btn" onClick={downloadTemplate} className="text-sm text-primary font-medium hover:underline flex items-center gap-1">
+                <Upload className="h-4 w-4 rotate-180" /> Download template
+              </button>
+            </div>
+            <p className="text-text-muted text-xs mb-4">
+              Upload your full menu as Excel and submit it for approval. It will <strong>not go live automatically</strong> — an admin reviews and approves it first.
+            </p>
+            <form onSubmit={submitMenuUpload} className="flex flex-col md:flex-row gap-3">
+              <select data-testid="vendor-upload-site" value={uploadSite} onChange={(e) => setUploadSite(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg flex-1">
+                <option value="">-- Select site --</option>
+                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <input data-testid="vendor-upload-file" type="file" accept=".xlsx,.xls" onChange={(e) => setUpFile(e.target.files[0])} className="px-3 py-2 border border-border-light rounded-lg flex-1" />
+              <button data-testid="vendor-upload-submit" type="submit" disabled={submitting || !upFile || !uploadSite} className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center gap-2">
+                <Upload className="h-4 w-4" /> {submitting ? 'Submitting…' : 'Submit for Approval'}
+              </button>
+            </form>
+
+            {submissions.length > 0 && (
+              <div className="mt-5" data-testid="vendor-submissions-list">
+                <p className="text-sm font-medium text-text-secondary mb-2">Your submissions</p>
+                <div className="space-y-2">
+                  {submissions.map((s) => {
+                    const badge = s.status === 'approved'
+                      ? { c: 'bg-emerald-100 text-emerald-700', Icon: CheckCircle2 }
+                      : s.status === 'rejected'
+                        ? { c: 'bg-red-100 text-red-700', Icon: XCircle }
+                        : { c: 'bg-amber-100 text-amber-700', Icon: Clock };
+                    return (
+                      <div key={s.id} data-testid={`vendor-submission-${s.id}`} className="flex items-center justify-between gap-3 p-3 border border-border-light rounded-lg text-sm">
+                        <span className="truncate text-text-primary">{s.file_name} · {s.item_count} items</span>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${badge.c}`}>
+                          <badge.Icon className="h-3.5 w-3.5" /> {s.status}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Photo audit (only meaningful when there are items) */}
           {items.length > 0 && <PhotoAuditCard items={items} onRequestPhoto={handleRequestPhoto} />}

@@ -35,6 +35,15 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 3, 2026 — Vendor Bulk Menu Upload (approval flow) + Template / Preview / Version History (COMPLETED)
+
+Four connected menu-management additions, verified 100% (iteration_35: 20/20 backend pytest + full frontend flow):
+
+- **Vendor Bulk Upload → Admin Approval** (NEW workflow): vendor uploads an Excel menu on `/vendor/menu` (`POST /api/vendor/menu-uploads?site_id=`) and submits — stored `status=pending`, **never applied to the live menu**. Vendor must be actively mapped to the site (403 otherwise). Admin reviews on SiteDetail → Menu tab ("Vendor Menu Uploads awaiting approval" card): **Approve** (`POST /api/admin/menu-uploads/{id}/approve`) applies it live in replace mode + snapshots the previous menu; **Reject** (`.../reject`, optional note) leaves live menu untouched. Only master/site-access admins may approve/reject (vendors & employees → 403). Collection `menu_upload_requests`.
+- **Excel Template Download** (`GET /api/admin/menu-excel-template`): one-click sample .xlsx with the exact 7 columns + sample rows. Buttons on both admin Menu tab and vendor page. (Path deliberately avoids the `/menu/{vendor_id}` route collision.)
+- **Upload Preview / diff** (`POST /api/sites/{id}/menu/preview`): dry-run returns added/updated/removed + counts with NO mutation; admin Menu tab shows a diff block before replacing.
+- **Menu Version History + Restore** (`GET/POST /api/sites/{id}/menu/versions[...]/restore`): auto-snapshots the previous menu (kept last 5 per vendor+site) before every replace/approve/restore; one-tap restore. Collection `menu_versions`. Shared helpers `parse_menu_workbook`, `_snapshot_menu`, `_apply_menu` in `routers/sites.py`. Regression file `/app/backend/tests/test_menu_bulk_approval.py`.
+
 ## Sep 1, 2026 — Admin Menu Replace / Clear / Dedupe + Live Propagation (COMPLETED)
 
 Admin can now fully re-manage a vendor's menu at a site without duplicates:

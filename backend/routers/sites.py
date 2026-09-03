@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 import openpyxl
 from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from models import (
     MasterAdminCreate,
@@ -29,6 +30,79 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
+
+MENU_TEMPLATE_HEADERS = ["name", "description", "category", "price",
+                         "is_vegetarian", "image_url", "meal_periods"]
+
+
+def build_menu_template_xlsx() -> bytes:
+    """A ready-to-fill sample .xlsx with the exact columns the importer expects."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Menu"
+    ws.append(MENU_TEMPLATE_HEADERS)
+    ws.append(["Paneer Butter Masala", "Cottage cheese in rich tomato gravy",
+               "Main Course", 180, "yes", "", "lunch,dinner"])
+    ws.append(["Masala Dosa", "Crispy dosa with spiced potato filling",
+               "Breakfast", 90, "yes", "", "breakfast"])
+    ws.append(["Chicken Biryani", "Fragrant basmati rice with chicken",
+               "Main Course", 220, "no", "", "lunch,dinner"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def parse_menu_workbook(content: bytes):
+    """Parse + validate an uploaded menu workbook. Returns (rows, errors) where
+    each row is a normalized dict WITHOUT vendor_id/site_id/created_at (added at
+    apply time). Duplicate names within the file are skipped. Never touches DB."""
+    workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    if len(rows) < 2:
+        raise HTTPException(status_code=400, detail="Excel must contain a header row and at least one data row")
+    headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+    required = ["name", "description", "category", "price"]
+    missing = [c for c in required if c not in headers]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing required columns: {', '.join(missing)}")
+    idx = {c: headers.index(c) for c in headers if c}
+    name_i = headers.index("name")
+    veg_i = headers.index("is_vegetarian") if "is_vegetarian" in headers else None
+    img_i = headers.index("image_url") if "image_url" in headers else None
+    meal_i = headers.index("meal_periods") if "meal_periods" in headers else None
+
+    def _truthy(v):
+        return str(v).strip().lower() in ("1", "true", "yes", "veg", "y", "vegetarian")
+
+    parsed, errors, seen = [], [], set()
+    for i, row in enumerate(rows[1:], start=2):
+        try:
+            if name_i >= len(row) or not row[name_i]:
+                continue
+            name = str(row[name_i]).strip()
+            key = name.lower()
+            if key in seen:
+                errors.append(f"Row {i}: duplicate name '{name}' in file — skipped")
+                continue
+            seen.add(key)
+            meal_periods = ["lunch"]
+            if meal_i is not None and row[meal_i]:
+                meal_periods = [m.strip().lower() for m in str(row[meal_i]).split(",") if m.strip()]
+            parsed.append({
+                "name": name,
+                "description": str(row[idx["description"]] or "").strip(),
+                "category": str(row[idx["category"]] or "Main Course").strip(),
+                "price": float(row[idx["price"]] or 0),
+                "is_vegetarian": _truthy(row[veg_i]) if (veg_i is not None and row[veg_i] is not None) else True,
+                "is_available": True,
+                "show_price": True,
+                "meal_periods": meal_periods,
+                "image_url": str(row[img_i]).strip() if (img_i is not None and row[img_i]) else None,
+            })
+        except Exception as e:
+            errors.append(f"Row {i}: {str(e)}")
+    return parsed, errors
 
 
 def _is_master(user: dict) -> bool:
@@ -602,6 +676,218 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             raise HTTPException(status_code=403, detail="Access denied")
         removed = (await db.menu_items.delete_many({"vendor_id": vendor_id, "site_id": site_id})).deleted_count
         return {"removed": removed, "site_id": site_id, "vendor_id": vendor_id}
+
+    # ---------- Excel template download ----------
+    @r.get("/admin/menu-excel-template")
+    async def download_menu_template(user: dict = Depends(get_current_user)):
+        data = build_menu_template_xlsx()
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=cravitoo_menu_template.xlsx"},
+        )
+
+    # ---------- Upload preview (dry-run diff) ----------
+    @r.post("/sites/{site_id}/menu/preview")
+    async def preview_menu_upload(
+        site_id: str,
+        vendor_id: str = Query(...),
+        file: UploadFile = File(...),
+        user: dict = Depends(get_current_user),
+    ):
+        if not (is_master_admin(user) or can_access_site(user, site_id)):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if not file.filename.endswith((".xlsx", ".xls")):
+            raise HTTPException(status_code=400, detail="Only .xlsx/.xls files are supported")
+        content = await file.read()
+        parsed, errors = parse_menu_workbook(content)
+        existing = await db.menu_items.find({"vendor_id": vendor_id, "site_id": site_id}, {"name": 1}).to_list(2000)
+        existing_names = {str(e.get("name", "")).strip().lower() for e in existing}
+        new_names = {p["name"].strip().lower() for p in parsed}
+        added = [p["name"] for p in parsed if p["name"].strip().lower() not in existing_names]
+        updated = [p["name"] for p in parsed if p["name"].strip().lower() in existing_names]
+        removed = [e.get("name") for e in existing if str(e.get("name", "")).strip().lower() not in new_names]
+        return {"added": added, "updated": updated, "removed": removed,
+                "total_in_file": len(parsed), "current_count": len(existing), "errors": errors}
+
+    # ---------- Menu version history + restore ----------
+    async def _snapshot_menu(vendor_id: str, site_id: str, action: str, actor: dict):
+        items = await db.menu_items.find({"vendor_id": vendor_id, "site_id": site_id}).to_list(2000)
+        for it in items:
+            it.pop("_id", None)
+        await db.menu_versions.insert_one({
+            "vendor_id": vendor_id, "site_id": site_id, "action": action,
+            "items": items, "item_count": len(items),
+            "created_at": datetime.now(timezone.utc),
+            "created_by": actor.get("email"),
+        })
+        # keep only the last 5 snapshots per vendor+site
+        olds = await db.menu_versions.find(
+            {"vendor_id": vendor_id, "site_id": site_id}, {"_id": 1}
+        ).sort("created_at", -1).to_list(1000)
+        for stale in olds[5:]:
+            await db.menu_versions.delete_one({"_id": stale["_id"]})
+
+    async def _apply_menu(vendor_id: str, site_id: str, parsed: list, actor: dict, action: str):
+        await _snapshot_menu(vendor_id, site_id, f"before_{action}", actor)
+        await db.menu_items.delete_many({"vendor_id": vendor_id, "site_id": site_id})
+        now = datetime.now(timezone.utc)
+        docs = [{**p, "vendor_id": vendor_id, "site_id": site_id, "created_at": now} for p in parsed]
+        if docs:
+            await db.menu_items.insert_many(docs)
+        return len(docs)
+
+    @r.get("/sites/{site_id}/menu/versions")
+    async def list_menu_versions(site_id: str, vendor_id: str = Query(...), user: dict = Depends(get_current_user)):
+        if not (is_master_admin(user) or can_access_site(user, site_id)):
+            raise HTTPException(status_code=403, detail="Access denied")
+        vers = await db.menu_versions.find(
+            {"vendor_id": vendor_id, "site_id": site_id}
+        ).sort("created_at", -1).to_list(20)
+        out = []
+        for v in vers:
+            out.append({
+                "id": str(v["_id"]), "action": v.get("action"),
+                "item_count": v.get("item_count", 0),
+                "created_at": v["created_at"].isoformat() if isinstance(v.get("created_at"), datetime) else v.get("created_at"),
+                "created_by": v.get("created_by"),
+            })
+        return out
+
+    @r.post("/sites/{site_id}/menu/versions/{version_id}/restore")
+    async def restore_menu_version(site_id: str, version_id: str, vendor_id: str = Query(...), user: dict = Depends(get_current_user)):
+        if not (is_master_admin(user) or can_access_site(user, site_id)):
+            raise HTTPException(status_code=403, detail="Access denied")
+        ver = await db.menu_versions.find_one({"_id": safe_objectid(version_id, "Version")})
+        if not ver or ver.get("vendor_id") != vendor_id or ver.get("site_id") != site_id:
+            raise HTTPException(status_code=404, detail="Version not found")
+        await _snapshot_menu(vendor_id, site_id, "before_restore", user)
+        await db.menu_items.delete_many({"vendor_id": vendor_id, "site_id": site_id})
+        now = datetime.now(timezone.utc)
+        docs = [{**it, "vendor_id": vendor_id, "site_id": site_id} for it in ver.get("items", [])]
+        for d in docs:
+            d.setdefault("created_at", now)
+        if docs:
+            await db.menu_items.insert_many(docs)
+        return {"restored": len(docs), "version_id": version_id}
+
+    # ================= VENDOR BULK UPLOAD → ADMIN APPROVAL =================
+    @r.post("/vendor/menu-uploads")
+    async def vendor_submit_menu_upload(
+        site_id: str = Query(...),
+        file: UploadFile = File(...),
+        user: dict = Depends(get_current_user),
+    ):
+        """Vendor uploads an Excel menu for a site and submits it for admin
+        approval. It is NOT applied to the live menu — status stays 'pending'
+        until an admin approves. Vendors cannot publish directly."""
+        if user.get("role") != "vendor":
+            raise HTTPException(status_code=403, detail="Only vendors can submit menu uploads")
+        vendor_id = user.get("vendor_id")
+        if not vendor_id:
+            raise HTTPException(status_code=400, detail="No vendor linked to this account")
+        mapping = await db.vendor_site_mappings.find_one({"vendor_id": vendor_id, "site_id": site_id, "status": "active"})
+        if not mapping:
+            raise HTTPException(status_code=403, detail="You are not assigned to this site")
+        if not file.filename.endswith((".xlsx", ".xls")):
+            raise HTTPException(status_code=400, detail="Only .xlsx/.xls files are supported")
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File too large (max 5 MB)")
+        parsed, errors = parse_menu_workbook(content)
+        if not parsed:
+            raise HTTPException(status_code=400, detail="No valid menu rows found. " + ("; ".join(errors) if errors else ""))
+        doc = {
+            "vendor_id": vendor_id, "site_id": site_id,
+            "status": "pending", "items": parsed, "item_count": len(parsed),
+            "file_name": file.filename, "parse_errors": errors,
+            "submitted_by": user.get("email"),
+            "created_at": datetime.now(timezone.utc),
+        }
+        res = await db.menu_upload_requests.insert_one(doc)
+        return {"id": str(res.inserted_id), "status": "pending", "item_count": len(parsed), "errors": errors}
+
+    @r.get("/vendor/menu-uploads")
+    async def vendor_list_menu_uploads(user: dict = Depends(get_current_user)):
+        if user.get("role") != "vendor":
+            raise HTTPException(status_code=403, detail="Only vendors")
+        cur = await db.menu_upload_requests.find(
+            {"vendor_id": user.get("vendor_id")}
+        ).sort("created_at", -1).to_list(50)
+        out = []
+        for d in cur:
+            out.append({
+                "id": str(d["_id"]), "status": d.get("status"),
+                "item_count": d.get("item_count", 0), "file_name": d.get("file_name"),
+                "site_id": d.get("site_id"),
+                "created_at": d["created_at"].isoformat() if isinstance(d.get("created_at"), datetime) else d.get("created_at"),
+                "decision_note": d.get("decision_note"),
+                "decided_by": d.get("decided_by"),
+            })
+        return out
+
+    @r.get("/admin/menu-uploads")
+    async def admin_list_menu_uploads(status: Optional[str] = None, site_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+        if not (is_master_admin(user) or user.get("role") in ("site_admin", "city_admin", "super_admin")):
+            raise HTTPException(status_code=403, detail="Access denied")
+        q: dict = {}
+        if status:
+            q["status"] = status
+        if site_id:
+            q["site_id"] = site_id
+        elif user.get("role") == "site_admin" and user.get("site_id"):
+            q["site_id"] = user.get("site_id")
+        cur = await db.menu_upload_requests.find(q).sort("created_at", -1).to_list(200)
+        vids = {d.get("vendor_id") for d in cur}
+        vmap = {}
+        for vid in vids:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1}) if vid else None
+            vmap[vid] = (v or {}).get("name", "Unknown")
+        out = []
+        for d in cur:
+            out.append({
+                "id": str(d["_id"]), "status": d.get("status"),
+                "vendor_id": d.get("vendor_id"), "vendor_name": vmap.get(d.get("vendor_id")),
+                "site_id": d.get("site_id"), "item_count": d.get("item_count", 0),
+                "file_name": d.get("file_name"), "submitted_by": d.get("submitted_by"),
+                "items": d.get("items", []),
+                "created_at": d["created_at"].isoformat() if isinstance(d.get("created_at"), datetime) else d.get("created_at"),
+            })
+        return out
+
+    @r.post("/admin/menu-uploads/{req_id}/approve")
+    async def admin_approve_menu_upload(req_id: str, user: dict = Depends(get_current_user)):
+        req = await db.menu_upload_requests.find_one({"_id": safe_objectid(req_id, "Request")})
+        if not req:
+            raise HTTPException(status_code=404, detail="Upload request not found")
+        if not (is_master_admin(user) or can_access_site(user, req.get("site_id"))):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail=f"Already {req.get('status')}")
+        applied = await _apply_menu(req["vendor_id"], req["site_id"], req.get("items", []), user, "approve_upload")
+        await db.menu_upload_requests.update_one(
+            {"_id": req["_id"]},
+            {"$set": {"status": "approved", "decided_by": user.get("email"),
+                      "decided_at": datetime.now(timezone.utc)}},
+        )
+        return {"status": "approved", "applied": applied}
+
+    @r.post("/admin/menu-uploads/{req_id}/reject")
+    async def admin_reject_menu_upload(req_id: str, payload: Dict[str, Any] = None, user: dict = Depends(get_current_user)):
+        req = await db.menu_upload_requests.find_one({"_id": safe_objectid(req_id, "Request")})
+        if not req:
+            raise HTTPException(status_code=404, detail="Upload request not found")
+        if not (is_master_admin(user) or can_access_site(user, req.get("site_id"))):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail=f"Already {req.get('status')}")
+        note = (payload or {}).get("note", "")
+        await db.menu_upload_requests.update_one(
+            {"_id": req["_id"]},
+            {"$set": {"status": "rejected", "decision_note": note,
+                      "decided_by": user.get("email"), "decided_at": datetime.now(timezone.utc)}},
+        )
+        return {"status": "rejected"}
 
     # Master Admin: Create Site Admin / Super Admin
     @r.post("/admin/site-admins")

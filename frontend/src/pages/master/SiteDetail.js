@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
-import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2 } from 'lucide-react';
+import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
 import ImageCropperModal from '../../components/ImageCropperModal';
 
@@ -433,6 +433,10 @@ const MenuTab = ({ siteId }) => {
   const [uploadMsg, setUploadMsg] = useState('');
   const [replaceMode, setReplaceMode] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [previewDiff, setPreviewDiff] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
   const [aiPhotoItem, setAiPhotoItem] = useState(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
@@ -562,11 +566,75 @@ const MenuTab = ({ siteId }) => {
       setItems(m.data);
       setVendors(v.data);
       if (v.data.length > 0 && !selectedVendor) setSelectedVendor(v.data[0].id);
+      try {
+        const pu = await axios.get(`${API}/admin/menu-uploads?status=pending&site_id=${siteId}`, { withCredentials: true });
+        setPendingUploads(pu.data);
+      } catch { /* ignore */ }
     } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, [siteId, selectedVendor]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadVersions = useCallback(async () => {
+    if (!selectedVendor) { setVersions([]); return; }
+    try {
+      const { data } = await axios.get(`${API}/sites/${siteId}/menu/versions?vendor_id=${selectedVendor}`, { withCredentials: true });
+      setVersions(data);
+    } catch (e) { logger.error(e); }
+  }, [siteId, selectedVendor]);
+
+  useEffect(() => { loadVersions(); }, [loadVersions]);
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/menu-excel-template`, { withCredentials: true, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'cravitoo_menu_template.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { setUploadMsg('✗ Could not download template'); }
+  };
+
+  const previewUpload = async () => {
+    if (!file || !selectedVendor) { setUploadMsg('Choose a vendor and file to preview'); return; }
+    setPreviewing(true); setPreviewDiff(null);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const { data } = await axios.post(`${API}/sites/${siteId}/menu/preview?vendor_id=${selectedVendor}`, fd, {
+        withCredentials: true, headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPreviewDiff(data);
+    } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Preview failed')); }
+    finally { setPreviewing(false); }
+  };
+
+  const restoreVersion = async (versionId) => {
+    if (!window.confirm('Restore this menu snapshot? Current items will be replaced.')) return;
+    try {
+      const { data } = await axios.post(`${API}/sites/${siteId}/menu/versions/${versionId}/restore?vendor_id=${selectedVendor}`, {}, { withCredentials: true });
+      setUploadMsg(`✓ Restored ${data.restored} item(s) from snapshot`);
+      await load(); await loadVersions();
+    } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Restore failed')); }
+  };
+
+  const approveUpload = async (id) => {
+    try {
+      await axios.post(`${API}/admin/menu-uploads/${id}/approve`, {}, { withCredentials: true });
+      setUploadMsg('✓ Upload approved — menu is now live');
+      await load(); await loadVersions();
+    } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Approve failed')); }
+  };
+
+  const rejectUpload = async (id) => {
+    const note = window.prompt('Reason for rejection (optional):') || '';
+    try {
+      await axios.post(`${API}/admin/menu-uploads/${id}/reject`, { note }, { withCredentials: true });
+      setUploadMsg('Upload rejected');
+      await load();
+    } catch (e) { setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Reject failed')); }
+  };
 
   const toggleAvailable = async (item) => {
     try {
@@ -663,6 +731,9 @@ const MenuTab = ({ siteId }) => {
         <h3 className="font-heading text-xl font-medium mb-3 flex items-center gap-2">
           <FileSpreadsheet className="h-5 w-5 text-primary" /> Upload Menu via Excel
         </h3>
+        <button data-testid="download-template-btn" onClick={downloadTemplate} className="text-sm text-primary font-medium hover:underline mb-3 inline-flex items-center gap-1">
+          <Upload className="h-4 w-4 rotate-180" /> Download Excel template
+        </button>
         <p className="text-text-muted text-xs mb-4">Required columns: <code>name, description, category, price</code>. Optional: <code>is_vegetarian, image_url, meal_periods</code> (comma-separated).</p>
         <form onSubmit={uploadExcel} className="flex flex-col md:flex-row gap-3">
           <select
@@ -710,7 +781,59 @@ const MenuTab = ({ siteId }) => {
           <p className="text-text-muted text-xs mt-2">Merge mode: items with the same name are updated in place, new ones added — still no duplicates.</p>
         )}
         {uploadMsg && <p className={`mt-3 text-sm ${uploadMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>{uploadMsg}</p>}
+        <button type="button" data-testid="preview-upload-btn" onClick={previewUpload} disabled={previewing || !file || !selectedVendor} className="mt-3 text-sm px-3 py-1.5 border border-border-light rounded-lg text-text-secondary hover:border-primary/40 disabled:opacity-50">
+          {previewing ? 'Checking…' : 'Preview changes before upload'}
+        </button>
+        {previewDiff && (
+          <div data-testid="preview-diff" className="mt-3 p-3 rounded-lg bg-slate-50 border border-border-light text-sm">
+            <p className="text-text-secondary mb-2">
+              File has <strong>{previewDiff.total_in_file}</strong> item(s). Current: <strong>{previewDiff.current_count}</strong>.
+              {previewDiff.errors?.length ? ` (${previewDiff.errors.length} row error(s))` : ''}
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <div data-testid="diff-added" className="p-2 rounded bg-emerald-50 text-emerald-700"><strong>{previewDiff.added.length}</strong> added</div>
+              <div data-testid="diff-updated" className="p-2 rounded bg-amber-50 text-amber-700"><strong>{previewDiff.updated.length}</strong> updated</div>
+              <div data-testid="diff-removed" className="p-2 rounded bg-red-50 text-red-700"><strong>{previewDiff.removed.length}</strong> removed (replace mode)</div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {pendingUploads.length > 0 && (
+        <div className="bg-card border border-amber-200 rounded-2xl p-6" data-testid="pending-uploads-card">
+          <h3 className="font-heading text-xl font-medium mb-4 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-amber-500" /> Vendor Menu Uploads awaiting approval ({pendingUploads.length})
+          </h3>
+          <div className="space-y-3">
+            {pendingUploads.map((p) => (
+              <div key={p.id} data-testid={`pending-upload-${p.id}`} className="flex items-center justify-between gap-3 p-3 border border-border-light rounded-lg flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-text-primary font-medium text-sm">{p.vendor_name} · {p.item_count} items</p>
+                  <p className="text-text-muted text-xs">{p.file_name} · by {p.submitted_by}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button data-testid={`approve-upload-${p.id}`} onClick={() => approveUpload(p.id)} className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Approve &amp; Publish</button>
+                  <button data-testid={`reject-upload-${p.id}`} onClick={() => rejectUpload(p.id)} className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {versions.length > 0 && (
+        <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="menu-versions-card">
+          <h3 className="font-heading text-xl font-medium mb-4">Menu Version History (last {versions.length})</h3>
+          <div className="space-y-2">
+            {versions.map((v) => (
+              <div key={v.id} data-testid={`menu-version-${v.id}`} className="flex items-center justify-between gap-3 p-3 border border-border-light rounded-lg text-sm flex-wrap">
+                <span className="text-text-secondary">{new Date(v.created_at).toLocaleString()} · {v.item_count} items · {v.action}</span>
+                <button data-testid={`restore-version-${v.id}`} onClick={() => restoreVersion(v.id)} className="px-3 py-1.5 text-xs border border-primary/30 text-primary rounded-lg hover:bg-primary hover:text-white">Restore</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-card border border-border-light rounded-2xl p-6">
         <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
