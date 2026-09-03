@@ -1,0 +1,24 @@
+{
+  "summary": "Verified admin menu Replace/Clear/Dedupe + propagation feature for AUDIT_SiteA + AUDIT_Vendor1. Wrote /app/backend/tests/test_menu_replace_clear.py (6 tests, all pass) covering: replace mode idempotency (same file twice -> same count, no dupes), append upsert-by-name (updated>0, inserted where new, re-append same file yields 0 inserts), DELETE /sites/{id}/menu clearing, in-file duplicate names skipped, invalid mode 400, and RBAC 403 for employees on both upload + delete. Ran end-to-end Playwright flow on /master/sites/6a96d37822127a5e04873e36 Menu tab: login as master admin, replace toggle ON, uploaded xlsx twice -> count went 2 then stayed 2, Clear Menu button removed all items (0), success message 'Cleared 2 item(s). The menu is now empty across all apps.' visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_menu_replace_clear.py",
+    "/app/test_reports/pytest/menu_replace_clear.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sites.py upload_menu_excel/clear_site_menu correctly implement idempotent replace and by-name upsert append; parse-before-mutate order prevents partial wipes on bad files.",
+    "GET /api/menu/{vendor_id} in server.py does not project site_id/vendor_id — tests must count by name across all vendor sites rather than filter by site_id. Consider projecting site_id for admin observability (non-blocking).",
+    "MenuTab renders the site-wide Menu Items list, not filtered by the currently selected upload vendor — after clearing Vendor1 items, items from OTHER vendors at the same site remain visible (correct behavior, but users may find it confusing). Consider labeling the list 'Menu Items at this site (all vendors)'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_menu_replace_clear.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com/admin123 (master), audit_vendor1@corpa.com/Audit#1234, audit_emp_a@corpa.com/Audit#1234",
+  "seed_data_creation": "None persistent — tests clear their own data via replace/DELETE. Only ephemeral TEST_/UI_ prefixed items created and then removed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login response key is 'access_token' (not 'token'). GET /api/menu/{vendor_id} response projects only {id,name,description,category,price,image_url,is_vegetarian,is_available,allergens,image_source} — no site_id/vendor_id. Site menu tab's 'Menu Items' list is site-wide, upload/clear scope is per selected vendor. AUDIT_SiteA=6a96d37822127a5e04873e36, AUDIT_Vendor1=6a96d37822127a5e04873e3c."
+}

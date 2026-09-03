@@ -35,6 +35,16 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 - **Audit trail** — every upload/remove writes to `audit_log` and every menu_item stores `image_source` (`vendor_upload` / `admin_upload`) + `image_updated_at` + `image_updated_by`.
 - **Regression suite (iter25)**: 21 new tests in `test_menu_image_upload.py` cover ownership matrix (master ✓ / owning vendor ✓ / other vendor ✗ / employee ✗ / unauth ✗), size/MIME rejection, 404 on missing item, DELETE mirror, GET propagation, draft-menu variant, and the regenerate vendor-RBAC gates. **143/143 tests pass** across all suites, zero regressions.
 
+## Sep 1, 2026 — Admin Menu Replace / Clear / Dedupe + Live Propagation (COMPLETED)
+
+Admin can now fully re-manage a vendor's menu at a site without duplicates:
+- **Excel upload REPLACE mode** (`POST /sites/{id}/menu/upload-excel?vendor_id=&mode=replace`, default): parses+validates the whole file first (never partial-wipes on a bad file), then clears that vendor's items at the site and inserts the new rows. Re-uploading the same file is idempotent — **no duplicates**.
+- **APPEND/merge mode** (`mode=append`): upserts by item name (same name → update in place, new → insert); in-file duplicate names are skipped. Also duplicate-safe.
+- **Clear Menu** (`DELETE /sites/{id}/menu?vendor_id=`): one-tap delete of all of a vendor's items at the site. Master admin or site-access admin only (403 otherwise).
+- **Admin UI** (`master/SiteDetail.js` Menu tab): "Replace existing menu" toggle (default on), "Clear Menu" button, richer result message (cleared/added/updated). List heading clarified as site-wide/all-vendors.
+- **Auto-propagation**: Web/Customer/Vendor apps all read live from `menu_items` (`GET /menu/{vendor_id}`, `GET /sites/{id}/menu`) — updates reflect immediately, no cache.
+- **Verified (iteration_34)**: 6/6 backend pytest + UI flow, 100%. Regression file `/app/backend/tests/test_menu_replace_clear.py`.
+
 ## Sep 1, 2026 — Vendor Counter View + Company Orders Dashboard + Per-Site Meal Prices + Site Repair (COMPLETED)
 
 Four connected-platform enhancements, all verified 100% (iteration_33: 13/13 backend pytest + frontend smoke):

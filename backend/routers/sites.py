@@ -480,14 +480,23 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
     async def upload_menu_excel(
         site_id: str,
         vendor_id: str = Query(...),
+        mode: str = Query("replace"),
         file: UploadFile = File(...),
         user: dict = Depends(get_current_user),
     ):
         """Upload an Excel (.xlsx) file with menu items.
         Expected columns: name, description, category, price, is_vegetarian, image_url (optional), meal_periods (comma-separated)
+
+        mode:
+          - ``replace`` (default): wipe this vendor's existing menu at this site,
+            then insert the uploaded rows. Guarantees no leftover / duplicate items.
+          - ``append``: keep existing items but upsert by name so re-uploading the
+            same dish updates it in place instead of creating a duplicate.
         """
         if not (is_master_admin(user) or can_access_site(user, site_id)):
             raise HTTPException(status_code=403, detail="Access denied")
+        if mode not in ("replace", "append"):
+            raise HTTPException(status_code=400, detail="mode must be 'replace' or 'append'")
     
         if not file.filename.endswith((".xlsx", ".xls")):
             raise HTTPException(status_code=400, detail="Only .xlsx/.xls files are supported")
@@ -519,20 +528,28 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         veg_idx = headers.index("is_vegetarian") if "is_vegetarian" in headers else None
         img_idx = headers.index("image_url") if "image_url" in headers else None
         meal_idx = headers.index("meal_periods") if "meal_periods" in headers else None
-    
-        inserted = 0
+
+        # Parse + validate every row FIRST so a bad file never partially wipes a menu.
+        parsed = []
         errors = []
+        seen_names = set()
         for i, row in enumerate(rows[1:], start=2):
             try:
                 if not row[name_idx]:
                     continue
+                name = str(row[name_idx]).strip()
+                key = name.lower()
+                if key in seen_names:
+                    errors.append(f"Row {i}: duplicate name '{name}' in file — skipped")
+                    continue
+                seen_names.add(key)
                 meal_periods = ["lunch"]
                 if meal_idx is not None and row[meal_idx]:
                     meal_periods = [m.strip().lower() for m in str(row[meal_idx]).split(",") if m.strip()]
-                doc = {
+                parsed.append({
                     "vendor_id": vendor_id,
                     "site_id": site_id,
-                    "name": str(row[name_idx]).strip(),
+                    "name": name,
                     "description": str(row[desc_idx] or "").strip(),
                     "category": str(row[cat_idx] or "Main Course").strip(),
                     "price": float(row[price_idx] or 0),
@@ -542,13 +559,49 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
                     "meal_periods": meal_periods,
                     "image_url": str(row[img_idx]).strip() if img_idx is not None and row[img_idx] else None,
                     "created_at": datetime.now(timezone.utc),
-                }
-                await db.menu_items.insert_one(doc)
-                inserted += 1
+                })
             except Exception as e:
                 errors.append(f"Row {i}: {str(e)}")
-    
-        return {"inserted": inserted, "errors": errors, "site_id": site_id, "vendor_id": vendor_id}
+
+        if not parsed:
+            raise HTTPException(status_code=400, detail="No valid menu rows found in the file. " + ("; ".join(errors) if errors else ""))
+
+        removed = 0
+        inserted = 0
+        updated = 0
+        if mode == "replace":
+            removed = (await db.menu_items.delete_many({"vendor_id": vendor_id, "site_id": site_id})).deleted_count
+            await db.menu_items.insert_many(parsed)
+            inserted = len(parsed)
+        else:  # append — upsert by name to avoid duplicates
+            for doc in parsed:
+                res = await db.menu_items.update_one(
+                    {"vendor_id": vendor_id, "site_id": site_id, "name": doc["name"]},
+                    {"$set": {k: v for k, v in doc.items() if k != "created_at"},
+                     "$setOnInsert": {"created_at": doc["created_at"]}},
+                    upsert=True,
+                )
+                if res.upserted_id is not None:
+                    inserted += 1
+                else:
+                    updated += 1
+
+        return {"mode": mode, "removed": removed, "inserted": inserted, "updated": updated,
+                "errors": errors, "site_id": site_id, "vendor_id": vendor_id}
+
+    @r.delete("/sites/{site_id}/menu")
+    async def clear_site_menu(
+        site_id: str,
+        vendor_id: str = Query(...),
+        user: dict = Depends(get_current_user),
+    ):
+        """Delete/clear an entire vendor's menu at this site in one action.
+        Master admin or an admin with access to the site. Reads across the Web,
+        Customer and Vendor apps reflect the empty menu immediately (live query)."""
+        if not (is_master_admin(user) or can_access_site(user, site_id)):
+            raise HTTPException(status_code=403, detail="Access denied")
+        removed = (await db.menu_items.delete_many({"vendor_id": vendor_id, "site_id": site_id})).deleted_count
+        return {"removed": removed, "site_id": site_id, "vendor_id": vendor_id}
 
     # Master Admin: Create Site Admin / Super Admin
     @r.post("/admin/site-admins")

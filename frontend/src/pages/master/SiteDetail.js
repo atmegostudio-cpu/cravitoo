@@ -431,6 +431,8 @@ const MenuTab = ({ siteId }) => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
+  const [replaceMode, setReplaceMode] = useState(true);
+  const [clearing, setClearing] = useState(false);
   const [aiPhotoItem, setAiPhotoItem] = useState(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
@@ -600,17 +602,39 @@ const MenuTab = ({ siteId }) => {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const { data } = await axios.post(`${API}/sites/${siteId}/menu/upload-excel?vendor_id=${selectedVendor}`, fd, {
+      const mode = replaceMode ? 'replace' : 'append';
+      const { data } = await axios.post(`${API}/sites/${siteId}/menu/upload-excel?vendor_id=${selectedVendor}&mode=${mode}`, fd, {
         withCredentials: true,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setUploadMsg(`✓ Inserted ${data.inserted} items${data.errors?.length ? ` (${data.errors.length} errors)` : ''}`);
+      const parts = [];
+      if (data.removed) parts.push(`cleared ${data.removed} old`);
+      if (data.inserted) parts.push(`added ${data.inserted}`);
+      if (data.updated) parts.push(`updated ${data.updated}`);
+      setUploadMsg(`✓ Menu ${replaceMode ? 'replaced' : 'merged'} — ${parts.join(', ') || 'no changes'}${data.errors?.length ? ` (${data.errors.length} row error(s))` : ''}`);
       setFile(null);
       await load();
     } catch (e) {
       setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Upload failed'));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const clearMenu = async () => {
+    if (!selectedVendor) { setUploadMsg('Select a vendor first to clear its menu'); return; }
+    const vName = vendors.find((v) => v.id === selectedVendor)?.name || 'this vendor';
+    if (!window.confirm(`Delete ALL menu items for ${vName} at this site? This cannot be undone.`)) return;
+    setClearing(true);
+    setUploadMsg('');
+    try {
+      const { data } = await axios.delete(`${API}/sites/${siteId}/menu?vendor_id=${selectedVendor}`, { withCredentials: true });
+      setUploadMsg(`✓ Cleared ${data.removed} item(s). The menu is now empty across all apps.`);
+      await load();
+    } catch (e) {
+      setUploadMsg('✗ ' + (e?.response?.data?.detail || 'Clear failed'));
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -661,12 +685,36 @@ const MenuTab = ({ siteId }) => {
             <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
           </button>
         </form>
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+            <input
+              data-testid="upload-replace-toggle"
+              type="checkbox"
+              checked={replaceMode}
+              onChange={(e) => setReplaceMode(e.target.checked)}
+            />
+            Replace existing menu (clears old items first — no duplicates)
+          </label>
+          <button
+            type="button"
+            data-testid="clear-menu-btn"
+            onClick={clearMenu}
+            disabled={clearing || !selectedVendor}
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50"
+            title="Delete all menu items for the selected vendor at this site"
+          >
+            <Trash2 className="h-4 w-4" /> {clearing ? 'Clearing…' : 'Clear Menu'}
+          </button>
+        </div>
+        {!replaceMode && (
+          <p className="text-text-muted text-xs mt-2">Merge mode: items with the same name are updated in place, new ones added — still no duplicates.</p>
+        )}
         {uploadMsg && <p className={`mt-3 text-sm ${uploadMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>{uploadMsg}</p>}
       </div>
 
       <div className="bg-card border border-border-light rounded-2xl p-6">
         <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
-          <h3 className="font-heading text-xl font-medium">Menu Items ({items.length})</h3>
+          <h3 className="font-heading text-xl font-medium">Menu Items at this site — all vendors ({items.length})</h3>
           <button
             data-testid="bulk-fill-ai-btn"
             onClick={runBulkFill}
