@@ -1,0 +1,22 @@
+{
+  "summary": "PWA icon/manifest fix verified end-to-end via preview URL. manifest.json is valid and linked from index.html; contains 192+512 'any' icons AND separate 192+512 'maskable' icons; display=standalone, start_url=/, scope=/, theme_color=#FF5A1F, background_color=#ffffff. All 8 icon assets (/icons/icon-192, icon-512, icon-maskable-192, icon-maskable-512, apple-touch-icon 180x180, favicon-32, favicon-16, favicon.ico) return HTTP 200 with correct MIME types and correct pixel dimensions verified in the browser via naturalWidth/Height. Visual inspection confirms orange Cravitoo 'C+fork/spoon' brand mark is square, centered, not stretched/cropped; maskable variants have visible safe-zone padding. index.html <head> contains apple-touch-icon (180x180), favicon.ico, 16/16 + 32/32 png favicons, apple-mobile-web-app-capable=yes, apple-mobile-web-app-title=Cravitoo, theme-color #FF5A1F. NO external customer-assets.emergentagent.com references remain in <head> (externalRefs=[]). In-app header logo loads from self-hosted /logo.png on Landing, Login, and Register pages (naturalWidth=1280, complete=true). Chromium loaded the manifest without icon errors — installable PWA criteria (manifest + 192 + 512 icons present) are satisfied.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "favicon.ico is 64x64 single-size ICO. Not a blocker (browsers scale it and the 16/32 PNG favicons cover small sizes), but a multi-resolution ICO bundling 16/32/48 would be ideal.",
+    "manifest.json could optionally add an 'id' field (e.g. '/') for stricter PWA identity across installs; not required for installability."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PWA manifest + local self-hosted icon set is correct as of iteration 43. If regressions appear, quickly re-verify: (1) curl {BASE}/manifest.json for structure, (2) curl each /icons/* returns 200 with image/png (or image/x-icon for .ico), (3) grep frontend/public/index.html for customer-assets — must be zero matches, (4) LOGO_URL='/logo.png' in Navbar.js, LoginPage.js, RegisterPage.js, LandingPage.js. Cannot literally install to a real phone home screen from this sandbox; verified installability via Chromium asset+manifest checks only.",
+  "rca of the issue": "Previously manifest + index.html referenced a single external customer-assets image at both 192 and 512 with purpose 'any maskable' — the external host occasionally failed for some users (missing logo entirely) and the missing maskable safe zone caused Android home-screen icon to be cropped/stretched. Fix: local /icons/* set generated from official 1000x1000 logo — separate 'any' (~80% coverage) and 'maskable' (~60% coverage w/ safe zone) icons, apple-touch-icon 180x180 for iOS, favicon.ico + 16/32 PNG favicons for desktop browsers. All references switched to same-origin; no external icon dependency remains."
+}

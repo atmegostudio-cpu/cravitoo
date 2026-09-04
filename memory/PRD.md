@@ -3,6 +3,16 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — PWA Home-Screen Icon Fix (COMPLETED ✅)
+
+**Bug**: Add-to-Home-Screen showed a stretched/cropped Cravitoo icon, and some users saw no icon at all.
+**Root causes**: (1) manifest + index.html referenced a single **externally-hosted** image (customer-assets URL) that could fail to load → "no icon"; (2) that one image was declared at both 192 & 512 with `purpose:"any maskable"` and no safe-zone padding → Android cropped/stretched it.
+**Fix**:
+- Generated a proper **self-hosted icon set** from the official 1000×1000 logo → `frontend/public/icons/`: `icon-192/512.png` (purpose `any`, ~80% coverage), `icon-maskable-192/512.png` (purpose `maskable`, ~60% safe-zone padding), `apple-touch-icon.png` (180×180), `favicon-16/32.png`, `favicon.ico`.
+- Rewrote `manifest.json` (separate `any` vs `maskable` entries, correct sizes) and `index.html` head (local favicons + 180×180 apple-touch-icon; removed all external icon URLs).
+- Repointed the in-app header logo (Navbar, Login, Register, Landing) from the fragile external URL to the self-hosted `/logo.png`.
+- **Verified**: testing_agent iteration_43 — 100% frontend, all 8 icons 200 w/ correct dims, manifest installable in Chromium, no external icon refs remain.
+
 ## Jun 2026 — Cafeteria Layer + server.py Router Split (COMPLETED ✅)
 
 ### Cafeteria Layer (P1) — hierarchy Client → City → Site → **Cafeteria** → Vendor

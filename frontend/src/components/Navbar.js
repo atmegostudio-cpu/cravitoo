@@ -6,7 +6,7 @@ import VendorOrderNotifier from './VendorOrderNotifier';
 import NotificationBell from './NotificationBell';
 import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, KeyRound, Trash2, Menu as MenuIcon, X } from 'lucide-react';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_corporate-feast/artifacts/j6kduny0_WhatsApp%20Image%202026-05-27%20at%2011.03.31%20AM%20-%20Edited.png';
+const LOGO_URL = '/logo.png';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
