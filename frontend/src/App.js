@@ -56,6 +56,7 @@ import DataSettings from './pages/legal/DataSettings';
 import ChangePassword from './pages/legal/ChangePassword';
 import ResetApp from './pages/master/ResetApp';
 import CookieConsent from './components/CookieConsent';
+import PWAInstallBanner from './components/PWAInstallBanner';
 
 import VendorMenuRequests from './pages/vendor/MenuRequests';
 import AdminMenuRequests from './pages/master/MenuRequests';
@@ -365,6 +366,7 @@ function App() {
       <BrowserRouter>
         <AppRoutes />
         <CookieConsent />
+        <PWAInstallBanner />
       </BrowserRouter>
     </AuthProvider>
   );

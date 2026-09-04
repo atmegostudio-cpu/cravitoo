@@ -3,6 +3,13 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Navy App Tile + Install Banner (COMPLETED ✅)
+
+- **Navy home-screen icons**: regenerated the app/maskable/apple-touch icons on a branded navy tile (`#051A47`) with the orange Cravitoo "C" mark, so the icon pops on the home screen instead of plain white. Browser-tab favicons kept white for small-size legibility. Maskable variants keep safe-zone padding.
+- **"Add Cravitoo to your home screen" install banner** (`src/components/PWAInstallBanner.js`): mobile-only, iOS shows Share→Add-to-Home-Screen instructions, Android uses native `beforeinstallprompt` one-tap install. Reveals only after cookie-consent is accepted (avoids bottom-bar collision), remembers dismissal, and hides when already installed (standalone).
+- **Temporary by design** (`src/config/pwaBanner.js`): `enabled` master on/off switch + `expiryDate` (YYYY-MM-DD) auto-expiry via `isBannerActive()` — flip off or let it lapse at native-app launch.
+- **Verified**: testing_agent iteration_44 — 100% frontend, navy icons + banner behavior (show/hide/dismiss/config) all pass.
+
 ## Jun 2026 — PWA Home-Screen Icon Fix (COMPLETED ✅)
 
 **Bug**: Add-to-Home-Screen showed a stretched/cropped Cravitoo icon, and some users saw no icon at all.
