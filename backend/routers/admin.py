@@ -7,13 +7,15 @@ via make_router(...) so behaviour is identical to the inline routes it replaces.
 from __future__ import annotations
 
 import os
+import io
 import secrets
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel, EmailStr
+from models import CityAdminCreate
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,16 @@ class _ResendOnboardingBody(BaseModel):
     email: Optional[str] = None   # override / fill-in
 
 
+class _TestEmailBody(BaseModel):
+    to: EmailStr
+
+
 def _generate_magic_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log):
+def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
+                is_master_or_super=None, hash_password=None):
     r = APIRouter()
 
     async def _log_vendor_email(vendor_id: str, email: str, subject: str,
@@ -607,5 +614,292 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log)
             "error": r.get("error"),
             "created_at": r.get("created_at").isoformat() if r.get("created_at") else None,
         } for r in rows]
+
+    @r.post("/admin/email/send-test")
+    async def send_test_email(body: _TestEmailBody, user: dict = Depends(get_current_user)):
+        """Master-Admin-only real send probe via Resend."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can send test emails")
+
+        from email_service import send_email
+        subject = "Cravitoo — Email health check"
+        html = f"""
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: auto; padding: 24px;">
+          <h2 style="color:#DC5A2E;">Cravitoo Email Delivery Confirmed ✓</h2>
+          <p>If you're reading this in your inbox (not spam), the following are working end-to-end:</p>
+          <ul>
+            <li><strong>Resend API key</strong> — accepted</li>
+            <li><strong>Sender domain</strong> — <code>{os.environ.get("RESEND_FROM_EMAIL", "unset")}</code></li>
+            <li><strong>SPF + DKIM</strong> — passed (else this mail would be in spam)</li>
+            <li><strong>Recipient allowlist</strong> — corporate email gateway is not blocking Cravitoo</li>
+          </ul>
+          <p style="color:#666;font-size:13px;margin-top:24px;">
+            Triggered by <strong>{user.get("email")}</strong> at
+            {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.
+          </p>
+        </div>
+        """
+        text_fallback = (
+            "Cravitoo Email Delivery Confirmed. "
+            f"Sender: {os.environ.get('RESEND_FROM_EMAIL')}. "
+            f"Triggered by {user.get('email')}."
+        )
+        ok, err = send_email(body.to, subject, html, text=text_fallback)
+        if not ok:
+            raise HTTPException(status_code=502, detail=f"Resend rejected the send: {err}")
+        from_email = os.environ.get("RESEND_FROM_EMAIL") or ""
+        from_domain = from_email.split("@", 1)[-1] if "@" in from_email else from_email
+        return {
+            "sent": True,
+            "to": body.to,
+            "from": from_email,
+            "message": (
+                f"Sent from {from_email}. Check inbox in ~30 seconds. "
+                f"If it lands in Spam, ask the recipient's IT to allowlist "
+                f"the sender and the domain '{from_domain}'."
+            ),
+        }
+
+    @r.get("/admin/ai-photos/spend")
+    async def ai_photo_spend(user: dict = Depends(get_current_user)):
+        """Master Admin cost tracker for AI-generated menu photos."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+
+        PRICE_PER_IMAGE_INR = 3.5
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_30 = now - timedelta(days=30)
+
+        async def _sum(match: dict):
+            """Return (rows, images) for the given match filter. Excludes free-source rows."""
+            paid_match = {**match, "cost_inr": {"$ne": 0}}
+            pipeline = [
+                {"$match": paid_match},
+                {"$group": {
+                    "_id": None,
+                    "rows": {"$sum": 1},
+                    "images": {
+                        "$sum": {
+                            "$ifNull": [
+                                "$count_generated",
+                                {"$ifNull": ["$filled", 0]},
+                            ]
+                        },
+                    },
+                }},
+            ]
+            agg = await db.ai_image_generations.aggregate(pipeline).to_list(1)
+            if not agg:
+                return 0, 0
+            return int(agg[0].get("rows", 0)), int(agg[0].get("images", 0))
+
+        mtd_rows, mtd_images = await _sum({"created_at": {"$gte": month_start}})
+        l30_rows, l30_images = await _sum({"created_at": {"$gte": last_30}})
+        all_rows, all_images = await _sum({})
+
+        return {
+            "price_per_image_inr": PRICE_PER_IMAGE_INR,
+            "month_to_date": {
+                "rows": mtd_rows,
+                "images": mtd_images,
+                "spend_inr": round(mtd_images * PRICE_PER_IMAGE_INR, 2),
+                "since": month_start.isoformat(),
+            },
+            "last_30_days": {
+                "rows": l30_rows,
+                "images": l30_images,
+                "spend_inr": round(l30_images * PRICE_PER_IMAGE_INR, 2),
+            },
+            "all_time": {
+                "rows": all_rows,
+                "images": all_images,
+                "spend_inr": round(all_images * PRICE_PER_IMAGE_INR, 2),
+            },
+        }
+
+    @r.post("/admin/menu-items/reclassify-veg")
+    async def menu_items_reclassify_veg(
+        vendor_id: Optional[str] = None,
+        site_id: Optional[str] = None,
+        overwrite: bool = False,
+        user: dict = Depends(get_current_user),
+    ):
+        """Re-run the veg / non-veg classifier over live menu_items rows. Master admin only."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        from veg_classifier import classify_veg
+        q: dict = {}
+        if vendor_id:
+            q["vendor_id"] = vendor_id
+        if site_id:
+            q["site_id"] = site_id
+        changed = 0
+        total = 0
+        async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "is_vegetarian": 1}):
+            total += 1
+            current = row.get("is_vegetarian")
+            if not overwrite and current is not None:
+                continue
+            predicted = classify_veg(row.get("name", ""), row.get("description", ""))
+            if bool(current) != predicted:
+                await db.menu_items.update_one(
+                    {"_id": row["_id"]},
+                    {"$set": {"is_vegetarian": predicted}},
+                )
+                changed += 1
+        await audit_log(user, "menu_items", "bulk", "reclassified_veg",
+                        {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
+        return {"changed": changed, "total": total, "scope": q, "overwrite": overwrite}
+
+    @r.post("/admin/menu-items/reclassify-allergens")
+    async def menu_items_reclassify_allergens(
+        vendor_id: Optional[str] = None,
+        site_id: Optional[str] = None,
+        overwrite: bool = False,
+        user: dict = Depends(get_current_user),
+    ):
+        """Re-run the allergen classifier over live menu_items rows. Master admin only."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        from allergen_classifier import classify_allergens
+        q: dict = {}
+        if vendor_id:
+            q["vendor_id"] = vendor_id
+        if site_id:
+            q["site_id"] = site_id
+        changed = 0
+        total = 0
+        async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "allergens": 1}):
+            total += 1
+            current = row.get("allergens") or []
+            if not overwrite and isinstance(current, list) and len(current) > 0:
+                continue
+            predicted = classify_allergens(row.get("name", ""), row.get("description", ""))
+            if list(current) != predicted:
+                await db.menu_items.update_one(
+                    {"_id": row["_id"]},
+                    {"$set": {"allergens": predicted}},
+                )
+                changed += 1
+        await audit_log(user, "menu_items", "bulk", "reclassified_allergens",
+                        {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
+        return {"changed": changed, "total": total, "scope": q}
+
+    @r.post("/admin/users/{user_id}/deactivate")
+    async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
+        """Immediately end the target user's session and prevent future logins. Master/Super Admin only."""
+        if not is_master_or_super(admin):
+            raise HTTPException(status_code=403, detail="Only master/super admin")
+        if user_id == admin["id"]:
+            raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+        target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if target.get("role") == "master_admin":
+            raise HTTPException(status_code=400, detail="Cannot deactivate a master admin")
+        await db.users.update_one(
+            {"_id": target["_id"]},
+            {"$set": {"is_active": False, "deactivated_at": datetime.now(timezone.utc), "deactivated_by": admin["id"]}},
+        )
+        await audit_log(admin, "user", user_id, "deactivated",
+                        {"email": target.get("email"), "role": target.get("role")})
+        return {"ok": True, "user_id": user_id, "is_active": False}
+
+    @r.post("/admin/users/{user_id}/reactivate")
+    async def reactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
+        """Re-enable a previously deactivated user. Master/Super Admin only."""
+        if not is_master_or_super(admin):
+            raise HTTPException(status_code=403, detail="Only master/super admin")
+        target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        await db.users.update_one(
+            {"_id": target["_id"]},
+            {"$set": {"is_active": True}, "$unset": {"deactivated_at": "", "deactivated_by": ""}},
+        )
+        await audit_log(admin, "user", user_id, "reactivated", {"email": target.get("email")})
+        return {"ok": True, "user_id": user_id, "is_active": True}
+
+    @r.post("/admin/city-admins")
+    async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        email_lower = data.email.lower()
+        if await db.users.find_one({"email": email_lower}):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        city = await db.cities.find_one({"_id": safe_objectid(data.city_id, "City")})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+        res = await db.users.insert_one({
+            "email": email_lower,
+            "password_hash": hash_password(data.password),
+            "name": data.name,
+            "role": "city_admin",
+            "city_id": data.city_id,
+            "created_at": datetime.now(timezone.utc),
+            "failed_attempts": 0,
+        })
+        user_id = str(res.inserted_id)
+        await audit_log(user, "user", user_id, "created_city_admin", {"city_id": data.city_id, "email": email_lower})
+        # Best-effort invitation email — never roll back the creation if email fails
+        try:
+            import email_service as _email_service
+            inv_html, inv_text = _email_service.render_invitation_email(name=data.name, email=email_lower, role="city_admin")
+            _email_service.send_email(email_lower, "Welcome to Cravitoo — your account is ready", inv_html, inv_text)
+        except Exception as e:
+            logger.warning(f"City admin invite email failed for {email_lower}: {e}")
+        return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id, "invite_sent": True}
+
+    @r.post("/admin/employees/bulk-csv")
+    async def bulk_employee_csv(
+        file: UploadFile = File(...),
+        company_id: Optional[str] = None,
+        user: dict = Depends(get_current_user),
+    ):
+        """Corporate admin or master uploads CSV with columns: email,name,password,phone (optional)."""
+        if user["role"] not in ("corporate_admin", "master_admin"):
+            raise HTTPException(status_code=403, detail="Only corporate or master admin")
+        if not (file.filename or "").lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="File must be a .csv")
+        content = (await file.read()).decode("utf-8", errors="ignore")
+        if len(content) > 1 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="CSV must be under 1 MB")
+
+        cid = company_id or user.get("company_id")
+        if not cid:
+            raise HTTPException(status_code=400, detail="company_id required")
+
+        import csv
+        reader = csv.DictReader(io.StringIO(content))
+        inserted, errors = 0, []
+        for idx, row in enumerate(reader, start=2):
+            email = (row.get("email") or "").strip().lower()
+            name = (row.get("name") or "").strip()
+            pwd = (row.get("password") or "").strip()
+            if not email or not name or len(pwd) < 6:
+                errors.append({"row": idx, "error": "missing email/name or password<6"})
+                continue
+            if await db.users.find_one({"email": email}):
+                errors.append({"row": idx, "error": f"email {email} exists"})
+                continue
+            try:
+                await db.users.insert_one({
+                    "email": email,
+                    "name": name,
+                    "password_hash": hash_password(pwd),
+                    "role": "employee",
+                    "company_id": cid,
+                    "site_id": (row.get("site_id") or "").strip() or None,
+                    "phone": (row.get("phone") or "").strip() or None,
+                    "preferences": {"vegetarian": False, "vegan": False, "gluten_free": False, "dairy_free": False, "nut_free": False, "spicy_preference": "medium", "allergies": [], "preferred_cuisines": []},
+                    "created_at": datetime.now(timezone.utc),
+                    "failed_attempts": 0,
+                })
+                inserted += 1
+            except Exception as e:
+                errors.append({"row": idx, "error": str(e)})
+
+        return {"inserted": inserted, "errors": errors, "total_attempted": inserted + len(errors)}
 
     return r

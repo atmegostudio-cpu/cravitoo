@@ -10,7 +10,7 @@ import re
 import uuid
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
@@ -237,64 +237,7 @@ def is_master_or_super(user: dict) -> bool:
     return user.get("role") in ("master_admin", "super_admin")
 
 
-# ─── Email deliverability probe (Master-Admin real send) ──────────────
-class _TestEmailBody(BaseModel):
-    to: EmailStr
-
-
-@api_router.post("/admin/email/send-test")
-async def send_test_email(body: _TestEmailBody, user: dict = Depends(get_current_user)):
-    """Master-Admin-only real send probe.
-
-    Sends a small "Cravitoo email health check" message via Resend and
-    surfaces the provider's error verbatim. Purpose: prove end-to-end
-    that the ``RESEND_API_KEY``, verified domain, DKIM/SPF DNS records
-    and the recipient's mailbox allowlist all cooperate BEFORE
-    onboarding a new corporate client. Role-guarded — do not open to
-    non-admins (would allow authenticated spam through our verified
-    sender).
-    """
-    if not is_master_admin(user):
-        raise HTTPException(status_code=403, detail="Only master admin can send test emails")
-
-    from email_service import send_email
-    subject = "Cravitoo — Email health check"
-    html = f"""
-    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: auto; padding: 24px;">
-      <h2 style="color:#DC5A2E;">Cravitoo Email Delivery Confirmed ✓</h2>
-      <p>If you're reading this in your inbox (not spam), the following are working end-to-end:</p>
-      <ul>
-        <li><strong>Resend API key</strong> — accepted</li>
-        <li><strong>Sender domain</strong> — <code>{os.environ.get("RESEND_FROM_EMAIL", "unset")}</code></li>
-        <li><strong>SPF + DKIM</strong> — passed (else this mail would be in spam)</li>
-        <li><strong>Recipient allowlist</strong> — corporate email gateway is not blocking Cravitoo</li>
-      </ul>
-      <p style="color:#666;font-size:13px;margin-top:24px;">
-        Triggered by <strong>{user.get("email")}</strong> at
-        {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.
-      </p>
-    </div>
-    """
-    text_fallback = (
-        "Cravitoo Email Delivery Confirmed. "
-        f"Sender: {os.environ.get('RESEND_FROM_EMAIL')}. "
-        f"Triggered by {user.get('email')}."
-    )
-    ok, err = send_email(body.to, subject, html, text=text_fallback)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Resend rejected the send: {err}")
-    from_email = os.environ.get("RESEND_FROM_EMAIL") or ""
-    from_domain = from_email.split("@", 1)[-1] if "@" in from_email else from_email
-    return {
-        "sent": True,
-        "to": body.to,
-        "from": from_email,
-        "message": (
-            f"Sent from {from_email}. Check inbox in ~30 seconds. "
-            f"If it lands in Spam, ask the recipient's IT to allowlist "
-            f"the sender and the domain '{from_domain}'."
-        ),
-    }
+# /admin/email/send-test extracted to routers/admin.py
 
 def can_access_site(user: dict, site_id: str) -> bool:
     role = user.get("role")
@@ -820,203 +763,7 @@ async def get_companies(user: dict = Depends(get_current_user)):
     return companies
 
 # Vendor Routes
-@api_router.get("/admin/ai-photos/spend")
-async def ai_photo_spend(user: dict = Depends(get_current_user)):
-    """Master Admin cost tracker for AI-generated menu photos.
-
-    Aggregates rows in `ai_image_generations` and multiplies by the
-    per-image price (~₹3.5 = OpenAI gpt-image-1 low-quality × ₹85/USD).
-    """
-    if not is_master_admin(user):
-        raise HTTPException(status_code=403, detail="Only master admin")
-
-    PRICE_PER_IMAGE_INR = 3.5
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    last_30 = now - timedelta(days=30)
-
-    async def _sum(match: dict) -> tuple[int, int]:
-        """Return (rows, images) for the given match filter.
-
-        Excludes free-source rows (cost_inr = 0) so the ₹ counter reflects
-        only actual paid gpt-image-1 spend, not the free Unsplash /
-        Pollinations path.
-        """
-        paid_match = {**match, "cost_inr": {"$ne": 0}}
-        pipeline = [
-            {"$match": paid_match},
-            {"$group": {
-                "_id": None,
-                "rows": {"$sum": 1},
-                "images": {
-                    "$sum": {
-                        "$ifNull": [
-                            "$count_generated",   # /suggest path stores this
-                            {"$ifNull": ["$filled", 0]},  # /bulk-fill path stores 'filled'
-                        ]
-                    },
-                },
-            }},
-        ]
-        agg = await db.ai_image_generations.aggregate(pipeline).to_list(1)
-        if not agg:
-            return 0, 0
-        return int(agg[0].get("rows", 0)), int(agg[0].get("images", 0))
-
-    mtd_rows, mtd_images = await _sum({"created_at": {"$gte": month_start}})
-    l30_rows, l30_images = await _sum({"created_at": {"$gte": last_30}})
-    all_rows, all_images = await _sum({})
-
-    return {
-        "price_per_image_inr": PRICE_PER_IMAGE_INR,
-        "month_to_date": {
-            "rows": mtd_rows,
-            "images": mtd_images,
-            "spend_inr": round(mtd_images * PRICE_PER_IMAGE_INR, 2),
-            "since": month_start.isoformat(),
-        },
-        "last_30_days": {
-            "rows": l30_rows,
-            "images": l30_images,
-            "spend_inr": round(l30_images * PRICE_PER_IMAGE_INR, 2),
-        },
-        "all_time": {
-            "rows": all_rows,
-            "images": all_images,
-            "spend_inr": round(all_images * PRICE_PER_IMAGE_INR, 2),
-        },
-    }
-
-
-@api_router.post("/admin/menu-items/reclassify-veg")
-async def menu_items_reclassify_veg(
-    vendor_id: str | None = None,
-    site_id: str | None = None,
-    overwrite: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    """Re-run the veg / non-veg classifier over live menu_items rows.
-
-    Master admin only. Scope filters:
-      - ``vendor_id`` — restrict to one vendor's menu
-      - ``site_id`` — restrict to one site's menu
-      - ``overwrite`` — default False. When False, only items whose
-        ``is_vegetarian`` field is missing get updated. When True, EVERY
-        item is reclassified — use this to fix bad legacy data, but
-        note it will overwrite any manual vendor overrides that happen
-        to disagree with the classifier.
-
-    Omit both scope filters to reclassify EVERY menu item.
-    """
-    if not is_master_admin(user):
-        raise HTTPException(status_code=403, detail="Only master admin")
-    from veg_classifier import classify_veg
-    q: dict = {}
-    if vendor_id:
-        q["vendor_id"] = vendor_id
-    if site_id:
-        q["site_id"] = site_id
-    changed = 0
-    total = 0
-    async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "is_vegetarian": 1}):
-        total += 1
-        current = row.get("is_vegetarian")
-        if not overwrite and current is not None:
-            continue
-        predicted = classify_veg(row.get("name", ""), row.get("description", ""))
-        if bool(current) != predicted:
-            await db.menu_items.update_one(
-                {"_id": row["_id"]},
-                {"$set": {"is_vegetarian": predicted}},
-            )
-            changed += 1
-    await audit_log(user, "menu_items", "bulk", "reclassified_veg",
-                    {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
-    return {"changed": changed, "total": total, "scope": q, "overwrite": overwrite}
-
-
-@api_router.post("/admin/menu-items/reclassify-allergens")
-async def menu_items_reclassify_allergens(
-    vendor_id: str | None = None,
-    site_id: str | None = None,
-    overwrite: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    """Re-run the allergen classifier over live menu_items rows.
-
-    Master admin only. Scope filters mirror reclassify-veg.
-
-      - `overwrite=false` (default): only fill items that currently have
-        no `allergens` field or an empty list — respects vendor overrides.
-      - `overwrite=true`: force-refresh every row.
-    """
-    if not is_master_admin(user):
-        raise HTTPException(status_code=403, detail="Only master admin")
-    from allergen_classifier import classify_allergens
-    q: dict = {}
-    if vendor_id:
-        q["vendor_id"] = vendor_id
-    if site_id:
-        q["site_id"] = site_id
-    changed = 0
-    total = 0
-    async for row in db.menu_items.find(q, {"_id": 1, "name": 1, "description": 1, "allergens": 1}):
-        total += 1
-        current = row.get("allergens") or []
-        if not overwrite and isinstance(current, list) and len(current) > 0:
-            continue
-        predicted = classify_allergens(row.get("name", ""), row.get("description", ""))
-        if list(current) != predicted:
-            await db.menu_items.update_one(
-                {"_id": row["_id"]},
-                {"$set": {"allergens": predicted}},
-            )
-            changed += 1
-    await audit_log(user, "menu_items", "bulk", "reclassified_allergens",
-                    {"scope": q, "changed": changed, "total": total, "overwrite": overwrite})
-    return {"changed": changed, "total": total, "scope": q}
-
-
-@api_router.post("/admin/users/{user_id}/deactivate")
-async def deactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
-    """Immediately end the target user's session and prevent future logins.
-
-    Master/Super Admin only. Sets `is_active=False`; every future
-    /auth/refresh and every authenticated call from that user starts
-    returning 403. To re-enable, hit /reactivate.
-    """
-    if not is_master_or_super(admin):
-        raise HTTPException(status_code=403, detail="Only master/super admin")
-    if user_id == admin["id"]:
-        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
-    target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-    if target.get("role") == "master_admin":
-        raise HTTPException(status_code=400, detail="Cannot deactivate a master admin")
-    await db.users.update_one(
-        {"_id": target["_id"]},
-        {"$set": {"is_active": False, "deactivated_at": datetime.now(timezone.utc), "deactivated_by": admin["id"]}},
-    )
-    await audit_log(admin, "user", user_id, "deactivated",
-                    {"email": target.get("email"), "role": target.get("role")})
-    return {"ok": True, "user_id": user_id, "is_active": False}
-
-
-@api_router.post("/admin/users/{user_id}/reactivate")
-async def reactivate_user(user_id: str, admin: dict = Depends(get_current_user)):
-    """Re-enable a previously deactivated user. Master/Super Admin only."""
-    if not is_master_or_super(admin):
-        raise HTTPException(status_code=403, detail="Only master/super admin")
-    target = await db.users.find_one({"_id": safe_objectid(user_id, "User")})
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-    await db.users.update_one(
-        {"_id": target["_id"]},
-        {"$set": {"is_active": True}, "$unset": {"deactivated_at": "", "deactivated_by": ""}},
-    )
-    await audit_log(admin, "user", user_id, "reactivated", {"email": target.get("email")})
-    return {"ok": True, "user_id": user_id, "is_active": True}
+# /admin ai-photos-spend + reclassify + users deactivate/reactivate extracted to routers/admin.py
 
 
 @api_router.post("/vendors")
@@ -3219,35 +2966,7 @@ async def delete_city(city_id: str, user: dict = Depends(get_current_user)):
     await audit_log(user, "city", city_id, "deleted", {"name": city.get("name")})
     return {"message": "City deleted"}
 
-@api_router.post("/admin/city-admins")
-async def create_city_admin(data: CityAdminCreate, user: dict = Depends(get_current_user)):
-    if not is_master_admin(user):
-        raise HTTPException(status_code=403, detail="Only master admin")
-    email_lower = data.email.lower()
-    if await db.users.find_one({"email": email_lower}):
-        raise HTTPException(status_code=400, detail="Email already registered")
-    city = await db.cities.find_one({"_id": safe_objectid(data.city_id, "City")})
-    if not city:
-        raise HTTPException(status_code=404, detail="City not found")
-    res = await db.users.insert_one({
-        "email": email_lower,
-        "password_hash": hash_password(data.password),
-        "name": data.name,
-        "role": "city_admin",
-        "city_id": data.city_id,
-        "created_at": datetime.now(timezone.utc),
-        "failed_attempts": 0,
-    })
-    user_id = str(res.inserted_id)
-    await audit_log(user, "user", user_id, "created_city_admin", {"city_id": data.city_id, "email": email_lower})
-    # Best-effort invitation email — never roll back the creation if email fails
-    try:
-        import email_service as _email_service
-        inv_html, inv_text = _email_service.render_invitation_email(name=data.name, email=email_lower, role="city_admin")
-        _email_service.send_email(email_lower, "Welcome to Cravitoo — your account is ready", inv_html, inv_text)
-    except Exception as e:
-        logger.warning(f"City admin invite email failed for {email_lower}: {e}")
-    return {"id": user_id, "email": email_lower, "role": "city_admin", "city_id": data.city_id, "invite_sent": True}
+# /admin/city-admins extracted to routers/admin.py
 
 
 # ============== VENDOR ONBOARDING ==============
@@ -3388,58 +3107,7 @@ async def master_charts(days: int = 14, user: dict = Depends(get_current_user)):
     return {"days": days, "daily_revenue": daily_revenue, "top_dishes": top_dishes}
 
 
-# ============== BULK EMPLOYEE CSV UPLOAD ==============
-
-@api_router.post("/admin/employees/bulk-csv")
-async def bulk_employee_csv(
-    file: UploadFile = File(...),
-    company_id: Optional[str] = None,
-    user: dict = Depends(get_current_user),
-):
-    """Corporate admin or master uploads CSV with columns: email,name,password,phone (optional)."""
-    if user["role"] not in ("corporate_admin", "master_admin"):
-        raise HTTPException(status_code=403, detail="Only corporate or master admin")
-    if not (file.filename or "").lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="File must be a .csv")
-    content = (await file.read()).decode("utf-8", errors="ignore")
-    if len(content) > 1 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="CSV must be under 1 MB")
-
-    cid = company_id or user.get("company_id")
-    if not cid:
-        raise HTTPException(status_code=400, detail="company_id required")
-
-    import csv
-    reader = csv.DictReader(io.StringIO(content))
-    inserted, errors = 0, []
-    for idx, row in enumerate(reader, start=2):
-        email = (row.get("email") or "").strip().lower()
-        name = (row.get("name") or "").strip()
-        pwd = (row.get("password") or "").strip()
-        if not email or not name or len(pwd) < 6:
-            errors.append({"row": idx, "error": "missing email/name or password<6"})
-            continue
-        if await db.users.find_one({"email": email}):
-            errors.append({"row": idx, "error": f"email {email} exists"})
-            continue
-        try:
-            await db.users.insert_one({
-                "email": email,
-                "name": name,
-                "password_hash": hash_password(pwd),
-                "role": "employee",
-                "company_id": cid,
-                "site_id": (row.get("site_id") or "").strip() or None,
-                "phone": (row.get("phone") or "").strip() or None,
-                "preferences": {"vegetarian": False, "vegan": False, "gluten_free": False, "dairy_free": False, "nut_free": False, "spicy_preference": "medium", "allergies": [], "preferred_cuisines": []},
-                "created_at": datetime.now(timezone.utc),
-                "failed_attempts": 0,
-            })
-            inserted += 1
-        except Exception as e:
-            errors.append({"row": idx, "error": str(e)})
-
-    return {"inserted": inserted, "errors": errors, "total_attempted": inserted + len(errors)}
+# /admin/employees/bulk-csv extracted to routers/admin.py
 
 
 # Sites, vendor-site mapping, meal schedules, site menu, admin CRUD, master/site reports, employee/my-site
@@ -3551,6 +3219,7 @@ app.include_router(make_orders_router(
 ), prefix="/api")
 app.include_router(make_admin_router(
     db, safe_objectid, get_current_user, is_master_admin, audit_log,
+    is_master_or_super, hash_password,
 ), prefix="/api")
 
 

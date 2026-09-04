@@ -14,9 +14,9 @@ Build a production-ready, scalable, enterprise-grade full-stack food-tech applic
 ### server.py Router Split (P2) — order/payment/admin routes extracted
 - **`routers/orders.py`** — all order lifecycle + Razorpay payment-first flow (checkout-intent/verify/webhook, mark-paid, collect, reconciliation, bulk, cancel, refund, orders/last, get_orders, update-status, verify-pickup). The `_materialize_order` + `_finalize_payment_intent` atomic idempotency guard was moved verbatim (race test still passes → exactly ONE order under /verify-vs-webhook concurrency).
 - **`routers/admin.py`** — master-admin vendor management (commission, profile update w/ mapping cascade), integrity repair tools (backfill-orders/sites/employee-sites, employee-menu-report, employee-visibility, sanitize), and vendor onboarding resend + email-log.
-- **server.py: 5252 → 3566 lines (−32%).** No behavioral change; injected shared deps via the existing `make_router(...)` factory pattern.
-- A few small admin utilities remain inline in server.py (email/send-test, ai-photos/spend, reclassify-veg/allergens, users deactivate/reactivate, city-admins, employees/bulk-csv) — they are interwoven with other domain code; deferred as a low-priority follow-up.
-- **Verified**: testing_agent iteration_42 — 24/24 backend, 100% frontend, zero issues; `scripts/test_duplicate_order_race.py` still ALL PASS.
+- **server.py: 5252 → 3235 lines (−38%).** No behavioral change; injected shared deps via the existing `make_router(...)` factory pattern.
+- **Admin split now COMPLETE** — the remaining inline admin utilities (email/send-test, ai-photos/spend, reclassify-veg/allergens, users deactivate/reactivate, city-admins, employees/bulk-csv) were also moved into `routers/admin.py`. No `/api/admin/*` route remains inline in server.py.
+- **Verified**: testing_agent iteration_42 — 24/24 backend, 100% frontend, zero issues; the second admin batch self-tested via curl (create/deactivate/reactivate/bulk-csv/reclassify all OK); `scripts/test_duplicate_order_race.py` still ALL PASS.
 
 ## Jun 2026 — Duplicate Order + Order-Time Fix (COMPLETED ✅)
 - **Duplicate orders (P0)**: Razorpay `/verify` and the async webhook could both call `_finalize_payment_intent` concurrently and each insert an order. Fixed with an atomic `find_one_and_update` on `{cravitoo_order_id: None}` that flips the field to a `__materialising__` sentinel — only one caller wins. The losing caller now polls (~2s) until the real `order_id` appears and returns the SAME order, so `/verify` never falsely 500s when the webhook wins.
