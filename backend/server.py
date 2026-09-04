@@ -1694,6 +1694,14 @@ async def get_orders(user: dict = Depends(get_current_user)):
         order["id"] = str(order.pop("_id"))
         if not order.get("employee_name"):
             order["employee_name"] = name_map.get(order.get("user_id")) or "Walk-in / Kiosk"
+        # Normalise created_at to a UTC-aware ISO string ('+00:00') so the client
+        # always converts to the correct local time (naive datetimes were being
+        # read as local, showing the wrong order time).
+        ca = order.get("created_at")
+        if isinstance(ca, datetime):
+            if ca.tzinfo is None:
+                ca = ca.replace(tzinfo=timezone.utc)
+            order["created_at"] = ca.astimezone(timezone.utc).isoformat()
     return orders
 
 @api_router.patch("/orders/{order_id}")
@@ -2870,16 +2878,29 @@ async def _finalize_payment_intent(*, intent: dict, razorpay_payment_id: str, so
     Returns the Cravitoo order document (from a fresh find) or None if
     the intent was already materialised.
     """
-    # Atomic claim: only ONE caller succeeds in going from cravitoo_order_id=None → some string.
+    # Atomic claim: only ONE caller succeeds. We flip cravitoo_order_id from
+    # None → a sentinel INSIDE the same atomic update, so a second concurrent
+    # caller (e.g. /verify racing the webhook) no longer matches the filter and
+    # cannot materialise a duplicate order.
     claim = await db.payment_intents.find_one_and_update(
         {"_id": intent["_id"], "cravitoo_order_id": None},
-        {"$set": {"status": "materialising", "materialising_by": source, "materialising_at": datetime.now(timezone.utc)}},
+        {"$set": {"status": "materialising", "cravitoo_order_id": "__materialising__",
+                  "materialising_by": source, "materialising_at": datetime.now(timezone.utc)}},
     )
     if claim is None:
-        # Already materialised by another caller — return existing order.
-        cur = await db.payment_intents.find_one({"_id": intent["_id"]})
-        if cur and cur.get("cravitoo_order_id"):
-            return await db.orders.find_one({"_id": safe_objectid(cur["cravitoo_order_id"], "Order")})
+        # Already claimed/materialised by another caller. The winner may still
+        # be inside _materialize_order (cravitoo_order_id == sentinel). Poll
+        # briefly so this (losing) caller returns the SAME finished order instead
+        # of a false "could not finalise" error.
+        for _ in range(20):  # up to ~2s
+            cur = await db.payment_intents.find_one({"_id": intent["_id"]})
+            oid = cur.get("cravitoo_order_id") if cur else None
+            if oid and oid != "__materialising__":
+                return await db.orders.find_one({"_id": safe_objectid(oid, "Order")})
+            if oid is None:
+                # Winner released the claim (e.g. user missing) — nothing to return.
+                return None
+            await asyncio.sleep(0.1)
         return None
 
     # We hold the claim — materialise now.

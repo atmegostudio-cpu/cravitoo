@@ -3,6 +3,12 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Duplicate Order + Order-Time Fix (COMPLETED ✅)
+- **Duplicate orders (P0)**: Razorpay `/verify` and the async webhook could both call `_finalize_payment_intent` concurrently and each insert an order. Fixed with an atomic `find_one_and_update` on `{cravitoo_order_id: None}` that flips the field to a `__materialising__` sentinel — only one caller wins. The losing caller now polls (~2s) until the real `order_id` appears and returns the SAME order, so `/verify` never falsely 500s when the webhook wins.
+- **Inaccurate order time (P0)**: `created_at` was returned as a naive datetime, so browsers read it as local time. `GET /api/orders` now coerces `created_at` to UTC-aware and serialises with `+00:00` so the client converts to correct local time.
+- **Verified**: `/app/backend/scripts/test_duplicate_order_race.py` (deterministic race → exactly 1 order, run 5×), `testing_agent` iteration_41 (100% backend + frontend). Regression test at `/app/backend/tests/test_timefix_orders.py`. Seed: `/app/backend/scripts/seed_timefix_orders.py`.
+
+
 ## Feb 2026 — OFFLINE Payment Mode (COMPLETED)
 
 - **Toggle**: `PAYMENT_MODE=OFFLINE` in `backend/.env` bypasses Razorpay checkout. Setting `PAYMENT_MODE=RAZORPAY` re-enables the live gateway. `GET /api/config/payment-mode` is the read endpoint the frontend polls.
