@@ -12,7 +12,19 @@ from bson import ObjectId
 
 sys.path.insert(0, "/app/backend")
 import server  # noqa: E402
-from server import db, _finalize_payment_intent  # noqa: E402
+from server import (  # noqa: E402
+    db, safe_objectid, get_current_user, create_notification, manager,
+    generate_pickup_qr, verify_pickup_qr,
+)
+from routers.orders import make_router as _make_orders_router  # noqa: E402
+
+# Rebuild the orders router with the real server deps so we can exercise the
+# internal idempotency helper exactly as production does.
+_orders_router = _make_orders_router(
+    db, safe_objectid, get_current_user, create_notification, manager,
+    generate_pickup_qr, verify_pickup_qr,
+)
+_finalize_payment_intent = _orders_router._finalize_payment_intent
 
 TAG = "RACE_TEST__"
 

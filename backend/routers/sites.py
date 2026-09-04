@@ -411,13 +411,22 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         existing = await db.vendor_site_mappings.find_one({"vendor_id": data.vendor_id, "site_id": site_id})
         if existing:
             raise HTTPException(status_code=400, detail="Vendor already mapped to this site")
+        from routers.cafeterias import _default_cafeteria_id
+        cafeteria_id = data.cafeteria_id
+        if cafeteria_id:
+            caf = await db.cafeterias.find_one({"_id": safe_objectid(cafeteria_id, "Cafeteria")})
+            if not caf or caf["site_id"] != site_id:
+                raise HTTPException(status_code=404, detail="Cafeteria not found at this site")
+        else:
+            cafeteria_id = await _default_cafeteria_id(db, site_id)
         await db.vendor_site_mappings.insert_one({
             "vendor_id": data.vendor_id,
             "site_id": site_id,
+            "cafeteria_id": cafeteria_id,
             "status": "active",
             "created_at": datetime.now(timezone.utc),
         })
-        return {"message": "Vendor mapped to site"}
+        return {"message": "Vendor mapped to site", "cafeteria_id": cafeteria_id}
 
     @r.get("/sites/{site_id}/vendors")
     async def list_site_vendors(site_id: str, user: dict = Depends(get_current_user)):
@@ -429,11 +438,20 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         vendor_ids = [safe_objectid(m["vendor_id"], "Vendor") for m in mappings]
         if not vendor_ids:
             return []
+        # Build vendor_id -> cafeteria_id lookup and fetch cafeteria names.
+        caf_by_vendor = {m["vendor_id"]: m.get("cafeteria_id") for m in mappings}
+        caf_names = {}
+        cafs = await db.cafeterias.find({"site_id": site_id}).to_list(500)
+        for c in cafs:
+            caf_names[str(c["_id"])] = c.get("name")
         vendors = await db.vendors.find({"_id": {"$in": vendor_ids}, "status": "active"}).to_list(500)
         out_list = []
         for v in vendors:
             doc = {**v}
             doc["id"] = str(doc.pop("_id"))
+            cid = caf_by_vendor.get(doc["id"])
+            doc["cafeteria_id"] = cid
+            doc["cafeteria_name"] = caf_names.get(cid) if cid else None
             out_list.append(doc)
         return out_list
 
@@ -470,11 +488,18 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             raise HTTPException(status_code=400, detail="New vendor is already mapped to this site")
 
         now = datetime.now(timezone.utc)
+        # Preserve the old vendor's cafeteria assignment for the replacement.
+        old_map = await db.vendor_site_mappings.find_one({"vendor_id": old_vendor_id, "site_id": site_id})
+        cafeteria_id = (old_map or {}).get("cafeteria_id")
+        if not cafeteria_id:
+            from routers.cafeterias import _default_cafeteria_id
+            cafeteria_id = await _default_cafeteria_id(db, site_id)
         # Atomic-ish: remove old, insert new
         await db.vendor_site_mappings.delete_one({"vendor_id": old_vendor_id, "site_id": site_id})
         await db.vendor_site_mappings.insert_one({
             "vendor_id": new_vendor_id,
             "site_id": site_id,
+            "cafeteria_id": cafeteria_id,
             "status": "active",
             "created_at": now,
             "swapped_from": old_vendor_id,

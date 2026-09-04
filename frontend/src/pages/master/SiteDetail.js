@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
-import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2, Clock } from 'lucide-react';
+import { Building2, Store, Calendar, UtensilsCrossed, Settings, Plus, Trash2, Upload, ToggleLeft, ToggleRight, FileSpreadsheet, Sparkles, X, Check, Loader2, Clock, Coffee, Pencil } from 'lucide-react';
 import logger from '../../lib/logger';
 import ImageCropperModal from '../../components/ImageCropperModal';
 
@@ -55,6 +55,7 @@ const SiteDetail = () => {
 
   const tabs = [
     { key: 'vendors', label: 'Vendors', icon: Store },
+    { key: 'cafeterias', label: 'Cafeterias', icon: Coffee },
     { key: 'menu', label: 'Menu', icon: UtensilsCrossed },
     { key: 'schedule', label: 'Schedule', icon: Calendar },
     { key: 'settings', label: 'Settings', icon: Settings },
@@ -104,6 +105,7 @@ const SiteDetail = () => {
           </div>
 
           {tab === 'vendors' && <VendorsTab siteId={siteId} />}
+          {tab === 'cafeterias' && <CafeteriasTab siteId={siteId} />}
           {tab === 'menu' && <MenuTab siteId={siteId} />}
           {tab === 'schedule' && <ScheduleTab siteId={siteId} />}
           {tab === 'settings' && (
@@ -121,29 +123,37 @@ const SiteDetail = () => {
 const VendorsTab = ({ siteId }) => {
   const [mapped, setMapped] = useState([]);
   const [allVendors, setAllVendors] = useState([]);
+  const [cafeterias, setCafeterias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [swapping, setSwapping] = useState(null); // vendor being swapped
+  const [addCafeteria, setAddCafeteria] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, all] = await Promise.all([
+      const [m, all, cafs] = await Promise.all([
         axios.get(`${API}/sites/${siteId}/vendors`, { withCredentials: true }),
         axios.get(`${API}/vendors`, { withCredentials: true }),
+        axios.get(`${API}/sites/${siteId}/cafeterias`, { withCredentials: true }),
       ]);
       setMapped(m.data);
       setAllVendors(all.data);
+      setCafeterias(cafs.data);
+      if (!addCafeteria && cafs.data.length) {
+        const def = cafs.data.find((c) => c.is_default) || cafs.data[0];
+        setAddCafeteria(def.id);
+      }
     } catch (e) { logger.error(e); }
     finally { setLoading(false); }
-  }, [siteId]);
+  }, [siteId, addCafeteria]);
 
   useEffect(() => { load(); }, [load]);
 
   const addVendor = async (vendorId) => {
     setAdding(true);
     try {
-      await axios.post(`${API}/sites/${siteId}/vendors`, { vendor_id: vendorId, site_id: siteId }, { withCredentials: true });
+      await axios.post(`${API}/sites/${siteId}/vendors`, { vendor_id: vendorId, site_id: siteId, cafeteria_id: addCafeteria || null }, { withCredentials: true });
       await load();
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
     finally { setAdding(false); }
@@ -155,6 +165,13 @@ const VendorsTab = ({ siteId }) => {
       await axios.delete(`${API}/sites/${siteId}/vendors/${vendorId}`, { withCredentials: true });
       await load();
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const moveVendor = async (vendorId, cafeteriaId) => {
+    try {
+      await axios.patch(`${API}/sites/${siteId}/vendors/${vendorId}/cafeteria`, { cafeteria_id: cafeteriaId }, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Move failed'); }
   };
 
   const swapVendor = async (oldVendorId, newVendorId) => {
@@ -182,6 +199,9 @@ const VendorsTab = ({ siteId }) => {
                 <div>
                   <p className="font-medium text-text-primary text-sm">{v.name}</p>
                   <p className="text-text-muted text-xs">{v.cuisine_type}</p>
+                  <span data-testid={`vendor-cafeteria-badge-${v.id}`} className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+                    <Coffee className="h-3 w-3" /> {v.cafeteria_name || 'Main Cafeteria'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -202,6 +222,21 @@ const VendorsTab = ({ siteId }) => {
                   </button>
                 </div>
               </div>
+              {cafeterias.length > 1 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Cafeteria:</span>
+                  <select
+                    data-testid={`vendor-cafeteria-select-${v.id}`}
+                    value={v.cafeteria_id || ''}
+                    onChange={(e) => { if (e.target.value && e.target.value !== v.cafeteria_id) moveVendor(v.id, e.target.value); }}
+                    className="px-2 py-1 border border-border-light rounded-lg text-xs bg-card"
+                  >
+                    {cafeterias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {swapping?.id === v.id && (
                 <div className="mt-3 pt-3 border-t border-border-light" data-testid={`swap-panel-${v.id}`}>
                   <p className="text-xs text-text-muted mb-2">Replace <strong>{v.name}</strong> with:</p>
@@ -235,6 +270,21 @@ const VendorsTab = ({ siteId }) => {
 
       <div className="bg-card border border-border-light rounded-2xl p-6">
         <h3 className="font-heading text-xl font-medium mb-4">Add Vendors</h3>
+        {cafeterias.length > 1 && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-xs text-text-muted">Assign to cafeteria:</span>
+            <select
+              data-testid="add-vendor-cafeteria-select"
+              value={addCafeteria}
+              onChange={(e) => setAddCafeteria(e.target.value)}
+              className="px-2 py-1 border border-border-light rounded-lg text-xs bg-card"
+            >
+              {cafeterias.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {unmapped.length === 0 && <p className="text-text-muted text-sm">All available vendors are already mapped.</p>}
         <div className="space-y-2">
           {unmapped.map((v) => (
@@ -248,6 +298,132 @@ const VendorsTab = ({ siteId }) => {
               </button>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CafeteriasTab = ({ siteId }) => {
+  const [cafeterias, setCafeterias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null); // cafeteria being edited
+  const [editName, setEditName] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/sites/${siteId}/cafeterias`, { withCredentials: true });
+      setCafeterias(data);
+    } catch (e) { logger.error(e); }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    try {
+      await axios.post(`${API}/sites/${siteId}/cafeterias`, { name, description }, { withCredentials: true });
+      setName(''); setDescription('');
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed to create'); }
+    finally { setCreating(false); }
+  };
+
+  const saveEdit = async (id) => {
+    try {
+      await axios.patch(`${API}/cafeterias/${id}`, { name: editName }, { withCredentials: true });
+      setEditing(null);
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed to save'); }
+  };
+
+  const remove = async (c) => {
+    if (!window.confirm(`Delete cafeteria "${c.name}"? Its vendors move back to the default cafeteria.`)) return;
+    try {
+      await axios.delete(`${API}/cafeterias/${c.id}`, { withCredentials: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed to delete'); }
+  };
+
+  if (loading) return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="bg-card border border-border-light rounded-2xl p-6" data-testid="cafeterias-list">
+        <h3 className="font-heading text-xl font-medium mb-4">Cafeterias ({cafeterias.length})</h3>
+        <p className="text-text-muted text-xs mb-4">Cafeterias group the vendors inside this site (e.g. "Tower A Food Court"). Every site has a default "Main Cafeteria".</p>
+        <div className="space-y-2">
+          {cafeterias.map((c) => (
+            <div key={c.id} data-testid={`cafeteria-row-${c.id}`} className="p-3 bg-background rounded-lg">
+              <div className="flex items-center justify-between gap-2">
+                {editing === c.id ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      data-testid={`cafeteria-edit-input-${c.id}`}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="flex-1 px-2 py-1 border border-border-light rounded-lg text-sm bg-card"
+                    />
+                    <button data-testid={`cafeteria-save-${c.id}`} onClick={() => saveEdit(c.id)} className="text-emerald-600 p-1.5 rounded-lg hover:bg-emerald-50"><Check className="h-4 w-4" /></button>
+                    <button onClick={() => setEditing(null)} className="text-text-muted p-1.5 rounded-lg hover:bg-background"><X className="h-4 w-4" /></button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Coffee className="h-4 w-4 text-amber-600" />
+                      <div>
+                        <p className="font-medium text-text-primary text-sm flex items-center gap-2">
+                          {c.name}
+                          {c.is_default && <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium">Default</span>}
+                        </p>
+                        <p className="text-text-muted text-xs">{c.vendor_count} vendor{c.vendor_count === 1 ? '' : 's'}{c.description ? ` · ${c.description}` : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button data-testid={`cafeteria-edit-${c.id}`} onClick={() => { setEditing(c.id); setEditName(c.name); }} className="text-text-secondary hover:bg-background p-2 rounded-lg" title="Rename"><Pencil className="h-4 w-4" /></button>
+                      {!c.is_default && (
+                        <button data-testid={`cafeteria-delete-${c.id}`} onClick={() => remove(c)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg" title="Delete"><Trash2 className="h-4 w-4" /></button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-card border border-border-light rounded-2xl p-6">
+        <h3 className="font-heading text-xl font-medium mb-4">Add Cafeteria</h3>
+        <div className="space-y-3">
+          <input
+            data-testid="cafeteria-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Cafeteria name (e.g. Tower A Food Court)"
+            className="w-full px-3 py-2 border border-border-light rounded-lg text-sm bg-card"
+          />
+          <input
+            data-testid="cafeteria-desc-input"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="w-full px-3 py-2 border border-border-light rounded-lg text-sm bg-card"
+          />
+          <button
+            data-testid="cafeteria-create-btn"
+            onClick={create}
+            disabled={creating || !name.trim()}
+            className="bg-primary text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 hover:bg-primary-hover flex items-center gap-1"
+          >
+            <Plus className="h-4 w-4" /> Create Cafeteria
+          </button>
         </div>
       </div>
     </div>

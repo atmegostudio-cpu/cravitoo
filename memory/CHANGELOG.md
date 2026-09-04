@@ -586,7 +586,7 @@ _Detailed iteration-by-iteration history. Latest 5 are in PRD.md._
 ## How to Test Each Component
 
 ### Web (already deployed)
-- Preview: https://vendor-mobile-ready.preview.emergentagent.com
+- Preview: https://duplicate-prevention-4.preview.emergentagent.com
 - Production: https://corporate-feast.emergent.host
 
 ### Mobile Android APK

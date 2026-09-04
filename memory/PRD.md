@@ -3,6 +3,21 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Cafeteria Layer + server.py Router Split (COMPLETED ✅)
+
+### Cafeteria Layer (P1) — hierarchy Client → City → Site → **Cafeteria** → Vendor
+- New `cafeterias` collection (`{site_id, name, description, is_active, is_default, ...}`) and a `cafeteria_id` field on `vendor_site_mappings`.
+- **Non-breaking auto-migration** (`routers/cafeterias.py::ensure_default_cafeterias`, run on startup): every Site gets a default "Main Cafeteria" and every legacy vendor mapping is pinned to it, so all existing site-level routing/menus keep working unchanged.
+- Endpoints: `GET/POST /api/sites/{id}/cafeterias`, `PATCH/DELETE /api/cafeterias/{id}` (default cannot be deleted/deactivated; deleting a custom cafeteria reassigns its vendors back to default), `PATCH /api/sites/{id}/vendors/{vendor_id}/cafeteria` (move vendor). `POST /api/sites/{id}/vendors` now accepts optional `cafeteria_id` (falls back to default); `GET /api/sites/{id}/vendors` returns `cafeteria_id`+`cafeteria_name`.
+- Frontend: new **Cafeterias tab** on `/master/sites/{id}` (create/rename/delete + vendor counts) and cafeteria badge + move/assign selects on the Vendors tab.
+
+### server.py Router Split (P2) — order/payment/admin routes extracted
+- **`routers/orders.py`** — all order lifecycle + Razorpay payment-first flow (checkout-intent/verify/webhook, mark-paid, collect, reconciliation, bulk, cancel, refund, orders/last, get_orders, update-status, verify-pickup). The `_materialize_order` + `_finalize_payment_intent` atomic idempotency guard was moved verbatim (race test still passes → exactly ONE order under /verify-vs-webhook concurrency).
+- **`routers/admin.py`** — master-admin vendor management (commission, profile update w/ mapping cascade), integrity repair tools (backfill-orders/sites/employee-sites, employee-menu-report, employee-visibility, sanitize), and vendor onboarding resend + email-log.
+- **server.py: 5252 → 3566 lines (−32%).** No behavioral change; injected shared deps via the existing `make_router(...)` factory pattern.
+- A few small admin utilities remain inline in server.py (email/send-test, ai-photos/spend, reclassify-veg/allergens, users deactivate/reactivate, city-admins, employees/bulk-csv) — they are interwoven with other domain code; deferred as a low-priority follow-up.
+- **Verified**: testing_agent iteration_42 — 24/24 backend, 100% frontend, zero issues; `scripts/test_duplicate_order_race.py` still ALL PASS.
+
 ## Jun 2026 — Duplicate Order + Order-Time Fix (COMPLETED ✅)
 - **Duplicate orders (P0)**: Razorpay `/verify` and the async webhook could both call `_finalize_payment_intent` concurrently and each insert an order. Fixed with an atomic `find_one_and_update` on `{cravitoo_order_id: None}` that flips the field to a `__materialising__` sentinel — only one caller wins. The losing caller now polls (~2s) until the real `order_id` appears and returns the SAME order, so `/verify` never falsely 500s when the webhook wins.
 - **Inaccurate order time (P0)**: `created_at` was returned as a naive datetime, so browsers read it as local time. `GET /api/orders` now coerces `created_at` to UTC-aware and serialises with `+00:00` so the client converts to correct local time.

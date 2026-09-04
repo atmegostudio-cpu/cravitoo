@@ -246,6 +246,7 @@ class SiteCreate(BaseModel):
 class VendorSiteMappingCreate(BaseModel):
     vendor_id: str
     site_id: str
+    cafeteria_id: Optional[str] = None  # optional; falls back to the site's default cafeteria
 
 
 class MealScheduleEntry(BaseModel):
