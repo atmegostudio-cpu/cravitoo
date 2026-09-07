@@ -1,0 +1,27 @@
+{
+  "summary": "Iter 51 backend — verified vendor site-mapping GUARD (onboarding master-approve) + REPAIR endpoint (POST /api/admin/vendors/{vendor_id}/assign-site) end-to-end. Wrote /app/backend/tests/test_iter51_assign_site_guard.py with 10 pytest cases (2 guard + 7 repair + 1 regression on GET /api/sites/{sid}/vendors) — ALL 10 PASS. Verified against preview URL. Also fixed iter50 regression test that was rendered obsolete by the new guard (it approved a site-less onboarding; now attaches a site + default cafeteria). Full suite now 15/15 green.\n\nEvidence per feature:\n- GUARD: approve onboarding with site_id=None -> HTTP 400 detail='This onboarding has no site assigned — assign a site before approving so the vendor appears under it.' No vendors doc created, no mapping created, onboarding still under_master_review. Approve with valid site_id still returns 200 and vendor appears in GET /sites/{sid}/vendors.\n- REPAIR happy path: seeded active vendor + orphan mapping (site_id=None) -> GET /sites/{sid}/vendors excludes vendor. POST /admin/vendors/{vid}/assign-site {site_id} -> {ok:true, site_id, cafeteria_id=<site default>}. Post-repair: vendor visible with cafeteria_id + cafeteria_name populated; null-site mapping count = 0.\n- REPAIR cafeteria resolution: explicit valid cafeteria_id honored; cafeteria on other site falls back to site default.\n- REPAIR auth: unauthenticated -> 403; unknown vendor -> 404; unknown site -> 404.\n- REPAIR reactivates: vendor with status='suspended' becomes 'active' after assign-site, then visible under site.\n- REGRESSION on /sites/{sid}/vendors: only vendors with (a) active mapping to THAT site and (b) status='active' are returned; vendor mapped to different site does NOT leak; each row carries cafeteria_id + cafeteria_name.\n\nAll throwaway data cleaned (verified 0 TEST_iter5% rows across sites/cafeterias/vendors/vendor_onboarding/vendor_site_mappings/users/vendor_magic_links/vendor_email_log). Master admin account untouched. Demo Cafeteria Site & TimeFix Kitchen untouched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_assign_site_guard.py",
+    "/app/backend/tests/test_iter50_email_status_cafeteria.py",
+    "/app/test_reports/pytest/iter51.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/admin.py::assign_vendor_site — correctly deletes only null/missing-site orphan mappings, upserts one active mapping for the target vendor+site, resolves cafeteria (chosen-valid-for-site else _default_cafeteria_id), and re-activates the vendor. Nice touch: idempotent (re-calling on an already-mapped vendor updates in place instead of duplicating).",
+    "backend/routers/onboarding.py::master_decision — the guard runs AFTER inserting the vendor doc and then rolls it back on missing site_id. Cleaner would be to check o.get('site_id') FIRST before insert (tiny latency + no chance of a race-window orphan). Functionally correct today because the delete_one succeeds synchronously before the 400 is returned.",
+    "backend/routers/admin.py::assign_vendor_site — orphan cleanup only removes mappings with site_id null/missing; it does NOT remove mappings pointing to a DEAD site_id (site was deleted). Consider extending to prune mappings whose site no longer exists.",
+    "backend/routers/sites.py::list_site_vendors — correct: filters mappings by status:'active' AND vendors by status:'active'. Cafeteria join is per-site so no cross-site leakage. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter51_assign_site_guard.py",
+    "/app/backend/tests/test_iter50_email_status_cafeteria.py"
+  ],
+  "success_rate": {"backend": "100% (10/10 iter51 + 5/5 iter50 regression)", "frontend": "N/A (backend-only per request)"},
+  "test_credentials": "admin@cravitoo.com / admin123",
+  "seed_data_creation": "Per-test throwaway sites (TEST_iter51_*), cafeterias, vendors, onboardings, vendor_site_mappings created & torn down via a cleanup_registry fixture. Post-run DB scan shows 0 TEST_iter5% residuals.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter51 guard + repair (POST /api/admin/vendors/{id}/assign-site) fully green. Iter50 test file was updated so its site-less approve test now attaches a site (guard-compatible). Persistent DB accounts: admin@cravitoo.com, plus the ones in /app/memory/test_credentials.md were not touched."
+}

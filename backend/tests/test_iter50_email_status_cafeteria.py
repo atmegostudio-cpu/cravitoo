@@ -123,9 +123,12 @@ def test_email_status_requires_master(admin_session):
 
 
 def test_email_status_master_returns_map_after_resend(admin_session, db):
-    """Approve a vendor (site-less), then resend onboarding → email-status must
-    contain that vendor with status 'sent' (preview mocks Resend as success)."""
-    onb_id, email, vname = _make_onboarding(db, site_id=None, prefix="es")
+    """Approve a vendor (with a site — iter51 guard now blocks site-less
+    approvals), then resend onboarding → email-status must contain that vendor
+    with status 'sent' (preview mocks Resend as success)."""
+    site_id, _ = _make_site(db)
+    _make_cafeteria(db, site_id, "TEST_iter50_es_default", is_default=True)
+    onb_id, email, vname = _make_onboarding(db, site_id=site_id, prefix="es")
     try:
         # Approve first so a vendors row exists to resend against
         r = admin_session.post(
@@ -157,6 +160,7 @@ def test_email_status_master_returns_map_after_resend(admin_session, db):
         assert isinstance(entry.get("at"), str) and "T" in entry["at"], entry
     finally:
         _cleanup_onboarding(db, onb_id, email, vname)
+        _cleanup_site(db, site_id)
 
 
 # =====================================================================

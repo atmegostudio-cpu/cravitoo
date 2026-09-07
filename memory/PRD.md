@@ -3,6 +3,16 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Site-Vendor Mapping Bug (invisible vendors) (COMPLETED ✅)
+
+**Reported**: Two vendors (Cravitoo-domain + Gmail) added but neither shows under the site.
+**Root cause class**: A vendor is visible under a site ONLY if there is an ACTIVE `vendor_site_mappings` row whose `site_id` matches that exact site AND both the vendor and mapping are `active`. Mappings created with `site_id=null` (orphaned) silently hide the vendor. Email domain is irrelevant to visibility (login only).
+**Fixes**:
+- **Guard** (`routers/onboarding.py`): master-approval now refuses to create a null-site mapping — rolls back the vendor and returns 400 "assign a site before approving".
+- **Repair endpoint** `POST /api/admin/vendors/{vendor_id}/assign-site` (`routers/admin.py`, master-only): cleans orphaned null-site mappings, upserts one active mapping for vendor+site, resolves cafeteria (chosen-valid-for-site else default), and re-activates the vendor if needed.
+- Cleaned an orphan null-site mapping from the preview DB.
+- **Verified**: testing_agent iteration_51 — 15/15 backend pass (guard + repair + visibility regression).
+
 ## Jun 2026 — Email Badge + Resend-on-Login + Cafeteria-on-Approval (COMPLETED ✅)
 
 - **Email Health Badge**: `GET /api/admin/vendors/email-status` (master-only) returns the latest email-log status per vendor; the master Vendors list now shows a green "Email delivered" / red "Email failed" badge (`vendor-email-status-{id}`) so admins instantly know when to fall back to the copy-link. (`routers/admin.py`, `master/Vendors.js`)

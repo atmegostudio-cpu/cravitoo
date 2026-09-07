@@ -877,6 +877,12 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             }
             vres = await db.vendors.insert_one(vendor_doc)
             vendor_id = str(vres.inserted_id)
+            # A vendor MUST be mapped to a real site to be visible anywhere.
+            # Never create a null-site mapping (that silently hides the vendor).
+            if not o.get("site_id"):
+                # roll back the vendor we just created so we don't orphan it
+                await db.vendors.delete_one({"_id": vres.inserted_id})
+                raise HTTPException(status_code=400, detail="This onboarding has no site assigned — assign a site before approving so the vendor appears under it.")
             # Site-vendor mapping (uses canonical collection name `vendor_site_mappings`)
             # Assign the chosen cafeteria (or the site's default) so the vendor
             # shows up under the right food court immediately.

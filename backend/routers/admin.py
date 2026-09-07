@@ -28,6 +28,11 @@ class _TestEmailBody(BaseModel):
     to: EmailStr
 
 
+class _AssignSiteBody(BaseModel):
+    site_id: str
+    cafeteria_id: Optional[str] = None
+
+
 def _generate_magic_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -635,6 +640,55 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
                 f"Copy the link below and send it to the vendor directly — it works the same way."
             ),
         }
+
+    @r.post("/admin/vendors/{vendor_id}/assign-site")
+    async def assign_vendor_site(vendor_id: str, body: _AssignSiteBody, user: dict = Depends(get_current_user)):
+        """Repair/assign a vendor's site mapping so it becomes visible under the
+        chosen site. Fixes orphaned mappings (null/missing/dead site_id) and
+        guarantees exactly one active mapping for this vendor+site."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
+        if not vendor:
+            raise HTTPException(status_code=404, detail="Vendor not found")
+        site = await db.sites.find_one({"_id": safe_objectid(body.site_id, "Site")})
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+        # Resolve cafeteria: chosen one (must belong to the site) else the default.
+        from routers.cafeterias import _default_cafeteria_id
+        cafeteria_id = body.cafeteria_id
+        if cafeteria_id:
+            caf = await db.cafeterias.find_one({"_id": safe_objectid(cafeteria_id, "Cafeteria")})
+            if not caf or caf.get("site_id") != body.site_id:
+                cafeteria_id = None
+        if not cafeteria_id:
+            cafeteria_id = await _default_cafeteria_id(db, body.site_id)
+        # Clean up any orphaned mappings (null/missing site_id) for this vendor.
+        await db.vendor_site_mappings.delete_many({
+            "vendor_id": vendor_id,
+            "$or": [{"site_id": None}, {"site_id": {"$exists": False}}],
+        })
+        # Upsert the active mapping for vendor+site.
+        existing = await db.vendor_site_mappings.find_one({"vendor_id": vendor_id, "site_id": body.site_id})
+        if existing:
+            await db.vendor_site_mappings.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"status": "active", "cafeteria_id": cafeteria_id}},
+            )
+        else:
+            await db.vendor_site_mappings.insert_one({
+                "vendor_id": vendor_id,
+                "site_id": body.site_id,
+                "cafeteria_id": cafeteria_id,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc),
+            })
+        # Make sure the vendor itself is active (an inactive vendor is hidden too).
+        if vendor.get("status") != "active":
+            await db.vendors.update_one({"_id": vendor["_id"]}, {"$set": {"status": "active"}})
+        await audit_log(user, "vendor", vendor_id, "assigned_site",
+                        {"site_id": body.site_id, "cafeteria_id": cafeteria_id})
+        return {"ok": True, "vendor_id": vendor_id, "site_id": body.site_id, "cafeteria_id": cafeteria_id}
 
     @r.get("/admin/vendors/email-status")
     async def vendors_email_status(user: dict = Depends(get_current_user)):
