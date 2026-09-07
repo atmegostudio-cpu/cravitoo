@@ -3,6 +3,13 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Copy-Link on Vendor Approval + Prod URL note (COMPLETED ✅)
+
+- **Initial approval now mints the magic link too**: `POST /api/onboarding/vendors/{id}/master-decision` (approve) now creates a non-expiring single-use onboarding magic link, emails the "set your password" link, and returns `magic_url` + `token`. Previously approval only set a random password + relied on Email OTP (no copyable link).
+- **Approval copy-link modal**: `frontend/src/pages/OnboardingDetail.js` shows a "Vendor approved → set-password link" modal with a Copy button (built from `window.location.origin + token`) after master approval — same UX as the resend flow.
+- **PUBLIC_APP_URL**: set in `backend/.env` (preview host); server host-resolution order = PUBLIC_APP_URL → Origin → X-Forwarded-Host/Proto → Referer → base_url. ⚠️ **Production deploy env must set `PUBLIC_APP_URL=https://app.cravitoo.com`** (deployment env var — cannot be set from the repo).
+- **Verified**: testing_agent iteration_49 — 100% backend + frontend; approve returns correct-host magic_url/token, link → set password → /vendor/dashboard → email/password login; reject omits the link; single-use (410) intact.
+
 ## Jun 2026 — Vendor Magic-Link Resend Fix (COMPLETED ✅)
 
 **Reported bug**: Vendor opened the resent onboarding magic link and saw "Link no longer works / This link could not be used."

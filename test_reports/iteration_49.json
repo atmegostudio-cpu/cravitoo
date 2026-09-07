@@ -1,0 +1,21 @@
+{
+  "summary": "Verified NEW master-approval copy-link feature end-to-end. Backend (pytest 2/2 PASS, /app/backend/tests/test_master_approval_magic_link.py): (1) POST /api/onboarding/vendors/{onb_id}/master-decision with decision=approve on a seeded 'under_master_review' onboarding returns status='active', non-empty token, and magic_url starting with https://duplicate-prevention-4.preview.emergentagent.com/auth/magic/ (no cravitoo/emergentcf host leaks), magic_url endswith /auth/magic/{token}; GET /api/auth/magic/{token} -> 200 with email match + purpose=onboarding; POST /api/auth/magic/{token}/complete {password:'ApprPass123'} -> success=true role=vendor; second GET -> 410 (single-use); login with new password succeeds as role=vendor. (2) decision='reject' returns status='rejected' and does NOT include magic_url or token keys in the response. Frontend (real preview browser as master admin): opened /onboarding/{id} for a seeded under_master_review onboarding, clicked master-approve-btn -> Final Approval dialog opens -> clicked confirm-decision-btn -> approval-link-modal ('Vendor approved') appears, approval-magic-link-field value = 'https://duplicate-prevention-4.preview.emergentagent.com/auth/magic/<token>' (starts with window.location.origin as required); approval-copy-link-btn toggles text to 'Copied'; approval-link-done-btn closes the modal. Cleared cookies, navigated to the copied link -> 'Welcome — set your password' page rendered with account prefilled, submitted 'ApprPass123' via magic-submit-btn -> browser landed on /vendor/dashboard (regression PASS). All throwaway data cleaned up (vendor_onboarding, users, vendor_magic_links, vendor_email_log, vendors, vendor_site_mappings, menu_items).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_master_approval_magic_link.py",
+    "/app/test_reports/pytest/iter49_master_approval.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/onboarding.py::master_decision — approve branch cleanly reuses _resolve_public_base(request) + returns token so admin UI can rebuild the link from window.location.origin (parity with resend flow). Reject branch correctly omits magic_url/token from response.",
+    "frontend/src/pages/OnboardingDetail.js::submitDecision — uses `${window.location.origin}/auth/magic/${res.token}` with res.magic_url fallback; guaranteed-correct host even if backend header propagation regresses."
+  ],
+  "updated_files": ["/app/backend/tests/test_master_approval_magic_link.py"],
+  "success_rate": {"backend": "100% (2/2 pytest)", "frontend": "100% (approval modal + copy + Done + set-password -> /vendor/dashboard)"},
+  "test_credentials": "admin@cravitoo.com / admin123",
+  "seed_data_creation": "Per-test throwaway vendor_onboarding docs (TEST_approve_*, TEST_reject_*, TEST_uifront_*) inserted directly with status='under_master_review'. All fully cleaned up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Master-approval copy-link is now feature-complete and matches the resend-onboarding UX. No follow-ups. Regression: resend flow (iter 48) and window.location.replace -> /vendor/dashboard both verified indirectly by shared magic-link complete path."
+}

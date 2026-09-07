@@ -38,8 +38,31 @@ from allergen_classifier import (
 )
 from typing import Optional
 
+
+def _resolve_public_base(request) -> str:
+    """Frontend app base URL for magic links. PUBLIC_APP_URL wins; else derive
+    from request headers (Origin → X-Forwarded-Host → Referer → base_url)."""
+    base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+    if base:
+        return base
+    h = request.headers
+    origin = (h.get("origin") or "").rstrip("/")
+    if origin:
+        return origin
+    fwd = h.get("x-forwarded-host")
+    if fwd:
+        proto = h.get("x-forwarded-proto", "https")
+        return f"{proto}://{fwd.split(',')[0].strip()}"
+    ref = h.get("referer") or ""
+    if ref:
+        from urllib.parse import urlparse
+        p = urlparse(ref)
+        if p.scheme and p.netloc:
+            return f"{p.scheme}://{p.netloc}"
+    return str(request.base_url).rstrip("/")
+
 import openpyxl
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
 
 from models import (
     CHECKLIST_FIELDS,
@@ -816,7 +839,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         return {"message": f"Site review: {data.decision}", "status": set_doc["status"]}
 
     @r.post("/onboarding/vendors/{onb_id}/master-decision")
-    async def master_decision(onb_id: str, data: OnboardingDecision, user: dict = Depends(get_current_user)):
+    async def master_decision(onb_id: str, data: OnboardingDecision, request: Request, user: dict = Depends(get_current_user)):
         """Master admin final approval/rejection."""
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only master admin")
@@ -894,11 +917,13 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             # Create vendor LOGIN user (passwordless via email OTP) if none exists yet
             vendor_email = (o.get("email") or "").lower().strip()
             invite_sent = False
+            onboarding_magic_url = None
+            onboarding_token = None
             if vendor_email:
                 existing_user = await db.users.find_one({"email": vendor_email})
                 if not existing_user:
-                    # No password sharing — vendor signs in via Email OTP. Set a random
-                    # password hash so the field is populated; vendor will never use it.
+                    # Populate a random password hash; the vendor sets their real
+                    # password via the onboarding magic link below.
                     import secrets as _secrets
                     random_pwd = _secrets.token_urlsafe(24)
                     try:
@@ -906,7 +931,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                         pwd_hash = _bcrypt.hash(random_pwd)
                     except Exception:
                         pwd_hash = ""
-                    await db.users.insert_one({
+                    _ins = await db.users.insert_one({
                         "email": vendor_email,
                         "password_hash": pwd_hash,
                         "name": o.get("contact_person") or o.get("vendor_name") or "Vendor",
@@ -916,23 +941,45 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                         "failed_attempts": 0,
                         "created_via": "vendor_onboarding_approval",
                     })
+                    vendor_user_id = str(_ins.inserted_id)
                 else:
                     # Existing user — ensure they're linked to this vendor
                     await db.users.update_one(
                         {"_id": existing_user["_id"]},
-                        {"$set": {"vendor_id": vendor_id, "role": "vendor"}},
+                        {"$set": {"vendor_id": vendor_id, "role": "vendor", "is_active": True}},
                     )
-                # Fire invitation email + branded vendor decision email (best-effort)
+                    vendor_user_id = str(existing_user["_id"])
+
+                # Mint the onboarding magic link (non-expiring, single-use) so the
+                # vendor can set a password on first click — same flow as resend.
+                import secrets as _secrets2
+                onboarding_token = _secrets2.token_urlsafe(32)
+                await db.vendor_magic_links.insert_one({
+                    "token": onboarding_token,
+                    "vendor_user_id": vendor_user_id,
+                    "vendor_id": vendor_id,
+                    "email": vendor_email,
+                    "purpose": "onboarding",
+                    "expires_at": None,
+                    "used_at": None,
+                    "created_by_admin": user["id"],
+                    "created_at": datetime.now(timezone.utc),
+                })
+                onboarding_magic_url = f"{_resolve_public_base(request)}/auth/magic/{onboarding_token}"
+
+                # Actionable welcome email = the "set your password" magic link.
                 try:
                     import email_service as _email_service
                     inv_name = o.get("contact_person") or o.get("vendor_name") or "Partner"
-                    inv_html, inv_text = _email_service.render_invitation_email(
-                        name=inv_name, email=vendor_email, role="vendor",
+                    ml_html, ml_text = _email_service.render_vendor_magic_link_email(
+                        name=inv_name,
+                        vendor_name=o.get("vendor_name") or "your business",
+                        magic_url=onboarding_magic_url,
                     )
-                    if _email_service.send_email(vendor_email, "Welcome to Cravitoo Partner — your account is ready", inv_html, inv_text):
+                    if _email_service.send_email(vendor_email, "You're approved on Cravitoo — set your Vendor Panel password", ml_html, ml_text):
                         invite_sent = True
                 except Exception as e:
-                    logger.warning(f"Vendor invitation email failed for {vendor_email}: {e}")
+                    logger.warning(f"Vendor onboarding magic-link email failed for {vendor_email}: {e}")
                 # Branded "Vendor Approved" decision email (PDF Module 13)
                 try:
                     import email_service as _email_service2
@@ -977,7 +1024,11 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                 logger.warning(f"Vendor rejected-decision email failed: {e}")
         await db.vendor_onboarding.update_one({"_id": o["_id"]}, {"$set": set_doc})
         await audit_log(user, "vendor_onboarding", onb_id, f"master_{data.decision}", {"remarks": data.remarks, "vendor_id": set_doc.get("vendor_id"), "menu_items_created": set_doc.get("menu_items_created", 0)})
-        return {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False), "menu_items_created": set_doc.get("menu_items_created", 0)}
+        result = {"message": f"Master decision: {data.decision}", "status": set_doc["status"], "vendor_id": set_doc.get("vendor_id"), "vendor_user_invited": set_doc.get("vendor_user_invited", False), "menu_items_created": set_doc.get("menu_items_created", 0)}
+        if data.decision == "approve":
+            result["magic_url"] = onboarding_magic_url
+            result["token"] = onboarding_token
+        return result
 
     @r.get("/onboarding/vendors/{onb_id}/audit-trail")
     async def onboarding_audit_trail(onb_id: str, user: dict = Depends(get_current_user)):

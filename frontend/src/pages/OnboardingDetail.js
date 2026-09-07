@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import MenuTab from './onboarding/MenuTab';
 import {
   Store, ArrowLeft, Upload, FileText, CheckCircle2, XCircle, Clock, ChevronRight,
-  Send, X, Eye, Trash2, AlertTriangle, Activity
+  Send, X, Eye, Trash2, AlertTriangle, Activity, Copy, Link2
 } from 'lucide-react';
 import logger from '../lib/logger';
 
@@ -58,6 +58,8 @@ const OnboardingDetail = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(null);
   const [decision, setDecision] = useState({ open: false, stage: '', decision: '', remarks: '' });
+  const [approvalLink, setApprovalLink] = useState('');   // vendor set-password link shown after approval
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -111,10 +113,28 @@ const OnboardingDetail = () => {
       const url = decision.stage === 'master'
         ? `${API}/onboarding/vendors/${onbId}/master-decision`
         : `${API}/onboarding/vendors/${onbId}/site-review`;
-      await axios.post(url, { decision: decision.decision, remarks: decision.remarks }, { withCredentials: true });
+      const { data: res } = await axios.post(url, { decision: decision.decision, remarks: decision.remarks }, { withCredentials: true });
       setDecision({ open: false, stage: '', decision: '', remarks: '' });
+      // On master approval, surface the vendor's set-password link so the admin
+      // can copy + send it directly (same as the resend flow). Build from this
+      // app's own origin using the token for a guaranteed-correct URL.
+      if (decision.stage === 'master' && decision.decision === 'approve') {
+        const link = res?.token ? `${window.location.origin}/auth/magic/${res.token}` : (res?.magic_url || '');
+        if (link) { setApprovalLink(link); setLinkCopied(false); }
+      }
       await reload();
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const copyApprovalLink = async () => {
+    try {
+      await navigator.clipboard.writeText(approvalLink);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    } catch {
+      const el = document.getElementById('approval-magic-link-field');
+      if (el) { el.select(); document.execCommand('copy'); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500); }
+    }
   };
 
   if (loading) return (<><Navbar /><div className="min-h-screen bg-background flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div></>);
@@ -349,6 +369,56 @@ const OnboardingDetail = () => {
                   Confirm
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {approvalLink && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setApprovalLink('')} data-testid="approval-link-modal">
+          <div className="bg-card rounded-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-border-light">
+              <h2 className="font-heading text-xl font-medium flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Vendor approved
+              </h2>
+              <button onClick={() => setApprovalLink('')}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Link2 className="h-3.5 w-3.5 text-indigo-600" />
+                  <p className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider">Vendor set-password link</p>
+                </div>
+                <p className="text-[11px] text-text-muted mb-2">
+                  We emailed this to the vendor. You can also copy it and send it directly (WhatsApp / SMS) — it opens the "set your password" screen and never expires until used once.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="approval-magic-link-field"
+                    data-testid="approval-magic-link-field"
+                    readOnly
+                    value={approvalLink}
+                    onFocus={(e) => e.target.select()}
+                    className="flex-1 min-w-0 px-2.5 py-2 border border-border-light rounded-lg text-xs font-mono bg-white truncate"
+                  />
+                  <button
+                    data-testid="approval-copy-link-btn"
+                    onClick={copyApprovalLink}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                      linkCopied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    {linkCopied ? <><CheckCircle2 className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                  </button>
+                </div>
+              </div>
+              <button
+                data-testid="approval-link-done-btn"
+                onClick={() => setApprovalLink('')}
+                className="w-full px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl font-medium"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
