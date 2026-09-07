@@ -1,0 +1,32 @@
+{
+  "summary": "Backend regression tests for the employee GET /api/vendors visibility fix (missing-status mapping + ObjectId site_id drift). Seeded throwaway sites/vendors/mappings/employees directly in Mongo (prefix TEST_EMPVIS_), exercised 9 scenarios, cleaned up. All 9 tests PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_employee_vendor_visibility.py",
+    "/app/test_reports/pytest/emp_vendor_vis.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~2965 lines — recommend continued modularisation (get_vendors branch is fine but the file is well past the 700-line guideline).",
+    "The $or condition in get_vendors uses {\"status\": None} which relies on Mongo's null-matching semantics; the {\"$exists\": False} branch already covers missing fields. Both are kept defensively — acceptable but slightly redundant.",
+    "vendor_site_mappings does not appear to have a compound index on (site_id, status) — for large deployments consider adding one for the employee lookup path."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_employee_vendor_visibility.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "n/a - skipped per request"},
+  "test_credentials": "Master admin admin@cravitoo.com/admin123. Throwaway employees created with bcrypt-hashed 'pass1234' and cleaned up.",
+  "seed_data_creation": "All seed data is prefixed TEST_EMPVIS_ and deleted by the module-scoped teardown fixture. Verified post-run: 0 residual users/vendors/sites/companies with that prefix. Master admin, Demo Cafeteria Site, and TimeFix Kitchen are untouched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The new file /app/backend/tests/test_employee_vendor_visibility.py can be re-run as a regression at any time. It seeds+cleans its own data via direct Mongo (pymongo). Covers: missing-status mapping visibility, active-status visibility, ObjectId-site_id drift visibility, inactive-mapping hidden, inactive-vendor hidden, cross-site isolation (both directions), no-site+multi-site->[], no-site+single-site auto-resolve, admin unaffected.",
+  "rca of the issue": "Fix already applied in server.py::get_vendors (lines 902-922): builds site_id_variants = [str, ObjectId(str)] and $or:[{status:'active'},{status:{$exists:false}},{status:null}] before looking up vendor_site_mappings. Confirmed working end-to-end via the 9 pytest cases."
+}

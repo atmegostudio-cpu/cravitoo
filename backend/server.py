@@ -895,8 +895,20 @@ async def get_vendors(user: dict = Depends(get_current_user)):
                 emp_site_id = str(company_sites[0]["_id"])
         if not emp_site_id:
             return []
+        # Match the employee's site tolerating id type drift (string vs ObjectId)
+        # and treat a mapping with a MISSING status field as active (older rows
+        # created before the status field existed must not silently hide a
+        # correctly-mapped vendor).
+        site_id_variants = [emp_site_id]
+        try:
+            site_id_variants.append(ObjectId(emp_site_id))
+        except Exception:
+            pass
         active_maps = await db.vendor_site_mappings.find(
-            {"site_id": emp_site_id, "status": "active"},
+            {
+                "site_id": {"$in": site_id_variants},
+                "$or": [{"status": "active"}, {"status": {"$exists": False}}, {"status": None}],
+            },
             {"vendor_id": 1},
         ).to_list(1000)
         mapped_oids = []

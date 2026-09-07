@@ -3,6 +3,14 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Employee sees blank vendors (visibility fix) (COMPLETED ✅)
+
+**Reported**: Employee swami@cravitoo.com sees a blank "Available Vendors" list despite a vendor being mapped to the Cravitoo site (employee has past orders → worked before).
+**Root cause class** (`server.py::get_vendors`, employee branch): the employee list only returned vendors whose `vendor_site_mappings` row had status EXACTLY `"active"` and `site_id` of the same type. A correctly-mapped vendor was hidden when its mapping row (a) had a MISSING/null `status`, or (b) stored `site_id` as ObjectId vs the employee's string `site_id`.
+**Fix**: employee mapping lookup now treats missing/null status as active and matches `site_id` in both string and ObjectId form. Negative cases still hold (inactive mapping/vendor hidden, cross-site isolation, no-site → []).
+**Verified**: testing_agent iteration_52 — 9/9 backend pass.
+**Note for live**: to see the exact cause on production, run `GET /api/admin/integrity/employee-visibility?email=swami@cravitoo.com` (master admin) — it reports the employee's site_id and mapping resolution.
+
 ## Jun 2026 — Site-Vendor Mapping Bug (invisible vendors) (COMPLETED ✅)
 
 **Reported**: Two vendors (Cravitoo-domain + Gmail) added but neither shows under the site.
