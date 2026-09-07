@@ -878,9 +878,21 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             vres = await db.vendors.insert_one(vendor_doc)
             vendor_id = str(vres.inserted_id)
             # Site-vendor mapping (uses canonical collection name `vendor_site_mappings`)
+            # Assign the chosen cafeteria (or the site's default) so the vendor
+            # shows up under the right food court immediately.
+            mapping_cafeteria_id = data.cafeteria_id
+            if o.get("site_id"):
+                from routers.cafeterias import _default_cafeteria_id
+                if mapping_cafeteria_id:
+                    _caf = await db.cafeterias.find_one({"_id": safe_objectid(mapping_cafeteria_id, "Cafeteria")})
+                    if not _caf or _caf.get("site_id") != o.get("site_id"):
+                        mapping_cafeteria_id = None
+                if not mapping_cafeteria_id:
+                    mapping_cafeteria_id = await _default_cafeteria_id(db, o.get("site_id"))
             await db.vendor_site_mappings.insert_one({
                 "site_id": o.get("site_id"),
                 "vendor_id": vendor_id,
+                "cafeteria_id": mapping_cafeteria_id,
                 "status": "active",
                 "created_at": datetime.now(timezone.utc),
             })

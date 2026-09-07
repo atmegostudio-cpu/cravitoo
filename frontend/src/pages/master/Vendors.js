@@ -23,11 +23,16 @@ const MasterVendors = () => {
   const [resendLog, setResendLog] = useState([]);
   const [sanitizing, setSanitizing] = useState(false);
   const [sanitizeResult, setSanitizeResult] = useState(null);
+  const [emailStatus, setEmailStatus] = useState({});
 
   const load = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/vendors`, { withCredentials: true });
-      setVendors(data);
+      const [vRes, esRes] = await Promise.all([
+        axios.get(`${API}/vendors`, { withCredentials: true }),
+        axios.get(`${API}/admin/vendors/email-status`, { withCredentials: true }).catch(() => ({ data: {} })),
+      ]);
+      setVendors(vRes.data);
+      setEmailStatus(esRes.data || {});
     } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -264,6 +269,23 @@ const MasterVendors = () => {
                         <div>
                           <p className="font-medium text-text-primary text-sm">{v.name}</p>
                           <p className="text-text-muted text-xs truncate max-w-xs">{v.description || ''}</p>
+                          {(() => {
+                            const es = emailStatus[v.id];
+                            if (!es) return null;
+                            const ok = es.status === 'sent';
+                            return (
+                              <span
+                                data-testid={`vendor-email-status-${v.id}`}
+                                title={es.error || (ok ? 'Last onboarding email delivered' : 'Last onboarding email failed — use the resend copy-link')}
+                                className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                                  ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                                }`}
+                              >
+                                <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                                {ok ? 'Email delivered' : 'Email failed'}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                     </td>

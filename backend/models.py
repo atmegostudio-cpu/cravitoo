@@ -313,6 +313,7 @@ class ChecklistUpdate(BaseModel):
 class OnboardingDecision(BaseModel):
     decision: str  # "approve" | "reject" | "request_changes"
     remarks: Optional[str] = None
+    cafeteria_id: Optional[str] = None  # optional cafeteria for the vendor on approve
 
 
 CHECKLIST_FIELDS = [

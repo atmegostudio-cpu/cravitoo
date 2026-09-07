@@ -3,6 +3,13 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Email Badge + Resend-on-Login + Cafeteria-on-Approval (COMPLETED ✅)
+
+- **Email Health Badge**: `GET /api/admin/vendors/email-status` (master-only) returns the latest email-log status per vendor; the master Vendors list now shows a green "Email delivered" / red "Email failed" badge (`vendor-email-status-{id}`) so admins instantly know when to fall back to the copy-link. (`routers/admin.py`, `master/Vendors.js`)
+- **Resend-on-Login**: `/login` shows a vendor-facing hint (`vendor-get-setup-link`) → `/forgot-password`, letting a vendor who never set a password self-serve a fresh set-password link (reuses `POST /api/auth/forgot-password`). (`LoginPage.js`)
+- **Cafeteria on Approval**: `OnboardingDecision` gained optional `cafeteria_id`; the master approval modal now shows an "Assign to cafeteria" dropdown (`approval-cafeteria-select`) for the site's cafeterias, and the created `vendor_site_mappings` row is stamped with the chosen cafeteria (falls back to the site default if omitted/invalid). (`models.py`, `routers/onboarding.py`, `OnboardingDetail.js`)
+- **Verified**: testing_agent iteration_50 — 100% backend (5/5) + frontend; iter-49 regression still passing.
+
 ## Jun 2026 — Copy-Link on Vendor Approval + Prod URL note (COMPLETED ✅)
 
 - **Initial approval now mints the magic link too**: `POST /api/onboarding/vendors/{id}/master-decision` (approve) now creates a non-expiring single-use onboarding magic link, emails the "set your password" link, and returns `magic_url` + `token`. Previously approval only set a random password + relied on Email OTP (no copyable link).

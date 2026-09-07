@@ -222,6 +222,13 @@ const LoginPage = () => {
                 <span>Login with Email Code</span>
               </button>
 
+              <p className="mt-4 text-center text-xs text-text-muted" data-testid="vendor-setup-link-hint">
+                Vendor and never set a password?{' '}
+                <Link to="/forgot-password" data-testid="vendor-get-setup-link" className="text-primary hover:text-primary-hover font-medium">
+                  Get your set-up link
+                </Link>
+              </p>
+
               <div className="mt-6 text-center">
                 <p className="text-text-secondary text-sm">
                   Don't have an account?{' '}

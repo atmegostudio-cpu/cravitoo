@@ -636,6 +636,28 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
             ),
         }
 
+    @r.get("/admin/vendors/email-status")
+    async def vendors_email_status(user: dict = Depends(get_current_user)):
+        """Latest onboarding-email status per vendor (Master Admin only) so the
+        Vendors list can badge Delivered / Failed / No-email at a glance."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        pipeline = [
+            {"$sort": {"created_at": -1}},
+            {"$group": {"_id": "$vendor_id",
+                        "status": {"$first": "$status"},
+                        "error": {"$first": "$error"},
+                        "at": {"$first": "$created_at"}}},
+        ]
+        out = {}
+        async for row in db.vendor_email_log.aggregate(pipeline):
+            out[row["_id"]] = {
+                "status": row.get("status"),
+                "error": row.get("error"),
+                "at": row["at"].isoformat() if row.get("at") else None,
+            }
+        return out
+
     @r.get("/admin/vendors/{vendor_id}/email-log")
     async def vendor_email_log(vendor_id: str, user: dict = Depends(get_current_user)):
         """Last 10 resend attempts for a vendor (Master Admin only)."""

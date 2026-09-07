@@ -1,0 +1,26 @@
+{
+  "summary": "Iter 50 — verified 3 new features end-to-end. BACKEND (pytest 5/5 PASS, /app/backend/tests/test_iter50_email_status_cafeteria.py): (1) GET /api/admin/vendors/email-status — unauthenticated -> 401/403; master admin -> 200 dict {vendor_id: {status,error,at}} containing the seeded vendor with status='sent' after POST /api/admin/vendors/{id}/resend-onboarding. (2) master-decision cafeteria_id: seeded site + 2 cafeterias (default + second). approve with cafeteria_id=<second> -> vendor_site_mappings.cafeteria_id == second (chosen honored); approve with cafeteria_id belonging to a DIFFERENT site -> falls back to default; approve with cafeteria_id omitted -> uses default. Iter-49 regression pytest (2/2) still PASS. FRONTEND (real browser, master admin logged in via /login preview URL): [F2 Resend-on-login] /login shows vendor-setup-link-hint ('Vendor and never set a password? Get your set-up link'); clicking vendor-get-setup-link routes to /forgot-password; submitting the seeded email hits POST /api/auth/forgot-password and renders forgot-done state. [F1 Email Health Badge] /master/vendors renders vendor-email-status-<vid> for the seeded vendor with an email log — text 'Email delivered', class contains 'emerald' (green). Vendors with no log show no badge. [F3 Cafeteria on Approval] /onboarding/<onb_with_site> master-approve-btn opens Final Approval dialog containing approval-cafeteria-select prefilled with the default cafeteria ('… (default)'); options list matches the site's cafeterias in default-first order. REJECT dialog does NOT show the dropdown. /onboarding/<onb_without_site_id> approve dialog also correctly does NOT show the dropdown. All throwaway data (2 sites, 2 cafeterias, 1 vendor, 2 onboardings, email log) cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter50_email_status_cafeteria.py",
+    "/app/test_reports/pytest/iter50.xml",
+    "/app/backend/tests/test_master_approval_magic_link.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/admin.py::vendors_email_status — clean $sort+$group pipeline gives latest-per-vendor in O(N) with an index on (vendor_id, created_at) ideal (not enforced today; low-cardinality collection so fine).",
+    "backend/routers/onboarding.py::master_decision — cafeteria_id path correctly validates the caf belongs to the onboarding's site before honoring it, and always falls back to _default_cafeteria_id; behavior matches spec exactly.",
+    "frontend/src/pages/OnboardingDetail.js — cafeteria select is gated on `stage==='master' && decision==='approve' && cafeterias.length>0`, so reject / no-site paths correctly hide it; default option auto-selected from is_default flag."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter50_email_status_cafeteria.py"
+  ],
+  "success_rate": {"backend": "100% (5/5 iter50 pytest + 2/2 iter49 regression)", "frontend": "100% (badge, resend-on-login link + submit, approval cafeteria dropdown appears/hides correctly)"},
+  "test_credentials": "admin@cravitoo.com / admin123",
+  "seed_data_creation": "Throwaway inserted via /tmp/seed_iter50_ui.py: 1 vendor + email log (badge), 1 site + 2 cafeterias + 1 onboarding under_master_review with that site, 1 onboarding under_master_review with site_id=None. Also per-pytest-test throwaway sites/cafeterias/onboardings/vendors. ALL cleaned up (vendors, vendor_email_log, vendor_onboarding, sites, cafeterias, users, vendor_magic_links, vendor_site_mappings) — 0 TEST_iter50 rows remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter50 features (email-status badge, resend-on-login link, cafeteria-on-approval) verified backend + browser. Iter49 master-approval copy-link + iter48 resend flow remain green. No fixes were applied — everything worked as coded. Preview host verified in URLs.",
+  "rca of the issue": "N/A — no bugs found."
+}

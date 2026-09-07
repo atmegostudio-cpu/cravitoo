@@ -60,6 +60,8 @@ const OnboardingDetail = () => {
   const [decision, setDecision] = useState({ open: false, stage: '', decision: '', remarks: '' });
   const [approvalLink, setApprovalLink] = useState('');   // vendor set-password link shown after approval
   const [linkCopied, setLinkCopied] = useState(false);
+  const [cafeterias, setCafeterias] = useState([]);
+  const [selCafeteria, setSelCafeteria] = useState('');
 
   const reload = useCallback(async () => {
     try {
@@ -74,6 +76,20 @@ const OnboardingDetail = () => {
   }, [onbId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Load the site's cafeterias so the master can place the vendor into the
+  // right food court right at approval time.
+  useEffect(() => {
+    const sid = data?.site_id;
+    if (!sid) { setCafeterias([]); return; }
+    axios.get(`${API}/sites/${sid}/cafeterias`, { withCredentials: true })
+      .then(({ data: cafs }) => {
+        setCafeterias(cafs || []);
+        const def = (cafs || []).find((c) => c.is_default) || (cafs || [])[0];
+        if (def) setSelCafeteria(def.id);
+      })
+      .catch(() => setCafeterias([]));
+  }, [data?.site_id]);
 
   const uploadDoc = async (docKey, file) => {
     setUploading(docKey);
@@ -113,7 +129,7 @@ const OnboardingDetail = () => {
       const url = decision.stage === 'master'
         ? `${API}/onboarding/vendors/${onbId}/master-decision`
         : `${API}/onboarding/vendors/${onbId}/site-review`;
-      const { data: res } = await axios.post(url, { decision: decision.decision, remarks: decision.remarks }, { withCredentials: true });
+      const { data: res } = await axios.post(url, { decision: decision.decision, remarks: decision.remarks, cafeteria_id: selCafeteria || null }, { withCredentials: true });
       setDecision({ open: false, stage: '', decision: '', remarks: '' });
       // On master approval, surface the vendor's set-password link so the admin
       // can copy + send it directly (same as the resend flow). Build from this
@@ -351,6 +367,22 @@ const OnboardingDetail = () => {
               <button onClick={() => setDecision({ ...decision, open: false })}><X className="h-5 w-5" /></button>
             </div>
             <div className="p-6 space-y-4">
+              {decision.stage === 'master' && decision.decision === 'approve' && cafeterias.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">Assign to cafeteria</label>
+                  <select
+                    data-testid="approval-cafeteria-select"
+                    value={selCafeteria}
+                    onChange={(e) => setSelCafeteria(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg text-sm bg-card"
+                  >
+                    {cafeterias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (default)' : ''}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-text-muted mt-1">The vendor will appear under this food court on this site.</p>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium">Remarks {decision.decision !== 'approve' && '*'}</label>
                 <textarea
