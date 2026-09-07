@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { ShoppingCart, Plus, Minus, Store, X, ChevronDown, ShieldAlert } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Store, X, ChevronDown, ShieldAlert, WifiOff } from 'lucide-react';
 import logger from '../../lib/logger';
 import VegIndicator from '../../components/VegIndicator';
 
@@ -179,6 +179,9 @@ const EmployeeMenu = () => {
   // Employee's saved allergies (from Preferences page), normalised to canonical keys.
   const [userAllergens, setUserAllergens] = useState([]);
   const [hideAllergenItems, setHideAllergenItems] = useState(true);
+  // Track connectivity so we can tell the employee "you're offline" instead of
+  // wrongly implying their account isn't linked to a site.
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   const fetchPreferences = useCallback(async () => {
     try {
@@ -196,6 +199,18 @@ const EmployeeMenu = () => {
   }, []);
 
   useEffect(() => { fetchPreferences(); }, [fetchPreferences]);
+
+  // Listen for the browser going offline/online.
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => setIsOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
 
   const fetchVendors = useCallback(async () => {
     try {
@@ -455,13 +470,23 @@ const EmployeeMenu = () => {
               Browse Menu
             </h1>
             {vendors.length === 0 ? (
-              <div data-testid="no-vendors-empty-state" className="bg-card border border-border-light rounded-2xl p-8 sm:p-12 text-center">
-                <ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-                <h2 className="font-heading text-lg font-semibold text-text-primary mb-2">No menu available yet</h2>
-                <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Your account isn't linked to a site with active vendors yet. Please contact your Cravitoo admin to get your office site assigned.
-                </p>
-              </div>
+              isOffline ? (
+                <div data-testid="offline-empty-state" className="bg-card border border-border-light rounded-2xl p-8 sm:p-12 text-center">
+                  <WifiOff className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                  <h2 className="font-heading text-lg font-semibold text-text-primary mb-2">Network is offline</h2>
+                  <p className="text-text-secondary text-sm max-w-md mx-auto">
+                    We can't load your menu because your device is offline. Please connect to a stable network and try again.
+                  </p>
+                </div>
+              ) : (
+                <div data-testid="no-vendors-empty-state" className="bg-card border border-border-light rounded-2xl p-8 sm:p-12 text-center">
+                  <ShieldAlert className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                  <h2 className="font-heading text-lg font-semibold text-text-primary mb-2">No menu available yet</h2>
+                  <p className="text-text-secondary text-sm max-w-md mx-auto">
+                    Your account isn't linked to a site with active vendors yet. Please contact your Cravitoo admin to get your office site assigned.
+                  </p>
+                </div>
+              )
             ) : (
             <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-2 snap-x snap-mandatory">
               {vendors.map((vendor) => (

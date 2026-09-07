@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only test of employee Browse Menu empty-state variants (offline vs online-no-site). Verified against preview URL using timefix_emp@cravitoo.com. All 5 sub-tests passed: (1) Online + no-site user renders data-testid='no-vendors-empty-state' with correct heading 'No menu available yet' and body mentioning Cravitoo admin; (2) dispatching window 'offline' event flips display to data-testid='offline-empty-state' with heading 'Network is offline' and body about stable network; (3) dispatching 'online' event flips it back; (4) initial mount with navigator.onLine=false + aborted /api/vendors renders offline-empty-state; (5) no-vendors and offline empty-states are mutually exclusive as designed. Note: audit_emp_a@corpa.com and qa_employee@gatetest.com credentials from the review request returned 401 in this env (likely wiped/reseeded); timefix_emp@cravitoo.com worked and is a natural no-site employee suitable for this test.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Note: audit_emp_a@corpa.com and qa_employee@gatetest.com in /app/memory/test_credentials.md returned 401 in this preview env. Consider re-seeding or updating credentials doc."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "timefix_emp@cravitoo.com / Test#1234 (verified working, no site linked)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Employee menu empty-state feature is fully verified. Component listens to window online/offline events and toggles between data-testid='offline-empty-state' (WifiOff icon) and data-testid='no-vendors-empty-state' (ShieldAlert icon). Use timefix_emp@cravitoo.com / Test#1234 for a no-site employee. To simulate offline in Playwright, use page.add_init_script to override navigator.onLine before reload, plus page.route to abort /api/vendors*, since app has no service worker."
+}
