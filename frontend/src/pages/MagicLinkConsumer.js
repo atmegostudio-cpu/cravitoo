@@ -72,7 +72,10 @@ export default function MagicLinkConsumer() {
         const dest = data?.role === 'vendor' ? '/vendor/dashboard'
                    : data?.role === 'master_admin' ? '/master/dashboard'
                    : '/';
-        navigate(dest, { replace: true });
+        // Hard redirect (not client-side navigate) so AuthProvider re-mounts
+        // and re-reads the freshly-set auth cookies — otherwise the stale
+        // AuthContext (user=null) makes ProtectedRoute bounce us to /login.
+        window.location.replace(dest);
       }, 900);
     } catch (e) {
       logger.warn('Magic link complete failed', e);

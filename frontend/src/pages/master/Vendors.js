@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Store, Edit, Save, X, Settings, Mail, Trash2, Send, CheckCircle2, AlertCircle, Clock, Sparkles } from 'lucide-react';
+import { Store, Edit, Save, X, Settings, Mail, Trash2, Send, CheckCircle2, AlertCircle, Clock, Sparkles, Copy, Link2 } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -18,6 +18,8 @@ const MasterVendors = () => {
   const [resendEmail, setResendEmail] = useState('');
   const [resendBusy, setResendBusy] = useState(false);
   const [resendResult, setResendResult] = useState(null);       // {ok, message}
+  const [resendLink, setResendLink] = useState('');             // the copyable magic link
+  const [linkCopied, setLinkCopied] = useState(false);
   const [resendLog, setResendLog] = useState([]);
   const [sanitizing, setSanitizing] = useState(false);
   const [sanitizeResult, setSanitizeResult] = useState(null);
@@ -134,13 +136,20 @@ const MasterVendors = () => {
     }
     setResendBusy(true);
     setResendResult(null);
+    setResendLink('');
+    setLinkCopied(false);
     try {
       const { data } = await axios.post(
         `${API}/admin/vendors/${resendVendor.id}/resend-onboarding`,
         { email },
         { withCredentials: true },
       );
-      setResendResult({ ok: true, message: data.message || `Sent to ${data.delivered_to}` });
+      setResendResult({ ok: true, delivered: data.email_delivered !== false, message: data.message || `Sent to ${data.delivered_to}` });
+      // Build the copy-link from THIS app's own origin using the token, so it
+      // always opens on the same host the admin is using (robust to backend
+      // ingress header stripping). Fall back to the server-provided magic_url.
+      if (data.token) setResendLink(`${window.location.origin}/auth/magic/${data.token}`);
+      else if (data.magic_url) setResendLink(data.magic_url);
       // refresh log
       const { data: log } = await axios.get(`${API}/admin/vendors/${resendVendor.id}/email-log`, { withCredentials: true });
       setResendLog(log || []);
@@ -150,6 +159,18 @@ const MasterVendors = () => {
       setResendResult({ ok: false, message: e?.response?.data?.detail || 'Failed to send' });
     } finally {
       setResendBusy(false);
+    }
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(resendLink);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    } catch {
+      // Fallback for browsers without clipboard API
+      const el = document.getElementById('resend-magic-link-field');
+      if (el) { el.select(); document.execCommand('copy'); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500); }
     }
   };
 
@@ -438,7 +459,7 @@ const MasterVendors = () => {
                   className="mt-1 w-full px-3 py-2.5 border border-border-light rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
                 <p className="text-[11px] text-text-muted mt-1.5">
-                  Works for corporate and approved non-corporate emails. Vendor gets a <strong>one-tap sign-in link</strong> (valid 7 days, single-use).
+                  Works for corporate and approved non-corporate emails. Vendor gets a <strong>one-tap sign-in link</strong> that never expires until it's used once — they set their own password on first open.
                 </p>
               </div>
 
@@ -453,6 +474,37 @@ const MasterVendors = () => {
                 >
                   {resendResult.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                   <span>{resendResult.message}</span>
+                </div>
+              )}
+
+              {resendLink && (
+                <div data-testid="resend-magic-link-box" className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Link2 className="h-3.5 w-3.5 text-indigo-600" />
+                    <p className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider">Direct sign-in link</p>
+                  </div>
+                  <p className="text-[11px] text-text-muted mb-2">
+                    Copy this and send it to the vendor on WhatsApp, SMS or chat if email doesn't arrive. It opens the "set your password" screen.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="resend-magic-link-field"
+                      data-testid="resend-magic-link-field"
+                      readOnly
+                      value={resendLink}
+                      onFocus={(e) => e.target.select()}
+                      className="flex-1 min-w-0 px-2.5 py-2 border border-border-light rounded-lg text-xs font-mono bg-white truncate"
+                    />
+                    <button
+                      data-testid="resend-copy-link-btn"
+                      onClick={copyLink}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                        linkCopied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      }`}
+                    >
+                      {linkCopied ? <><CheckCircle2 className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                    </button>
+                  </div>
                 </div>
               )}
 

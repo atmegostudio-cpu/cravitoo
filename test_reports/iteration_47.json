@@ -1,0 +1,34 @@
+{
+  "summary": "Retested the two fixes from iteration_46 (auto-login after magic-link set-password + origin-derived magic_url). FIX 1 fully verified end-to-end in the real preview browser: after POST /auth/magic/{token}/complete with a new password, MagicLinkConsumer now does window.location.replace(dest), AuthProvider re-mounts against the fresh cookies, the vendor URL becomes /vendor/dashboard and the Vendor Dashboard page fully renders (Today at a Glance, Total Orders, header shows 'Vendor'). No bounce to /login. FIX 2 is IMPLEMENTED at the code level (hardcoded https://app.cravitoo.com removed from backend/routers/admin.py; now reads PUBLIC_APP_URL → Origin header → request.base_url). Backend pytest against localhost:8001 with an explicit Origin header PASSES — magic_url starts with the requested preview origin, no more app.cravitoo.com leak. HOWEVER, when the resend endpoint is hit through the actual preview ingress (both from python requests and from the browser fetch used by the admin UI), the ingress does NOT propagate the Origin header, so the code falls back to request.base_url, which resolves to the INTERNAL cluster host 'https://duplicate-prevention-4.cluster-3.preview.emergentcf.cloud' — NOT the preview host 'duplicate-prevention-4.preview.emergentagent.com' the request-body expects. The app.cravitoo.com leak IS gone (main iter-46 goal met), but the resulting link is an internal upstream URL that a real vendor probably can't open. Backend flow regression: 4/4 pytest pass (verify → complete → single-use 410 → login → forgot-password → 2nd resend mints new token). Admin resend modal still renders resend-magic-link-box + resend-magic-link-field + resend-copy-link-btn correctly (verified in prior iteration; not re-tested this round). forgot-password-link present on /login. Cleanup done for all TEST_ vendors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/vendors/{id}/resend-onboarding", "issue": "Through the preview k8s ingress, the request Origin header is stripped/not forwarded, so backend falls back to request.base_url which reports the internal cluster host ('duplicate-prevention-4.cluster-3.preview.emergentcf.cloud'). Result: magic_url points to an internal upstream URL rather than 'duplicate-prevention-4.preview.emergentagent.com'. The hardcoded app.cravitoo.com leak IS gone, but the request expected the magic_url to begin with the preview origin. Suggested extra fallbacks (in order): X-Forwarded-Host + X-Forwarded-Proto, Referer header (strip path), then base_url. Setting PUBLIC_APP_URL in backend/.env for preview would also close this."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_resend_magic_link.py",
+    "/app/test_reports/pytest/iter47_resend.xml"
+  ],
+  "action_items": [
+    "Backend: augment resend_vendor_onboarding fallback chain — PUBLIC_APP_URL → X-Forwarded-Host+X-Forwarded-Proto → Origin → Referer → request.base_url. In this preview the ingress drops Origin, so today the URL is the internal cluster upstream host. OR set PUBLIC_APP_URL=https://duplicate-prevention-4.preview.emergentagent.com in backend/.env for preview.",
+    "No action required for FIX 1 — verified fully working."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/admin.py:569-575 — Origin-only fallback is fragile behind an ingress that rewrites Host/strips Origin. request.base_url will then leak the internal upstream host into the copied link. Add X-Forwarded-Host / X-Forwarded-Proto and Referer as intermediate fallbacks.",
+    "frontend/src/pages/MagicLinkConsumer.js — window.location.replace(dest) works correctly to force AuthProvider to re-read cookies; nice pattern, keep it."
+  ],
+  "updated_files": ["/app/backend/tests/test_resend_magic_link.py"],
+  "success_rate": {"backend": "100% (4/4 pytest incl. new origin test)", "frontend": "100% for FIX 1 (vendor lands on /vendor/dashboard, dashboard renders)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master admin) — used to create/delete throwaway vendors via /api/vendors and to trigger resend.",
+  "seed_data_creation": "Each test creates a per-test throwaway vendor (email prefix TEST_vendor_*) and cleans up: DELETE /api/vendors/{id} plus users/vendor_magic_links/vendor_email_log rows by email. All test vendors cleaned up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "FIX 1 is fully validated end-to-end (window.location.replace path in MagicLinkConsumer). FIX 2 removes the app.cravitoo.com hardcode but through the preview ingress the Origin header is stripped, so the fallback yields the internal cluster upstream host. If main agent adds X-Forwarded-Host / Referer fallback OR sets PUBLIC_APP_URL, this should produce the preview host; retest by hitting /api/admin/vendors/{id}/resend-onboarding through the preview URL (NOT localhost) and asserting magic_url.startswith('https://duplicate-prevention-4.preview.emergentagent.com').",
+  "rca of the issue": "Root cause of remaining FIX-2 gap: FastAPI's request.headers only see what the ingress actually forwards. The Kubernetes ingress in this environment drops the browser's Origin header (or maps to internal), and request.base_url reflects the upstream Host ('duplicate-prevention-4.cluster-3.preview.emergentcf.cloud'), not the public preview URL. Verified by (a) pytest hitting localhost:8001 with an explicit Origin — magic_url = preview origin (PASS), (b) same request through preview URL — magic_url = internal cluster host (still no app.cravitoo.com, so iter-46 leak is fixed but not the ideal preview host)."
+}

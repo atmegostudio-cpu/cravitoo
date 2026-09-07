@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, EmailStr
 from models import CityAdminCreate
 
@@ -469,6 +469,7 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
     async def resend_vendor_onboarding(
         vendor_id: str,
         body: _ResendOnboardingBody,
+        request: Request,
         user: dict = Depends(get_current_user),
     ):
         """Master Admin only. Re-send the vendor's onboarding email as a one-tap
@@ -561,7 +562,31 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
             "created_by_admin": user["id"],
             "created_at": datetime.now(timezone.utc),
         })
-        public_base = os.environ.get("PUBLIC_APP_URL", "https://app.cravitoo.com").rstrip("/")
+        # Build the link base. Prefer PUBLIC_APP_URL; otherwise derive from the
+        # request headers so the link opens in the SAME environment the admin is
+        # using — no hardcoded production host. Try, in order: Origin →
+        # X-Forwarded-Host/Proto → Referer → base_url (internal, last resort).
+        # (The frontend ALSO rebuilds the copy-link from window.location.origin
+        # using the returned `token`, so the admin copy-link is always correct
+        # regardless of ingress header stripping.)
+        public_base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if not public_base:
+            hdrs = request.headers
+            origin = (hdrs.get("origin") or "").rstrip("/")
+            fwd_host = hdrs.get("x-forwarded-host")
+            referer = hdrs.get("referer") or ""
+            if origin:
+                public_base = origin
+            elif fwd_host:
+                proto = hdrs.get("x-forwarded-proto", "https")
+                public_base = f"{proto}://{fwd_host.split(',')[0].strip()}"
+            elif referer:
+                from urllib.parse import urlparse
+                p = urlparse(referer)
+                if p.scheme and p.netloc:
+                    public_base = f"{p.scheme}://{p.netloc}"
+            if not public_base:
+                public_base = str(request.base_url).rstrip("/")
         magic_url = f"{public_base}/auth/magic/{token}"
 
         # Send the ONE combined email
@@ -591,14 +616,24 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
                         "onboarding_resent" if success else "onboarding_resend_failed",
                         {"email": target_email, "error": err if not success else None})
 
-        if not success:
-            raise HTTPException(status_code=502,
-                detail=f"Could not send email to {target_email}: {err or 'Resend delivery failure'}")
-
+        # Always hand the working link back to the admin. Email delivery is
+        # unreliable (corporate filters, SafeLinks/Mimecast rewriting, WhatsApp
+        # truncation) — so even if the email fails, the admin can copy this exact
+        # link and give it to the vendor directly. The link is single-use +
+        # non-expiring, and only consumed when the vendor sets their password.
         return {
             "success": True,
             "delivered_to": target_email,
-            "message": f"Onboarding link sent to {target_email}. Vendor will set their password on first click.",
+            "email_delivered": bool(success),
+            "magic_url": magic_url,
+            "token": token,
+            "message": (
+                f"Onboarding link emailed to {target_email}. "
+                f"You can also copy the link below and send it directly."
+                if success else
+                f"Couldn't email {target_email} ({err or 'delivery failed'}). "
+                f"Copy the link below and send it to the vendor directly — it works the same way."
+            ),
         }
 
     @r.get("/admin/vendors/{vendor_id}/email-log")

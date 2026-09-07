@@ -3,6 +3,17 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Vendor Magic-Link Resend Fix (COMPLETED ✅)
+
+**Reported bug**: Vendor opened the resent onboarding magic link and saw "Link no longer works / This link could not be used."
+**Diagnosis**: Backend token generation/validation is correct even after prior completion (verified: verify 200 → complete 200, single-use, non-expiring). The frontend "could not be used" text is its *generic fallback* (no server detail) → the failure is at the **delivery layer** (corporate email SafeLinks/Mimecast rewriting, WhatsApp link truncation, or ingress not routing `/auth/magic`), not app logic.
+**Fixes**:
+- **Resend now always returns the working link** (`magic_url` + `token`) even if the email send fails (no more 502) — `backend/routers/admin.py::resend_vendor_onboarding`. Admin can copy it and send via any channel, bypassing email mangling.
+- **Admin Vendors modal** shows a "Direct sign-in link" box with a **Copy button**, built from `window.location.origin + token` so the link is always correct regardless of ingress header stripping (`frontend/src/pages/master/Vendors.js`).
+- **Auto-login fix**: after set-password, `MagicLinkConsumer` now does `window.location.replace(dest)` so `AuthProvider` re-reads the fresh cookies and the vendor lands on `/vendor/dashboard` (was bouncing to `/login`).
+- **Correct link host**: added `PUBLIC_APP_URL` to `backend/.env` (preview host) and hardened the server fallback chain (PUBLIC_APP_URL → Origin → X-Forwarded-Host/Proto → Referer → base_url). **Production must set `PUBLIC_APP_URL=https://app.cravitoo.com`.**
+- **Verified**: testing_agent iterations 46/47/48 — 100% backend + frontend; full journey (resend → open link → set password → land on Vendor dashboard → email/password login → forgot-password), single-use (410 on reuse), and correct preview host all pass.
+
 ## Jun 2026 — Navy App Tile + Install Banner (COMPLETED ✅)
 
 - **Navy home-screen icons**: regenerated the app/maskable/apple-touch icons on a branded navy tile (`#051A47`) with the orange Cravitoo "C" mark, so the icon pops on the home screen instead of plain white. Browser-tab favicons kept white for small-size legibility. Maskable variants keep safe-zone padding.

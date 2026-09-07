@@ -1,0 +1,37 @@
+{
+  "summary": "Tested resend-onboarding magic-link flow end-to-end (backend pytest + frontend Playwright on preview URL). Backend behaves EXACTLY as described in the request: resend returns success=true with a fully-qualified magic_url + email_delivered (even when Resend rejects `example.com`, endpoint returns 200 with email_delivered=false and a working magic_url, NOT a 502). Extracted token verifies 200, complete sets password + auth cookies + role=vendor, re-verify returns 410 (single-use), email/password login works, forgot-password returns success, and a SECOND resend AFTER completion mints a NEW token that verifies + completes again (production scenario reproduced OK). Admin UI: resend-modal, resend-success, resend-magic-link-box, resend-magic-link-field and resend-copy-link-btn all render as specified, and the copy button toggles to 'Copied'. Two issues found: (1) magic_url is built from a hardcoded default `https://app.cravitoo.com` because backend env var PUBLIC_APP_URL is not set in preview - so admins in preview see/copy a link pointing to production; (2) after successful magic-link 'complete' on the preview host, the browser lands on /login instead of /vendor/dashboard because AuthContext isn't refreshed post-complete — /vendor/dashboard's guard sees user=null and redirects (verified: right after this /api/auth/me returns 200 with role=vendor, so cookies ARE set correctly; only the client-side auth state is stale).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/vendors/{id}/resend-onboarding", "issue": "magic_url uses hardcoded default host 'https://app.cravitoo.com' when PUBLIC_APP_URL env var is unset (backend/routers/admin.py:564). In preview this leaks a production URL into the admin copy-link UI; if a real vendor is onboarded via preview, the copied link won't open in preview. Should fall back to request.base_url / origin header or CRAVITOO_ENV-aware default."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Magic-link set-password auto-login", "issue": "MagicLinkConsumer calls navigate('/vendor/dashboard') immediately after POST /auth/magic/{token}/complete succeeds and cookies are set, but AuthContext isn't refreshed, so ProtectedRoute for /vendor/dashboard bounces to /login. /api/auth/me confirms the session is valid (role=vendor) at that moment. Fix: refresh auth (refetch /auth/me / update context) before navigating, or use hard reload of dashboard route. User impact: after 'set your password' the vendor lands on /login instead of the dashboard (must then log in with the newly-set password, which works).", "affected_selectors": ["magic-submit-btn", "/vendor/dashboard route"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_resend_magic_link.py",
+    "/app/test_reports/pytest/iter46_resend.xml"
+  ],
+  "action_items": [
+    "Backend: replace hardcoded 'https://app.cravitoo.com' default in resend_vendor_onboarding with request-origin / REACT_APP_BACKEND_URL-aware base so preview generates preview links.",
+    "Frontend: in MagicLinkConsumer.submit(), after complete() succeeds, refresh AuthContext (call /api/auth/me or setUser from response) BEFORE navigate('/vendor/dashboard'); otherwise ProtectedRoute redirects to /login."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/admin.py:564 - hardcoded production URL as fallback is a footgun for preview / staging; should read from CRAVITOO_ENV or the incoming request host.",
+    "frontend/src/pages/MagicLinkConsumer.js:65-76 - success handler navigates without hydrating AuthContext; any ProtectedRoute on the destination will bounce the user back to /login even though cookies are set. Same pattern likely exists for master_admin path.",
+    "Resend endpoint returning HTTP 200 with success=true when Resend API rejected the email (email_delivered=false) is intentional per spec but the 'Recent Attempts' row shows a red error icon — consider surfacing email_delivered=false in the primary success banner too so admins don't miss it."
+  ],
+  "updated_files": ["/app/backend/tests/test_resend_magic_link.py"],
+  "success_rate": {"backend": "100% (3/3 pytest)", "frontend": "80% (modal+copy+link verify+complete OK; auto-login-to-dashboard fails due to stale AuthContext)"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master admin) used; throwaway vendors created via POST /api/vendors and cleaned up.",
+  "seed_data_creation": "Each test creates its own TEST_ / test_ prefixed vendor and cleans up (DELETE /api/vendors/{id} + users/vendor_magic_links/vendor_email_log deleted by email in fixture teardown).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend flow fully validated (pytest file /app/backend/tests/test_resend_magic_link.py — 3/3 pass). Two open items for main agent: (a) fix PUBLIC_APP_URL fallback so magic_url respects the current environment origin; (b) refresh AuthContext in MagicLinkConsumer post-complete so the vendor lands on /vendor/dashboard, not /login. UI already surfaces the copy-link box correctly and the token IS valid on preview even if the copied URL points to app.cravitoo.com — the ingress on preview happens to resolve the /auth/magic/{token} path fine because I overrode the host to the preview URL for testing.",
+  "rca of the issue": "Original production bug (vendor sees 'Link no longer works') was mitigated by (i) always returning the working magic_url in the admin resend response and (ii) surfacing a Direct Sign-in Link box with copy button. Backend/token logic is correct; email-delivery-layer failure no longer breaks the workflow because the admin can hand the vendor the URL directly. However two latent issues remain (see action_items) that could resurface as 'link goes to wrong domain' or 'set-password kicked me to /login' complaints."
+}
