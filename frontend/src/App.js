@@ -65,6 +65,7 @@ import EmployeeReservations from './pages/employee/Reservations';
 import VendorReservations from './pages/vendor/Reservations';
 import AdminReservations from './pages/master/Reservations';
 import MasterBroadcasts from './pages/master/Broadcasts';
+import SalesReport from './pages/reports/SalesReport';
 
 // Stable role arrays — extracted from inline props to avoid churning React
 // reconciler on every render (each inline `[...]` was a fresh reference).
@@ -79,6 +80,7 @@ const ROLES_MASTER_SUPER = ['master_admin', 'super_admin'];
 const ROLES_SITE_MASTER_SUPER = ['site_admin', 'master_admin', 'super_admin'];
 const ROLES_ONBOARDING_STAFF = ['master_admin', 'city_admin', 'site_admin'];
 const ROLES_ADMIN_ALL = ['master_admin', 'super_admin', 'site_admin', 'city_admin'];
+const ROLES_SALES_REPORT = ['master_admin', 'corporate_admin', 'site_admin'];
 const ROLES_ANY = ['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin'];
 
 function AppRoutes() {
@@ -277,6 +279,13 @@ function AppRoutes() {
       <Route path="/master/billing" element={
         <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterBilling />
+        </ProtectedRoute>
+      } />
+
+      {/* Sales Report (role-scoped: master / corporate / site admin) */}
+      <Route path="/reports/sales" element={
+        <ProtectedRoute allowedRoles={ROLES_SALES_REPORT}>
+          <SalesReport />
         </ProtectedRoute>
       } />
 

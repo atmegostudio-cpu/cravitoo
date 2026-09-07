@@ -1,0 +1,27 @@
+{
+  "summary": "Tested new Sales Report feature (Admin) end-to-end. Backend: 6/6 pytest passed (default 30-day, range 2026 full-year returns grand_total=300 order_count=2, month=2026-06 also 300/2, single-date filter shape OK, xlsx download ~6.2KB PK signature valid, employee gets 403). Frontend: master_admin sees 'Sales' nav link, /reports/sales loads, all three filter modes toggle correct inputs and Apply reloads data correctly (₹300 / 2 orders on 2026 range and month filter). Excel download works (cravitoo-sales-2026-09-07.xlsx, 6234 bytes). RBAC verified: employee has 0 'Sales' nav links and direct navigation to /reports/sales is blocked (redirects to /employee/dashboard). corporate_admin / site_admin scoping verified via code inspection only (no such accounts in DB) — logic in _allowed_site_ids looks correct.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SalesReport - Sales by Site table", "issues": ["Site column shows '—' for seeded orders because those orders lack a resolvable site_id in the DB; not a code bug — data-quality note only. Consider showing a friendlier label like 'Unassigned' instead of em-dash."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_sales_report.py", "/app/test_reports/pytest/sales_report.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_sales.py _parse_range: month rollover on December — `datetime(y + (m // 12), (m % 12) + 1, 1)` — for m=12 → year+1, month=1 (correct). Verified.",
+    "SalesReport.js effect uses `[]` deps with eslint-disable — acceptable (only initial load), but Apply button is required to refresh after filter change; users may not realize this at first. Consider auto-refetch on mode change.",
+    "downloadExcel filename uses todayISO() on client which may mismatch server-generated Content-Disposition; harmless but slightly inconsistent.",
+    "No hardcoded URLs; env vars used correctly; async DB ops used properly; _id never returned in JSON payload."
+  ],
+  "updated_files": ["/app/backend/tests/test_sales_report.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com / admin123 ; timefix_emp@cravitoo.com / Test#1234",
+  "seed_data_creation": "None — used existing seeded orders (June 2026, grand_total=300, 2 orders).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sales Report feature fully working. Backend regression test at /app/backend/tests/test_sales_report.py (6 tests). Seeded orders are dated June 2026 — default last-30-day view will show 0; use a wide range or month=2026-06 to surface data. corporate_admin/site_admin scoping not tested live (no accounts).",
+  "rca of the issue": "N/A — no issues found."
+}

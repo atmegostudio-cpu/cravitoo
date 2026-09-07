@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Admin Sales Report (role-scoped, Site/Vendor split, Excel export) (COMPLETED ✅)
+
+**Requested**: A role-scoped Sales Report for admins — total sales split by Site and Vendor, with Date / Date-range / Month filters and Excel (.xlsx) download.
+**Implemented**:
+- Backend `routers/admin_sales.py` → `GET /api/admin/sales-report` (params: `date`, `start`+`end`, `month`, `format=xlsx`). Wired into `server.py`. Returns `{grand_total, order_count, site_summary[], vendor_summary[], range, orders[]}`; `format=xlsx` streams a 3-sheet workbook (Orders / Site Totals / Vendor Totals) via openpyxl. Excludes cancelled orders; default range = last 30 days.
+- **Role scoping** (`_allowed_site_ids`): master_admin = all sites; corporate_admin = their company's sites; site_admin = their own site; other roles → 403.
+- Frontend `pages/reports/SalesReport.js` at `/reports/sales` (guard `ROLES_SALES_REPORT` = master/corporate/site admin). Filter chips (Date range / Single day / Month), Total-Sales + Orders cards, Sales-by-Site + Sales-by-Vendor tables, and a Download-Excel button. Nav "Sales" link added for all three roles (`components/Navbar.js`).
+- **Verified**: testing_agent iteration_54 — backend 6/6 + frontend 100%. grand_total=300/2 orders on 2026 range & month=2026-06; xlsx valid; employee → 403 and no nav link; corporate/site scoping code-verified (no such accounts in preview DB).
+
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 

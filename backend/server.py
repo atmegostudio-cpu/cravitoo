@@ -2919,6 +2919,7 @@ from routers.cafeterias import make_router as make_cafeterias_router, ensure_def
 from routers.orders import make_router as make_orders_router  # noqa: E402
 from routers.admin import make_router as make_admin_router  # noqa: E402
 from routers.vendor_reports import make_router as make_vendor_reports_router  # noqa: E402
+from routers.admin_sales import make_router as make_admin_sales_router  # noqa: E402
 app.include_router(make_reservations_router(db, safe_objectid, get_current_user, create_notification), prefix="/api")
 app.include_router(make_menu_change_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR), prefix="/api")
 app.include_router(make_admin_reports_router(db, safe_objectid, get_current_user), prefix="/api")
@@ -2950,6 +2951,7 @@ app.include_router(make_admin_router(
     is_master_or_super, hash_password,
 ), prefix="/api")
 app.include_router(make_vendor_reports_router(db, safe_objectid, get_current_user), prefix="/api")
+app.include_router(make_admin_sales_router(db, safe_objectid, get_current_user), prefix="/api")
 
 
 app.add_middleware(

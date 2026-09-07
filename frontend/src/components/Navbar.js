@@ -52,6 +52,7 @@ const Navbar = () => {
         return [
           { path: '/admin/dashboard', label: 'Dashboard', icon: BarChart3 },
           { path: '/admin/employees', label: 'Employees', icon: Users },
+          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
           { path: '/admin/bulk-pre-order', label: 'Bulk Pre-Order', icon: ClipboardList },
           { path: '/admin/events', label: 'Events', icon: CalendarDays },
         ];
@@ -68,6 +69,7 @@ const Navbar = () => {
           { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
           { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/master/billing', label: 'Billing', icon: Receipt },
+          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
           { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
           { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
           { path: '/master/allowed-domains', label: 'Domains', icon: Mail },
@@ -78,6 +80,7 @@ const Navbar = () => {
       case 'site_admin':
         return [
           { path: '/site-admin/dashboard', label: 'Dashboard', icon: BarChart3 },
+          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
           { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList },
           { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
