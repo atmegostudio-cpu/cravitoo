@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 53: Backend + Frontend testing of employee lookup (@domain / full / partial) + manual assign-site. Backend 9/9 pytest cases pass. Frontend: lookup by 'ui53_' returned 2 seeded employees, site dropdown populated with 3 sites, selecting UI53_SiteX + Assign successfully persisted (row's 'Current site' updated to 'UI53_SiteX'). MINOR UX issue: the ✓ success message set by assignEmp() is immediately wiped by the runLookup() reload it triggers (runLookup calls setMsg('')), so users only see the row-level state change, not the toast.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "master/Dashboard.js -> assignEmp()",
+        "issue": "Success ✓ message set by assignEmp() is instantly cleared by the subsequent await runLookup(), which does setMsg(''). The row's 'Current site' updates correctly but the fem-message toast never persists — contradicts the spec ('shows a success message fem-message starting with ✓'). Fix: after runLookup() completes, re-apply the success msg, or pass a flag to runLookup to skip clearing msg, or set msg AFTER runLookup.",
+        "selector": "[data-testid=\"fem-message\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter53_lookup_assign.py",
+    "/app/test_reports/pytest/iter53.xml"
+  ],
+  "action_items": [
+    "In frontend/src/pages/master/Dashboard.js assignEmp(): move setMsg('✓ ...') AFTER await runLookup(), or make runLookup() accept a {preserveMsg:true} flag so the success toast is not wiped. Test expectation in the spec is that fem-message starts with ✓ after Assign — currently only row state updates."
+  ],
+  "critical_code_review_comments": [
+    "admin.py::lookup_employees: works, but returns up to 100 results with no pagination or ordering — for large tenants this may need cursor/limit params.",
+    "admin.py::assign_employee_site: stores site_id as a string only; consider validating the site actually belongs to a live company/city chain (currently accepts any existing site).",
+    "Dashboard.js is 819 lines — still above the 700-line guideline; consider extracting FixEmployeeMenus panel into its own component."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter53_lookup_assign.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "90% (all core UI worked; only the success-toast persistence is missing)"},
+  "test_credentials": "Master admin admin@cravitoo.com/admin123 (from /app/memory/test_credentials.md). Throwaway employees hashed with bcrypt 'pass1234' — cleaned up.",
+  "seed_data_creation": "Backend pytest fixture seeds TEST_ITER53_ sites/vendor/mapping/employees and deletes them in teardown (verified 0 residual). Frontend test seeded ui53_emp1/2@cravitoo.com + UI53_SiteX — deleted post-run.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter53_lookup_assign.py (covers lookup domain/full/partial/empty/non-master + assign 404s/403/success + end-to-end vendor visibility). Frontend assign flow persists correctly to DB; only the success ✓ toast is missing due to setMsg('') inside runLookup being called right after setMsg('✓ ...') in assignEmp. Master admin, Demo Cafeteria Site and TimeFix Kitchen were NOT touched.",
+  "rca of the issue": "Frontend UX bug — order-of-operations in assignEmp(): `setMsg('✓ ...'); await runLookup();` and `runLookup` starts with `setMsg('')` — so React batches state such that user never sees the ✓ message. Row update via lookupResults refresh still works, so end-to-end functionality is correct."
+}

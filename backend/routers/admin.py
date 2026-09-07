@@ -33,6 +33,11 @@ class _AssignSiteBody(BaseModel):
     cafeteria_id: Optional[str] = None
 
 
+class _AssignEmpSiteBody(BaseModel):
+    email: str
+    site_id: str
+
+
 def _generate_magic_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -640,6 +645,55 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
                 f"Copy the link below and send it to the vendor directly — it works the same way."
             ),
         }
+
+    @r.get("/admin/employees/lookup")
+    async def lookup_employees(q: str, user: dict = Depends(get_current_user)):
+        """Find employees by full email, partial text, or a domain like
+        '@cravitoo.com'. Returns each with their current site so the admin can
+        assign the missing ones."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        term = (q or "").strip().lower()
+        if not term:
+            return []
+        import re as _re
+        rx = _re.escape(term)
+        emps = await db.users.find(
+            {"role": "employee", "email": {"$regex": rx, "$options": "i"}},
+            {"email": 1, "name": 1, "site_id": 1, "company_id": 1},
+        ).to_list(100)
+        # attach site names
+        site_ids = [e["site_id"] for e in emps if e.get("site_id")]
+        site_names = {}
+        for sid in set(site_ids):
+            s = await db.sites.find_one({"_id": safe_objectid(sid, "Site")}, {"name": 1})
+            if s:
+                site_names[sid] = s.get("name")
+        return [{
+            "id": str(e["_id"]),
+            "email": e.get("email"),
+            "name": e.get("name"),
+            "site_id": e.get("site_id"),
+            "site_name": site_names.get(e.get("site_id")),
+        } for e in emps]
+
+    @r.post("/admin/employees/assign-site")
+    async def assign_employee_site(body: _AssignEmpSiteBody, user: dict = Depends(get_current_user)):
+        """Manually assign an employee to a site so their menu shows immediately."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        emp = await db.users.find_one({"email": (body.email or "").lower().strip(), "role": "employee"})
+        if not emp:
+            raise HTTPException(status_code=404, detail=f"No employee found with email {body.email}")
+        site = await db.sites.find_one({"_id": safe_objectid(body.site_id, "Site")})
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+        await db.users.update_one(
+            {"_id": emp["_id"]},
+            {"$set": {"site_id": body.site_id, "is_active": True}},
+        )
+        await audit_log(user, "user", str(emp["_id"]), "assigned_site", {"site_id": body.site_id})
+        return {"ok": True, "email": emp.get("email"), "site_id": body.site_id, "site_name": site.get("name")}
 
     @r.post("/admin/vendors/{vendor_id}/assign-site")
     async def assign_vendor_site(vendor_id: str, body: _AssignSiteBody, user: dict = Depends(get_current_user)):

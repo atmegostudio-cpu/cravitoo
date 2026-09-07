@@ -411,6 +411,41 @@ const FixEmployeeMenus = () => {
   const [loadingReport, setLoadingReport] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [msg, setMsg] = useState('');
+  const [lookupResults, setLookupResults] = useState(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [sitesList, setSitesList] = useState([]);
+  const [assignChoice, setAssignChoice] = useState({});
+  const [assigningEmail, setAssigningEmail] = useState('');
+
+  const runLookup = async (preserveMsg = false) => {
+    const q = email.trim();
+    if (!q) { setMsg('Enter an email or a domain like @cravitoo.com'); return; }
+    setLookupBusy(true); if (!preserveMsg) setMsg(''); setLookupResults(null);
+    try {
+      const [empRes, siteRes] = await Promise.all([
+        axios.get(`${API}/admin/employees/lookup?q=${encodeURIComponent(q)}`, { withCredentials: true }),
+        sitesList.length ? Promise.resolve({ data: sitesList }) : axios.get(`${API}/sites`, { withCredentials: true }),
+      ]);
+      setLookupResults(empRes.data);
+      if (!sitesList.length) setSitesList(siteRes.data || []);
+      if (empRes.data.length === 0) setMsg(`No employees match "${q}"`);
+    } catch (e) {
+      setMsg(`✗ ${e.response?.data?.detail || 'Lookup failed'}`);
+    } finally { setLookupBusy(false); }
+  };
+
+  const assignEmp = async (empEmail) => {
+    const siteId = assignChoice[empEmail];
+    if (!siteId) { setMsg('Pick a site first'); return; }
+    setAssigningEmail(empEmail);
+    try {
+      const { data } = await axios.post(`${API}/admin/employees/assign-site`, { email: empEmail, site_id: siteId }, { withCredentials: true });
+      await runLookup(true);
+      setMsg(`✓ ${data.email} assigned to ${data.site_name}. Their menu will show that site's vendors now.`);
+    } catch (e) {
+      setMsg(`✗ ${e.response?.data?.detail || 'Assign failed'}`);
+    } finally { setAssigningEmail(''); }
+  };
 
   const runCheck = async () => {
     if (!email.includes('@')) { setMsg('Enter a valid employee email'); return; }
@@ -472,6 +507,9 @@ const FixEmployeeMenus = () => {
         <button data-testid="fem-report-btn" onClick={runReport} disabled={loadingReport} className="bg-white border border-teal-300 text-teal-800 hover:bg-teal-100 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
           {loadingReport ? 'Scanning…' : 'Scan everyone'}
         </button>
+        <button data-testid="fem-lookup-btn" onClick={runLookup} disabled={lookupBusy} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2">
+          {lookupBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Search &amp; assign
+        </button>
         <button data-testid="fem-backfill-btn" onClick={runBackfill} disabled={backfilling} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2">
           {backfilling ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Auto-fix sites
         </button>
@@ -494,6 +532,42 @@ const FixEmployeeMenus = () => {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {lookupResults && lookupResults.length > 0 && (
+        <div data-testid="fem-assign-panel" className="rounded-xl p-4 mb-3 bg-white border border-indigo-200">
+          <p className="font-medium text-text-primary mb-2 text-sm">Assign employee → City / Site / Cafeteria / Vendor</p>
+          <div className="space-y-2">
+            {lookupResults.map((e) => (
+              <div key={e.id} data-testid={`fem-emp-row-${e.email}`} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 rounded-lg bg-slate-50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{e.email}</p>
+                  <p className="text-xs text-text-muted">Current site: {e.site_name || <span className="text-red-600 font-medium">none — menu is blank</span>}</p>
+                </div>
+                <select
+                  data-testid={`fem-site-select-${e.email}`}
+                  value={assignChoice[e.email] || e.site_id || ''}
+                  onChange={(ev) => setAssignChoice({ ...assignChoice, [e.email]: ev.target.value })}
+                  className="px-2 py-1.5 border border-border-light rounded-lg text-xs bg-white"
+                >
+                  <option value="">— Select site —</option>
+                  {sitesList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.city ? `${s.city} · ` : ''}{s.name}</option>
+                  ))}
+                </select>
+                <button
+                  data-testid={`fem-assign-btn-${e.email}`}
+                  onClick={() => assignEmp(e.email)}
+                  disabled={assigningEmail === e.email}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                >
+                  {assigningEmail === e.email ? 'Saving…' : 'Assign'}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-text-muted mt-2">Vendors/cafeterias shown to the employee come from the site you assign here. Assign the site whose vendors they should see.</p>
         </div>
       )}
 

@@ -3,6 +3,15 @@
 ## Original Problem Statement
 Build a production-ready, scalable, enterprise-grade full-stack food-tech application called Cravitoo for India - smart corporate food ordering and cafeteria management ecosystem.
 
+## Jun 2026 — Employee search-by-domain + Manual site assignment (COMPLETED ✅)
+
+**Reported**: Admin "Check employee" showed "No employee found with email @cravitoo.com" for a domain input; also needed a manual employee→site assignment UI.
+**Fix**:
+- `GET /api/admin/employees/lookup?q=` — finds employees by full email, partial text, or `@domain` (master-only), returns each with current site.
+- `POST /api/admin/employees/assign-site {email, site_id}` — sets the employee's `site_id` (+ activates), reflects immediately in the employee's vendor list.
+- Master Dashboard "Fix Employee Menus" panel: new **Search & assign** button lists matching employees, each with a **site dropdown + Assign** button (`fem-lookup-btn`, `fem-assign-panel`, `fem-site-select-{email}`, `fem-assign-btn-{email}`). Success toast persists after reload.
+- **Verified**: testing_agent iteration_53 — 9/9 backend pass; UI assign persists; toast-persistence fix confirmed via screenshot (timefix_emp → Demo Cafeteria Site).
+
 ## Jun 2026 — Employee sees blank vendors (visibility fix) (COMPLETED ✅)
 
 **Reported**: Employee swami@cravitoo.com sees a blank "Available Vendors" list despite a vendor being mapped to the Cravitoo site (employee has past orders → worked before).
