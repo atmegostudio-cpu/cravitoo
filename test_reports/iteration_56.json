@@ -1,0 +1,20 @@
+{
+  "summary": "Backend-only test of site link-repair + client city PATCH + cascading Admin Sales Report. Created a fresh corporate client, city and a site (without company_id/city_id), then PATCHed the site with {company_id, city_id} and verified GET persistence. Verified PATCH /api/master/corporate-clients/{id} accepts city_id and persists. Verified /api/admin/sales-report/filters returns clients/cities/sites (with company_id + city_id) and vendors (with site_ids) and includes DEMO seed rows. Verified all filtered totals for month=2026-06 exactly match main-agent expectations: grand=3975/14, Acme=2390/8, Bengaluru=2505/9, Acme+Mumbai=1170/3, Acme+Globex=3675/12; response contains client_summary/city_summary/site_summary/vendor_summary. Verified xlsx export contains 4 sheets (Orders, City Totals, Site Totals, Vendor Totals). Verified RBAC: a self-registered employee gets 403 on PATCH /api/sites/{id} with company_id and on both /api/admin/sales-report and /api/admin/sales-report/filters. All test-created rows (client cascade, site, city, rbac user) cleaned up. DEMO seed left intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_site_link_repair_and_report.py",
+    "/app/test_reports/pytest/iter56.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Stale non-master credentials in /app/memory/test_credentials.md: approve_0b71c6@example.com/vendor123, audit_emp_a@corpa.com, audit_vendor1@corpa.com, nosite_emp@corpa.com all return 401 on preview. Either re-run seed_hierarchy_audit.py or update the credentials file. This slowed RBAC testing; worked around by self-registering an employee on the linktest.com allowed domain."
+  ],
+  "updated_files": ["/app/backend/tests/test_site_link_repair_and_report.py"],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master). RBAC coverage used self-registered employee on allowed domain linktest.com.",
+  "seed_data_creation": "None persisted. All rows created (TEST_Client_*, TEST_City_*, TEST_Site_*, test_rbac_*@linktest.com) were deleted / deactivated in test_zz_cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 56 fully validated site company_id repair PATCH, client city_id PATCH and cascading admin sales report (numbers + Excel + RBAC). Test file /app/backend/tests/test_site_link_repair_and_report.py is reusable regression. Note stale non-master creds in test_credentials.md — RBAC test provisions a fresh employee via /api/auth/register on linktest.com allowed domain."
+}

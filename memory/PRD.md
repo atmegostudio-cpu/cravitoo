@@ -1,5 +1,20 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — LIVE Ascendion mapping repair + site/client link-edit capability (COMPLETED ✅)
+
+**Reported (live `app.cravitoo.com`)**: Client "Ascendion" wasn't linked to its City → Site, and sales weren't rolling up in the Sales Report. Also asked to remove any dev demo clients (DEMO Acme Corp / DEMO Globex) but keep "Demo Cravitoo" + live data.
+**Root cause**: sites can be created without `company_id`/`city_id`; the Ascendion site had both null and nothing (employees/domain/onboarding) carried a company_id to auto-derive from — and there was **no API** to set `site.company_id` or `client.city_id` explicitly, so the automated backfill couldn't repair it.
+**Code fix (deployed)**:
+- `routers/sites.py` `PATCH /api/sites/{id}` → master-only allowed set now includes `company_id` (`city_id` already allowed).
+- `routers/corporate_clients.py` `CorporateClientUpdate` → added `city_id`.
+**Live data repair applied (read-verified)**:
+- Ascendion site → `company_id=Ascendion`, `city_id=Vadodara`; Ascendion client → `city_id=Vadodara`; `ascendion.com` domain re-stamped with the Ascendion company.
+- Ran `POST /api/admin/integrity/backfill-orders` (uses the *ordering employee's* site as source of truth): scanned 252, fixed_site 79, fixed_company 221, unresolved 0.
+- **Result**: Sales Report now shows Client=Ascendion ₹20,617.50 / 221 orders → City=Vadodara → Site=Ascendion-Vadodara → vendors (The Kitchen, Quick Bites, Brew & Blend, Healthy Bite). Demo Cravitoo ₹1,468.45 / Mumbai (left as-is per user; its site is still unlinked to the client so it shows under client "—"). Excel export = 4 sheets. Site→Cafeteria→Vendor was already healthy.
+- **DEMO Acme Corp / DEMO Globex** confirmed absent on live (were preview-only); removed from preview. 19 previously-"stray" orders correctly resolved to their true site via the ordering employee (4 genuine Ascendion, 15 genuine Demo Cravitoo) — none force-attributed.
+**Verified**: testing_agent iteration_56 — backend 100% (`tests/test_site_link_repair_and_report.py`): site company_id/city_id PATCH persistence, client city_id PATCH, cascade filters, all filtered totals, Excel 4-sheet, RBAC 403. Live fix verified via read-only API with real numbers.
+**Note / follow-up**: root cause (site can be created unlinked) still exists in the create-site UI — consider requiring/defaulting client+city selection at site creation to prevent recurrence for future clients.
+
 ## Jun 2026 — Sales Report Cascading Filters: Client → City → Site → Vendor (COMPLETED ✅)
 
 **Requested**: Add Client → City → Site → Vendor filters to the Admin Sales Report (multi-select, compare multiple cities/sites at once), alongside Date / Date-range / Month. Excel download must honor the same filters and give site-wise, city-wise, and vendor-wise totals.
