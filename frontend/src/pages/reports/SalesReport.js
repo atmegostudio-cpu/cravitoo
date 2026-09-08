@@ -89,11 +89,12 @@ const MultiSelect = ({ label, icon: Icon, options, selected, onChange, testid, d
   );
 };
 
-const SummaryTable = ({ title, icon: Icon, rows, cols, emptyText, testid }) => (
+const SummaryTable = ({ title, icon: Icon, rows, cols, emptyText, testid, headerExtra }) => (
   <div className="bg-card border border-border-light rounded-2xl overflow-hidden" data-testid={testid}>
     <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
       <Icon className="h-5 w-5 text-primary" />
       <h2 className="font-heading text-lg font-semibold text-text-primary">{title}</h2>
+      {headerExtra ? <div className="ml-auto">{headerExtra}</div> : null}
     </div>
     {rows.length === 0 ? (
       <div className="p-8 text-center text-text-muted text-sm">{emptyText}</div>
@@ -134,6 +135,7 @@ const SalesReport = () => {
   });
   const [end, setEnd] = useState(todayISO());
   const [month, setMonth] = useState(currentMonth());
+  const [vendorGroup, setVendorGroup] = useState('site'); // 'site' | 'vendor'
 
   // filter option catalog + selections
   const [catalog, setCatalog] = useState({ clients: [], cities: [], sites: [], vendors: [] });
@@ -380,15 +382,41 @@ const SalesReport = () => {
                     { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
                   ]}
                 />
-                <SummaryTable
-                  title="Sales by Vendor" icon={Store} testid="sales-by-vendor"
-                  rows={data.vendor_summary || []} emptyText="No sales in this period."
-                  cols={[
-                    { key: 'vendor', label: 'Vendor', strong: true },
-                    { key: 'site', label: 'Site' },
-                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
-                  ]}
-                />
+                {(() => {
+                  const vendorRows = vendorGroup === 'vendor'
+                    ? Object.values((data.vendor_summary || []).reduce((acc, r) => {
+                        const k = r.vendor || '—';
+                        acc[k] = acc[k] || { vendor: k, total: 0 };
+                        acc[k].total += Number(r.total || 0);
+                        return acc;
+                      }, {})).sort((a, b) => b.total - a.total)
+                    : (data.vendor_summary || []);
+                  const vendorToggle = (
+                    <div className="flex rounded-lg border border-border-light overflow-hidden text-xs">
+                      <button data-testid="vendor-group-site" onClick={() => setVendorGroup('site')}
+                        className={`px-2.5 py-1 transition-colors ${vendorGroup === 'site' ? 'bg-primary text-white' : 'bg-card text-text-secondary hover:bg-background'}`}>By site</button>
+                      <button data-testid="vendor-group-vendor" onClick={() => setVendorGroup('vendor')}
+                        className={`px-2.5 py-1 transition-colors ${vendorGroup === 'vendor' ? 'bg-primary text-white' : 'bg-card text-text-secondary hover:bg-background'}`}>By vendor</button>
+                    </div>
+                  );
+                  return (
+                    <SummaryTable
+                      title="Sales by Vendor" icon={Store} testid="sales-by-vendor"
+                      headerExtra={vendorToggle}
+                      rows={vendorRows} emptyText="No sales in this period."
+                      cols={vendorGroup === 'vendor'
+                        ? [
+                            { key: 'vendor', label: 'Vendor', strong: true },
+                            { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                          ]
+                        : [
+                            { key: 'vendor', label: 'Vendor', strong: true },
+                            { key: 'site', label: 'Site' },
+                            { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                          ]}
+                    />
+                  );
+                })()}
               </div>
             </>
           ) : null}

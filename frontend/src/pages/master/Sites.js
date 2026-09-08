@@ -73,9 +73,16 @@ const MasterSites = () => {
   const repairLinks = async () => {
     setRepairing(true);
     try {
-      const { data } = await axios.post(`${API}/admin/integrity/backfill-sites`, {}, { withCredentials: true });
+      const s = await axios.post(`${API}/admin/integrity/backfill-sites`, {}, { withCredentials: true });
+      const o = await axios.post(`${API}/admin/integrity/reconcile-order-sites`, {}, { withCredentials: true });
+      const e = await axios.post(`${API}/admin/integrity/backfill-employee-sites`, {}, { withCredentials: true });
       await fetchAll();
-      alert(`Repair complete. Scanned ${data.scanned}, linked company on ${data.fixed_company}, city on ${data.fixed_city}, still unresolved ${data.unresolved}.`);
+      alert(
+        `Data links repaired ✓\n\n` +
+        `Sites linked — client: ${s.data.fixed_company}, city: ${s.data.fixed_city} (unresolved ${s.data.unresolved})\n` +
+        `Orders re-attributed to vendor's site: ${o.data.reconciled} (skipped ${o.data.skipped_ambiguous_or_unmapped})\n` +
+        `Employees stamped with client+city: ${e.data.fixed} (unresolved ${(e.data.unresolved || []).length})`
+      );
     } catch (e) {
       alert(e?.response?.data?.detail || 'Repair failed');
     } finally {
@@ -167,13 +174,13 @@ const MasterSites = () => {
             <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">Sites</h1>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                data-testid="repair-site-links-btn"
+                data-testid="fix-data-links-btn"
                 onClick={repairLinks}
                 disabled={repairing}
                 className="flex items-center gap-2 bg-card border border-border-light text-text-secondary px-4 py-2.5 rounded-xl font-medium hover:border-primary/40 disabled:opacity-50 transition-all"
-                title="Relink any older sites missing their city or company"
+                title="Fix all data links: site→client/city, order→vendor's site, and employee→client/city"
               >
-                <Wrench className="h-4 w-4" /> {repairing ? 'Repairing…' : 'Repair Links'}
+                <Wrench className="h-4 w-4" /> {repairing ? 'Fixing…' : 'Fix Data Links'}
               </button>
               <button
                 data-testid="create-site-btn"
