@@ -1,0 +1,30 @@
+{
+  "summary": "Backend-only iter58 validated NEW master endpoint POST /api/admin/integrity/reconcile-order-sites. Wrote /app/backend/tests/test_iter58_reconcile_order_sites.py (12 tests, 100% pass, ~5s). Setup (all TEST_/UID-prefixed, cleaned in test_zz): via API created 2 corporate clients + 2 cities + 2 sites (SiteA→ClientA/CityA, SiteB→ClientB/CityB); via Mongo inserted vendor V (single-mapped to SiteA), vendor W (mapped to BOTH sites), vendor U (no mapping), plus 5 orders (V: 2 at wrong SiteB + 1 at correct SiteA; W: 1 at SiteB; U: 1 at SiteB). All 5 orders seeded with company_id=None and city_id=None. Verified: (1) endpoint returns {success, scanned, reconciled≥2, skipped_ambiguous_or_unmapped}; (2) V's 2 wrong orders now stamped site_id=SiteA AND company_id=ClientA AND city_id=CityA; (3) V's already-correct order remains at SiteA; (4) W's order remains at SiteB (multi-mapped skipped, company/city untouched); (5) U's order remains at SiteB (unmapped skipped, company/city untouched); (6) idempotency — second run leaves our order snapshots byte-identical; (7) RBAC — created ephemeral employee + vendor users (via mongo, bcrypt hash from server.hash_password), both get 403 on the endpoint; (8) regression — GET /api/admin/sales-report/filters → 200; GET /api/admin/sales-report site_summary total == sum(vendor_summary.total) per site name for all sites in scope. NOTE: /api/admin/sales-report crashes with 500 on date=all (invalid ISO literal 'all' hits datetime.fromisoformat) — the default (last 30d) path used in the test works fine; reporting as minor.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/sales-report?date=all", "issue": "Returns 500 (ValueError from datetime.fromisoformat('all')). _parse_range in routers/admin_sales.py should treat unknown 'date' tokens (e.g. 'all') as 'no filter' or return 400 instead of crashing."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter58_reconcile_order_sites.py",
+    "/app/test_reports/pytest/iter58.xml"
+  ],
+  "action_items": [
+    "Optional: harden GET /api/admin/sales-report to return 400 for unknown date tokens (currently 500)."
+  ],
+  "critical_code_review_comments": [
+    "routers/admin.py reconcile_order_sites correctly gates on `is_master_admin`, uses per-vendor cache (vendor_site) and per-site meta cache (site_meta_cache), touches only single-mapped vendors, and stamps company_id + city_id from the target site. Idempotent by design (skips when str(site_id)==str(target)).",
+    "The endpoint currently only updates company_id/city_id when the vendor is single-mapped AND the order's site_id differs from the target. Orders whose site_id already matches the target but have a stale/missing company_id or city_id are NOT touched by this endpoint. Not a bug for this iteration (that's `backfill_site_links`/`backfill-orders`'s job), but worth documenting.",
+    "audit_log field name is 'skipped_ambiguous' internally but the API returns 'skipped_ambiguous_or_unmapped'. Consistent naming would help ops."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter58_reconcile_order_sites.py"],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master). Test creates+destroys ephemeral employee (iter58_emp_<uid>@example.com / Emp#12345) and vendor (iter58_ven_<uid>@example.com / Ven#12345) users for RBAC.",
+  "seed_data_creation": "None persisted. TEST_ClientA/B_<uid>, TEST_CityA/B_<uid>, TEST_SiteA/B_<uid>, TEST_VendorV/W/U_<uid>, 5 orders (CRV-ITER58-*), and 2 ephemeral users all cleaned in test_zz_cleanup (orders deleted directly; sites via /api/sites/{id}; clients via cascade=true; cities via /api/cities/{id}).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature is production-ready. Test file /app/backend/tests/test_iter58_reconcile_order_sites.py is fully self-contained (creates+cleans everything, no side effects on pre-existing Demo/TimeFix rows). Reusable as a regression. Main-agent-observed happy path (reconciled:2, skipped:3 on their curl session) is architecturally the same result the tests exercised. The only minor finding is that GET /api/admin/sales-report?date=all crashes with 500 — pre-existing issue in _parse_range, unrelated to iter58 changes.",
+  "rca of the issue": "N/A – validation-only iteration; no bug reproduced. The historical mismatch was: order.site_id was set from the ordering EMPLOYEE's site_id at backfill time, but a vendor's cafeteria (site) may differ from where its customers work (single-tenant cafeterias serving employees whose emailed domain routes them to a different site). The new endpoint correctly re-derives order.site_id from vendor_site_mappings (single-mapped only, to stay safe on multi-tenant vendors)."
+}

@@ -220,6 +220,65 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
         return {"success": True, "scanned": scanned, "fixed_site": fixed_site,
                 "fixed_company": fixed_company, "unresolved": unresolved}
 
+    @r.post("/admin/integrity/reconcile-order-sites")
+    async def reconcile_order_sites(user: dict = Depends(get_current_user)):
+        """Master-admin repair: align each order's `site_id` (+ `company_id` +
+        `city_id`) with the site where its VENDOR actually operates. Fixes the
+        'Sales by Vendor' mismatch where a vendor's orders were attributed to the
+        wrong site (because the ordering employee's site differed from the
+        vendor's cafeteria). Only vendors with EXACTLY ONE active site mapping are
+        touched (unambiguous); multi-site vendors and vendors with no active
+        mapping are left as-is. Safe / idempotent / re-runnable."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+
+        # vendor_id -> its single active site_id (or None if 0 or >1)
+        vendor_site: dict = {}
+        async def _unique_site_for_vendor(vid: str):
+            if vid in vendor_site:
+                return vendor_site[vid]
+            maps = await db.vendor_site_mappings.find(
+                {"vendor_id": vid, "status": "active"}, {"site_id": 1}).to_list(5)
+            sids = {m.get("site_id") for m in maps if m.get("site_id")}
+            val = next(iter(sids)) if len(sids) == 1 else None
+            vendor_site[vid] = val
+            return val
+
+        site_meta_cache: dict = {}
+        async def _site_meta(sid: str):
+            if sid in site_meta_cache:
+                return site_meta_cache[sid]
+            s = await db.sites.find_one({"_id": safe_objectid(sid, "Site")}, {"company_id": 1, "city_id": 1})
+            val = {"company_id": (s or {}).get("company_id"), "city_id": (s or {}).get("city_id")}
+            site_meta_cache[sid] = val
+            return val
+
+        scanned = 0
+        reconciled = 0
+        skipped_ambiguous = 0
+        async for o in db.orders.find({"vendor_id": {"$nin": [None, ""]}},
+                                      {"vendor_id": 1, "site_id": 1, "company_id": 1, "city_id": 1}):
+            scanned += 1
+            target = await _unique_site_for_vendor(o.get("vendor_id"))
+            if not target:
+                skipped_ambiguous += 1
+                continue
+            if str(o.get("site_id")) == str(target):
+                continue
+            meta = await _site_meta(target)
+            update = {"site_id": target}
+            if meta.get("company_id"):
+                update["company_id"] = meta["company_id"]
+            if meta.get("city_id"):
+                update["city_id"] = meta["city_id"]
+            await db.orders.update_one({"_id": o["_id"]}, {"$set": update})
+            reconciled += 1
+
+        await audit_log(user, "orders", "*", "reconciled_order_sites",
+                        {"scanned": scanned, "reconciled": reconciled, "skipped_ambiguous": skipped_ambiguous})
+        return {"success": True, "scanned": scanned, "reconciled": reconciled,
+                "skipped_ambiguous_or_unmapped": skipped_ambiguous}
+
     @r.post("/admin/integrity/backfill-sites")
     async def backfill_site_links(user: dict = Depends(get_current_user)):
         """Master-admin one-shot repair: relink any Site missing `company_id` or

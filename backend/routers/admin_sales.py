@@ -16,10 +16,16 @@ from fastapi.responses import StreamingResponse
 def _parse_range(date: Optional[str], start: Optional[str], end: Optional[str], month: Optional[str]):
     """Return (start_dt, end_dt) UTC-aware, inclusive start / exclusive end."""
     def d(s):
-        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid date '{s}' — expected YYYY-MM-DD")
     if month:  # 'YYYY-MM'
-        y, m = int(month[:4]), int(month[5:7])
-        s = datetime(y, m, 1, tzinfo=timezone.utc)
+        try:
+            y, m = int(month[:4]), int(month[5:7])
+            s = datetime(y, m, 1, tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid month '{month}' — expected YYYY-MM")
         e = datetime(y + (m // 12), (m % 12) + 1, 1, tzinfo=timezone.utc)
         return s, e
     if date:

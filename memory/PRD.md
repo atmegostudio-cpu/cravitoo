@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Sales-by-Vendor mismatch fix: reconcile order sites to vendor mapping (COMPLETED ✅, needs deploy + live run)
+
+**Reported**: live "Sales by Vendor" showed vendors under the WRONG site — e.g. Brew & Blend (Ascendion-only) under Demo Cravitoo (₹214/14 orders), The Kitchen (₹47), Quick Bites (₹32) under Demo Cravitoo; Cravitoo Foods (Demo-only) under Ascendion (₹47.25). Site totals summed correctly, but per-vendor rows were scattered across sites.
+**Root cause**: the earlier `backfill-orders` set each order's `site_id` from the ordering employee's record, which didn't match where the vendor actually operates (`vendor_site_mappings`).
+**Fix**: new master endpoint `POST /api/admin/integrity/reconcile-order-sites` (`routers/admin.py`) — for each order whose vendor has EXACTLY ONE active site mapping, re-stamps `site_id` + `company_id` + `city_id` to that vendor's site. Multi-site vendors and unmapped/deleted vendors (e.g. the orphan "Vendor Cravitoo" 6a65854f) are left untouched. Idempotent.
+**Also**: hardened `admin_sales.py` `_parse_range` — invalid `date`/`month` tokens now return **400** instead of a 500 (pre-existing bug surfaced by testing).
+**Verified**: testing_agent iteration_58 — backend **100%** (12 tests, `tests/test_iter58_reconcile_order_sites.py`): single-mapped orders corrected w/ client+city, already-correct untouched, multi-site + unmapped skipped, idempotent, RBAC 403, report site==sum(vendor) regression. Date hardening curl-verified (400/200).
+**Action needed**: deploy, then run `reconcile-order-sites` on live to correct the reported mismatch. Note: the orphan deleted vendor's orders (Vendor Cravitoo, no mapping) will remain split and can't be auto-reconciled.
+
 ## Jun 2026 — Repair Sweep: backfill client+city on legacy employees (COMPLETED ✅, needs deploy)
 
 **Requested**: one-time backfill so employees created before Onboarding Auto-Link also get their client + city stamped.
