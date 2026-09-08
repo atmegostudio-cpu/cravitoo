@@ -315,9 +315,10 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             raise HTTPException(status_code=403, detail="Access denied")
         allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone",
                    "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
-        # `status` and per-site `meal_prices` can only be changed by master_admin
+        # `status`, per-site `meal_prices` and the client link (`company_id`)
+        # can only be changed by master_admin
         if is_master_admin(user):
-            allowed = allowed | {"status", "meal_prices"}
+            allowed = allowed | {"status", "meal_prices", "company_id"}
         cleaned = {k: v for k, v in updates.items() if k in allowed}
         # Sanitize meal_prices → dict of the 4 known meal types coerced to float.
         if "meal_prices" in cleaned:

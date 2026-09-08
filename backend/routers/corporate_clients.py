@@ -50,6 +50,7 @@ class CorporateClientCreate(BaseModel):
 class CorporateClientUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
+    city_id: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     billing_contact_name: Optional[str] = None
