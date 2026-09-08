@@ -149,6 +149,14 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
     async def create_site(data: SiteCreate, user: dict = Depends(get_current_user)):
         if not is_master_admin(user):
             raise HTTPException(status_code=403, detail="Only master admin can create sites")
+        # Guardrail: a site must belong to a client (company) and a city so it
+        # links up the Client → City → Site hierarchy (used by the Sales Report).
+        if not data.company_id or not data.city_id:
+            raise HTTPException(status_code=400, detail="Please select both a client and a city for this site")
+        if not await db.companies.find_one({"_id": safe_objectid(data.company_id, "Company")}):
+            raise HTTPException(status_code=404, detail="Selected client not found")
+        if not await db.cities.find_one({"_id": safe_objectid(data.city_id, "City")}):
+            raise HTTPException(status_code=404, detail="Selected city not found")
         # Per master prompt PDF Module 3: Sites start in 'draft', advance to 'configured', then 'live'.
         # Only 'live' sites accept new employee registrations.
         doc = {

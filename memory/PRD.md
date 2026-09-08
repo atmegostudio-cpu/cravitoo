@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Site Setup Guardrail + In-App Site Linker (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) require picking a client + city when creating a site so the linkage never breaks; (2) a per-site "Assign client & city" control so admins can fix mappings themselves.
+**Implemented**:
+- Backend `routers/sites.py` `create_site`: now **requires** `company_id` + `city_id` and validates they exist (400/404 otherwise).
+- Frontend `pages/master/Sites.js`: create-site modal has required **Client** + **City** dropdowns (loaded from `/master/corporate-clients` + `/cities`); each site card shows its client/city badges (or an amber "Not linked" badge) and an **Assign client & city / Change client / city** button opening a modal that PATCHes `{company_id, city_id, city}`. Testids: `site-client-select`, `site-city-select`, `assign-site-link-btn-{id}`, `assign-site-modal`, `assign-client-select`, `assign-city-select`, `assign-save-btn`, `site-client-name-{id}`, `site-city-name-{id}`, `site-unlinked-badge-{id}`.
+**Verified**: curl (guardrail 400 without client/city, 200 with, assign PATCH persists) + screenshots (desktop/mobile list, create modal, assign modal). Preview left clean.
+**Action needed**: user must **Save to GitHub → Deploy** for these to reach live.
+
 ## Jun 2026 — LIVE Ascendion mapping repair + site/client link-edit capability (COMPLETED ✅)
 
 **Reported (live `app.cravitoo.com`)**: Client "Ascendion" wasn't linked to its City → Site, and sales weren't rolling up in the Sales Report. Also asked to remove any dev demo clients (DEMO Acme Corp / DEMO Globex) but keep "Demo Cravitoo" + live data.
