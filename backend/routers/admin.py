@@ -361,16 +361,19 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
 
     @r.post("/admin/integrity/backfill-employee-sites")
     async def backfill_employee_sites(user: dict = Depends(get_current_user)):
-        """Master-admin repair: set site_id on employees who are missing it.
-        Resolution: (1) their email-domain rule's site_id, else (2) their company's
-        UNIQUE site. Multi-site / no-company employees are returned as unresolved
-        for manual assignment. Idempotent."""
+        """Master-admin repair: stamp `site_id` + `company_id` (client) + `city_id`
+        on any employee missing any of them, so older accounts created before
+        auto-link roll up correctly in the Sales Report. Idempotent.
+        Resolution for site: (1) their email-domain rule's site_id, else (2) their
+        company's UNIQUE site. company_id + city_id are then taken from that site.
+        Employees with no resolvable site are returned as unresolved."""
         if not is_master_admin(user):
             raise HTTPException(status_code=403, detail="Only master admin")
 
         from routers.allowed_domains import find_allowed_domain
 
         company_single_site: dict = {}
+        site_meta_cache: dict = {}
 
         async def _single_site_for_company(cid: str):
             if not cid:
@@ -382,25 +385,43 @@ def make_router(db, safe_objectid, get_current_user, is_master_admin, audit_log,
             company_single_site[cid] = val
             return val
 
+        async def _site_meta(sid: str):
+            if sid in site_meta_cache:
+                return site_meta_cache[sid]
+            s = await db.sites.find_one({"_id": safe_objectid(sid, "Site")}, {"company_id": 1, "city_id": 1})
+            val = {"company_id": (s or {}).get("company_id"), "city_id": (s or {}).get("city_id")}
+            site_meta_cache[sid] = val
+            return val
+
         fixed = 0
         unresolved = []
-        async for u in db.users.find({"role": "employee", "$or": [{"site_id": {"$in": [None, ""]}}, {"site_id": {"$exists": False}}]},
-                                     {"email": 1, "company_id": 1}):
-            site_id = None
-            dom = await find_allowed_domain(db, (u.get("email") or "").lower())
-            if dom and dom.get("site_id"):
-                site_id = dom.get("site_id")
+        missing = {"$in": [None, ""]}
+        cursor = db.users.find({"role": "employee", "$or": [
+            {"site_id": missing}, {"site_id": {"$exists": False}},
+            {"company_id": missing}, {"company_id": {"$exists": False}},
+            {"city_id": missing}, {"city_id": {"$exists": False}},
+        ]}, {"email": 1, "company_id": 1, "site_id": 1, "city_id": 1})
+        async for u in cursor:
+            site_id = u.get("site_id")
             if not site_id:
-                site_id = await _single_site_for_company(u.get("company_id"))
-            if site_id:
-                update = {"site_id": site_id}
-                if not u.get("company_id"):
-                    s = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")}, {"company_id": 1})
-                    if s and s.get("company_id"):
-                        update["company_id"] = s["company_id"]
+                dom = await find_allowed_domain(db, (u.get("email") or "").lower())
+                if dom and dom.get("site_id"):
+                    site_id = dom.get("site_id")
+                if not site_id:
+                    site_id = await _single_site_for_company(u.get("company_id"))
+            update = {}
+            if site_id and not u.get("site_id"):
+                update["site_id"] = site_id
+            if site_id and (not u.get("company_id") or not u.get("city_id")):
+                meta = await _site_meta(site_id)
+                if not u.get("company_id") and meta.get("company_id"):
+                    update["company_id"] = meta["company_id"]
+                if not u.get("city_id") and meta.get("city_id"):
+                    update["city_id"] = meta["city_id"]
+            if update:
                 await db.users.update_one({"_id": u["_id"]}, {"$set": update})
                 fixed += 1
-            else:
+            elif not site_id:
                 unresolved.append({"email": u.get("email"), "company_id": u.get("company_id")})
 
         await audit_log(user, "users", "*", "backfilled_employee_sites",

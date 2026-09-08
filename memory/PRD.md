@@ -1,5 +1,13 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Repair Sweep: backfill client+city on legacy employees (COMPLETED ✅, needs deploy)
+
+**Requested**: one-time backfill so employees created before Onboarding Auto-Link also get their client + city stamped.
+**Implemented**: enhanced `POST /api/admin/integrity/backfill-employee-sites` (`routers/admin.py`) — previously only fixed employees *missing site_id*; now targets any employee missing **site_id OR company_id OR city_id**, resolves the site (domain rule → company's unique site), and stamps `company_id` + `city_id` from that site. Idempotent; returns `{fixed, unresolved[]}`.
+**Verified**: curl in preview with 2 legacy scenarios (a) has site but null client/city (Ascendion-style), (b) no links resolving via domain rule → both fully stamped, `fixed:2, unresolved:[]`.
+**Note**: the live Sales Report is already correct (it derives client/city from the site via order.site_id, and order.company_id was already backfilled) — this sweep is employee-record hygiene for scoping + future auto-stamping.
+**Action needed**: deploy, then run the sweep on live.
+
 ## Jun 2026 — Onboarding Auto-Link (client + city stamped automatically) (COMPLETED ✅, needs deploy)
 
 **Requested**: make the employee & vendor onboarding flows auto-stamp client (`company_id`) + city (`city_id`) + site so nothing starts unlinked (root-cause prevention for the Ascendion issue where employees/orders had null company_id).
