@@ -3,7 +3,7 @@ import os
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://duplicate-prevention-4.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://admin-sales-report.preview.emergentagent.com").rstrip("/")
 
 EMP = {"email": "timefix_emp@cravitoo.com", "password": "Test#1234"}
 VEN = {"email": "timefix_vendor@cravitoo.com", "password": "Test#1234"}

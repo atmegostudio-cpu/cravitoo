@@ -1,5 +1,17 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Sales Report Cascading Filters: Client → City → Site → Vendor (COMPLETED ✅)
+
+**Requested**: Add Client → City → Site → Vendor filters to the Admin Sales Report (multi-select, compare multiple cities/sites at once), alongside Date / Date-range / Month. Excel download must honor the same filters and give site-wise, city-wise, and vendor-wise totals.
+**Implemented**:
+- Backend `routers/admin_sales.py`:
+  - NEW `GET /api/admin/sales-report/filters` → role-scoped cascade options: `clients` (companies), `cities`, `sites` (each tagged `company_id`+`city_id`+`city`), `vendors` (each with `site_ids`).
+  - `GET /api/admin/sales-report` now accepts comma-separated multi-value `client_ids`, `city_ids`, `site_ids`, `vendor_ids` (with existing date/start+end/month). Filters resolve to an effective site set (client→sites via `company_id`, city→sites via `city_id`, plus explicit sites), then order query is `site_id ∈ effective` (+ `vendor_id ∈` if given). Legacy null-site orders only count for master when NO site-level filter is applied (back-compat preserved).
+  - Response adds `client_summary[]` + `city_summary[]` (site/vendor summaries now also carry `city`/`client`). `format=xlsx` workbook has 4 sheets: Orders (Client+City columns), City Totals, Site Totals, Vendor Totals.
+- Frontend `pages/reports/SalesReport.js`: 4 cascading checkbox multi-select dropdowns (Client→City→Site→Vendor, strict cascade + multi-client), auto-prune of stale selections, Clear-filters, plus new "Sales by City" and "Sales by Client" tables next to Site & Vendor. Testids: `sales-filter-{client,city,site,vendor}-trigger/-panel/-opt-{id}`, `sales-clear-filters`, `sales-by-{city,client,site,vendor}`.
+- **Demo hierarchy** seeded into preview for testing (`scripts/seed_sales_report_demo.py`, all names prefixed `DEMO `, idempotent): 2 clients, 2 cities, 3 sites, 3 vendors, 12 June-2026 orders (₹3675). NOTE: production/deployed DB is separate — the user's real client lives there, not in preview.
+- **Verified**: testing_agent iteration_55 — backend 13/13 (`tests/test_sales_report_cascade.py`) + frontend 100%. Cascade narrowing, all filter combos, Excel 4-sheet export, and employee 403 all pass. DEMO orders are June 2026 → switch UI to Month=2026-06 to see data.
+
 ## Jun 2026 — Admin Sales Report (role-scoped, Site/Vendor split, Excel export) (COMPLETED ✅)
 
 **Requested**: A role-scoped Sales Report for admins — total sales split by Site and Vendor, with Date / Date-range / Month filters and Excel (.xlsx) download.

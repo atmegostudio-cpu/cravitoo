@@ -1,0 +1,22 @@
+{
+  "summary": "Iteration 55 (Sales Report cascading multi-select filters): comprehensive backend + frontend testing PASSED. Backend: 13/13 pytest passed in test_sales_report_cascade.py — /api/admin/sales-report/filters returns clients/cities/sites/vendors with proper company_id+city_id+site_ids tagging and DEMO hierarchy (Acme Corp, Globex Ltd, DEMO Bengaluru, DEMO Mumbai, 3 DEMO vendors); month=2026-06 grand_total=3975.00/14 orders; client=Acme -> 2390.00/8; city=Bengaluru -> 2505.00/9; Acme+Mumbai -> 1170.00/3; Acme+Globex -> 3675.00/12; vendor=DEMO Spice Hub -> 1930.00/6; xlsx export has 4 sheets (Orders, City Totals, Site Totals, Vendor Totals) and honors filters; employee gets 403 on both /sales-report and /sales-report/filters. Frontend: master admin sees Sales nav link, /reports/sales loads; Month mode + 2026-06 + Apply yields ₹3,975.00 / 14 orders on Total Sales and Orders cards, all 4 tables (sales-by-city/-client/-site/-vendor) populate. Cascade verified live: after selecting DEMO Acme Corp, City dropdown narrows to only [DEMO Bengaluru, DEMO Mumbai] and Site dropdown to only [DEMO Acme Bengaluru HQ, DEMO Acme Mumbai Office]. Re-Applying with Acme selected yields ₹2,390.00 / 8 orders matching backend. Download Excel button downloads a valid 7985-byte .xlsx (cravitoo-sales-2026-09-08.xlsx). Clear filters button present and functional.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_sales_report_cascade.py", "/app/test_reports/pytest/sales_cascade.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_sales.py: vendor_site_mappings query uses both string and ObjectId site_id — good defensive coverage.",
+    "_gather: apply_site_filter is True whenever role is scoped OR client/city/site chosen — correctly excludes legacy null-site 300 in filtered views; only null-site orders contribute when master with NO site-level filter. Behavior matches spec.",
+    "Excel: Orders sheet does not append a grand-total row (Site Totals + City Totals do). Minor inconsistency but not a bug.",
+    "Frontend cascade prunes narrowed selections implicitly via panel option filtering — works as observed. No stale-selection bug detected in test.",
+    "No hardcoded URLs; env vars used correctly; _id excluded from JSON payloads."
+  ],
+  "updated_files": ["/app/backend/tests/test_sales_report_cascade.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com / admin123 ; timefix_emp@cravitoo.com / Test#1234",
+  "seed_data_creation": "Used existing DEMO hierarchy seeded by /app/backend/scripts/seed_sales_report_demo.py (already run).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sales Report cascading filters fully working. Backend regression: /app/backend/tests/test_sales_report_cascade.py (13 tests, requires REACT_APP_BACKEND_URL exported from /app/frontend/.env). DEMO orders are in June 2026 — always switch to Month=2026-06 to see data. Legacy 2 TimeFix null-site orders (300) surface only when NO client/city/site filter is applied.",
+  "rca of the issue": "N/A — no issues found."
+}

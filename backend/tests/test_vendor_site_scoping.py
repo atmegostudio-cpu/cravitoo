@@ -2,7 +2,7 @@
 import os
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://duplicate-prevention-4.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://admin-sales-report.preview.emergentagent.com").rstrip("/")
 
 EMP_EMAIL = "qa_employee@gatetest.com"
 EMP_PASS = "employee123"

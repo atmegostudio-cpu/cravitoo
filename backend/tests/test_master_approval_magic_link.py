@@ -17,7 +17,7 @@ from bson import ObjectId
 from pymongo import MongoClient
 
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "http://localhost:8001").rstrip("/")
-PREVIEW_ORIGIN = "https://duplicate-prevention-4.preview.emergentagent.com"
+PREVIEW_ORIGIN = "https://admin-sales-report.preview.emergentagent.com"
 
 ADMIN_EMAIL = "admin@cravitoo.com"
 ADMIN_PASSWORD = "admin123"

@@ -1,14 +1,128 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag } from 'lucide-react';
+import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, ChevronDown, X, Check } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
+
+/* Lightweight checkbox multi-select dropdown */
+const MultiSelect = ({ label, icon: Icon, options, selected, onChange, testid, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const toggle = (id) => {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  };
+
+  const summary = selected.length === 0
+    ? `All ${label.toLowerCase()}`
+    : selected.length === 1
+      ? (options.find((o) => o.id === selected[0])?.name || '1 selected')
+      : `${selected.length} selected`;
+
+  return (
+    <div className="relative min-w-[190px] flex-1" ref={ref} data-testid={`${testid}-wrap`}>
+      <label className="text-xs text-text-muted mb-1 block">{label}</label>
+      <button
+        type="button"
+        disabled={disabled}
+        data-testid={`${testid}-trigger`}
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 border rounded-lg bg-background text-sm text-left transition-colors ${
+          selected.length ? 'border-primary text-text-primary' : 'border-border-light text-text-secondary'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary'}`}
+      >
+        <span className="flex items-center gap-2 truncate">
+          {Icon && <Icon className="h-4 w-4 shrink-0 text-primary" />}
+          <span className="truncate">{summary}</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && !disabled && (
+        <div className="absolute z-30 mt-1 w-full max-h-64 overflow-auto bg-card border border-border-light rounded-xl shadow-lg py-1" data-testid={`${testid}-panel`}>
+          {options.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-text-muted">No options</div>
+          ) : (
+            <>
+              {selected.length > 0 && (
+                <button
+                  type="button"
+                  data-testid={`${testid}-clear`}
+                  onClick={() => onChange([])}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-muted hover:bg-background"
+                >
+                  <X className="h-3 w-3" /> Clear selection
+                </button>
+              )}
+              {options.map((o) => {
+                const on = selected.includes(o.id);
+                return (
+                  <button
+                    type="button"
+                    key={o.id}
+                    data-testid={`${testid}-opt-${o.id}`}
+                    onClick={() => toggle(o.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-background"
+                  >
+                    <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-primary border-primary' : 'border-border-light'}`}>
+                      {on && <Check className="h-3 w-3 text-white" />}
+                    </span>
+                    <span className="truncate text-text-primary">{o.name}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SummaryTable = ({ title, icon: Icon, rows, cols, emptyText, testid }) => (
+  <div className="bg-card border border-border-light rounded-2xl overflow-hidden" data-testid={testid}>
+    <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
+      <Icon className="h-5 w-5 text-primary" />
+      <h2 className="font-heading text-lg font-semibold text-text-primary">{title}</h2>
+    </div>
+    {rows.length === 0 ? (
+      <div className="p-8 text-center text-text-muted text-sm">{emptyText}</div>
+    ) : (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
+            <tr>
+              {cols.map((c) => (
+                <th key={c.key} className={`px-5 py-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-light">
+            {rows.map((row, i) => (
+              <tr key={i} data-testid={`${testid}-row-${i}`} className="hover:bg-background/50">
+                {cols.map((c) => (
+                  <td key={c.key} className={`px-5 py-3 ${c.align === 'right' ? 'text-right font-mono font-semibold' : 'text-text-primary'} ${c.strong ? 'font-medium' : 'text-text-secondary'}`}>
+                    {c.render ? c.render(row) : row[c.key]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);
 
 const SalesReport = () => {
   const [mode, setMode] = useState('range'); // 'range' | 'date' | 'month'
@@ -21,18 +135,69 @@ const SalesReport = () => {
   const [end, setEnd] = useState(todayISO());
   const [month, setMonth] = useState(currentMonth());
 
+  // filter option catalog + selections
+  const [catalog, setCatalog] = useState({ clients: [], cities: [], sites: [], vendors: [] });
+  const [clientIds, setClientIds] = useState([]);
+  const [cityIds, setCityIds] = useState([]);
+  const [siteIds, setSiteIds] = useState([]);
+  const [vendorIds, setVendorIds] = useState([]);
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
+
+  // load filter catalog once
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API}/admin/sales-report/filters`, { withCredentials: true });
+        setCatalog({ clients: data.clients || [], cities: data.cities || [], sites: data.sites || [], vendors: data.vendors || [] });
+      } catch (_) { /* filters optional */ }
+    })();
+  }, []);
+
+  /* ---- cascade: narrow child options by parent selections ---- */
+  const visibleCities = catalog.cities.filter((ci) =>
+    clientIds.length === 0 ||
+    catalog.sites.some((s) => s.city_id === ci.id && clientIds.includes(s.company_id))
+  );
+  const visibleSites = catalog.sites.filter((s) =>
+    (clientIds.length === 0 || clientIds.includes(s.company_id)) &&
+    (cityIds.length === 0 || cityIds.includes(s.city_id))
+  );
+  const visibleSiteIdSet = new Set(visibleSites.map((s) => s.id));
+  const visibleVendors = catalog.vendors.filter((v) =>
+    (v.site_ids || []).some((sid) =>
+      (siteIds.length === 0 ? visibleSiteIdSet.has(sid) : siteIds.includes(sid))
+    )
+  );
+
+  // prune selections that fall outside the newly-visible options
+  useEffect(() => {
+    setCityIds((prev) => prev.filter((id) => visibleCities.some((c) => c.id === id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientIds]);
+  useEffect(() => {
+    setSiteIds((prev) => prev.filter((id) => visibleSites.some((s) => s.id === id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientIds, cityIds]);
+  useEffect(() => {
+    setVendorIds((prev) => prev.filter((id) => visibleVendors.some((v) => v.id === id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientIds, cityIds, siteIds]);
 
   const buildParams = useCallback(() => {
     const p = new URLSearchParams();
     if (mode === 'date') p.set('date', date);
     else if (mode === 'month') p.set('month', month);
     else { p.set('start', start); p.set('end', end); }
+    if (clientIds.length) p.set('client_ids', clientIds.join(','));
+    if (cityIds.length) p.set('city_ids', cityIds.join(','));
+    if (siteIds.length) p.set('site_ids', siteIds.join(','));
+    if (vendorIds.length) p.set('vendor_ids', vendorIds.join(','));
     return p;
-  }, [mode, date, month, start, end]);
+  }, [mode, date, month, start, end, clientIds, cityIds, siteIds, vendorIds]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -65,6 +230,8 @@ const SalesReport = () => {
     } finally { setDownloading(false); }
   };
 
+  const anyFilter = clientIds.length || cityIds.length || siteIds.length || vendorIds.length;
+
   return (
     <>
       <Navbar />
@@ -75,12 +242,25 @@ const SalesReport = () => {
               <BarChart3 className="h-9 w-9 text-primary" /> Sales Report
             </h1>
             <p className="text-text-secondary mt-2 max-w-3xl">
-              Total sales split by <strong>Site</strong> and <strong>Vendor</strong>, scoped to your role. Filter by a single day, a date range, or a month, then download the full breakdown as Excel.
+              Drill down by <strong>Client → City → Site → Vendor</strong> (compare multiple at once), scoped to your role. Filter by a single day, a date range, or a month, then download the full breakdown as Excel.
             </p>
           </div>
 
           {/* Filters */}
           <div className="bg-card border border-border-light rounded-2xl p-5 mb-6" data-testid="sales-filter-panel">
+            {/* Cascading multi-selects */}
+            <div className="flex items-start gap-3 flex-wrap mb-4">
+              <MultiSelect label="Client" icon={Briefcase} testid="sales-filter-client"
+                options={catalog.clients} selected={clientIds} onChange={setClientIds} />
+              <MultiSelect label="City" icon={MapPin} testid="sales-filter-city"
+                options={visibleCities} selected={cityIds} onChange={setCityIds} />
+              <MultiSelect label="Site" icon={Building2} testid="sales-filter-site"
+                options={visibleSites} selected={siteIds} onChange={setSiteIds} />
+              <MultiSelect label="Vendor" icon={Store} testid="sales-filter-vendor"
+                options={visibleVendors} selected={vendorIds} onChange={setVendorIds} />
+            </div>
+
+            {/* Date mode chips */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               {[
                 { k: 'range', label: 'Date range' },
@@ -98,6 +278,15 @@ const SalesReport = () => {
                   {t.label}
                 </button>
               ))}
+              {anyFilter ? (
+                <button
+                  data-testid="sales-clear-filters"
+                  onClick={() => { setClientIds([]); setCityIds([]); setSiteIds([]); setVendorIds([]); }}
+                  className="px-4 py-2 rounded-full text-sm font-medium text-text-muted hover:text-text-primary flex items-center gap-1"
+                >
+                  <X className="h-3.5 w-3.5" /> Clear filters
+                </button>
+              ) : null}
             </div>
 
             <div className="flex items-end gap-3 flex-wrap">
@@ -160,59 +349,46 @@ const SalesReport = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* By Site */}
-                <div className="bg-card border border-border-light rounded-2xl overflow-hidden" data-testid="sales-by-site">
-                  <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-primary" />
-                    <h2 className="font-heading text-lg font-semibold text-text-primary">Sales by Site</h2>
-                  </div>
-                  {data.site_summary.length === 0 ? (
-                    <div className="p-8 text-center text-text-muted text-sm">No sales in this period.</div>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
-                        <tr><th className="text-left px-5 py-3">Site</th><th className="text-right px-5 py-3">Total</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-light">
-                        {data.site_summary.map((s, i) => (
-                          <tr key={i} data-testid={`sales-site-row-${i}`} className="hover:bg-background/50">
-                            <td className="px-5 py-3 font-medium text-text-primary">{s.site}</td>
-                            <td className="px-5 py-3 text-right font-mono font-semibold">{inr(s.total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+              {/* City + Client row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <SummaryTable
+                  title="Sales by City" icon={MapPin} testid="sales-by-city"
+                  rows={data.city_summary || []} emptyText="No sales in this period."
+                  cols={[
+                    { key: 'city', label: 'City', strong: true },
+                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                  ]}
+                />
+                <SummaryTable
+                  title="Sales by Client" icon={Briefcase} testid="sales-by-client"
+                  rows={data.client_summary || []} emptyText="No sales in this period."
+                  cols={[
+                    { key: 'client', label: 'Client', strong: true },
+                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                  ]}
+                />
+              </div>
 
-                {/* By Vendor */}
-                <div className="bg-card border border-border-light rounded-2xl overflow-hidden" data-testid="sales-by-vendor">
-                  <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
-                    <Store className="h-5 w-5 text-primary" />
-                    <h2 className="font-heading text-lg font-semibold text-text-primary">Sales by Vendor</h2>
-                  </div>
-                  {data.vendor_summary.length === 0 ? (
-                    <div className="p-8 text-center text-text-muted text-sm">No sales in this period.</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm min-w-[420px]">
-                        <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
-                          <tr><th className="text-left px-5 py-3">Vendor</th><th className="text-left px-5 py-3">Site</th><th className="text-right px-5 py-3">Total</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-border-light">
-                          {data.vendor_summary.map((v, i) => (
-                            <tr key={i} data-testid={`sales-vendor-row-${i}`} className="hover:bg-background/50">
-                              <td className="px-5 py-3 font-medium text-text-primary">{v.vendor}</td>
-                              <td className="px-5 py-3 text-text-secondary">{v.site}</td>
-                              <td className="px-5 py-3 text-right font-mono font-semibold">{inr(v.total)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+              {/* Site + Vendor row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SummaryTable
+                  title="Sales by Site" icon={Building2} testid="sales-by-site"
+                  rows={data.site_summary || []} emptyText="No sales in this period."
+                  cols={[
+                    { key: 'site', label: 'Site', strong: true },
+                    { key: 'city', label: 'City' },
+                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                  ]}
+                />
+                <SummaryTable
+                  title="Sales by Vendor" icon={Store} testid="sales-by-vendor"
+                  rows={data.vendor_summary || []} emptyText="No sales in this period."
+                  cols={[
+                    { key: 'vendor', label: 'Vendor', strong: true },
+                    { key: 'site', label: 'Site' },
+                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                  ]}
+                />
               </div>
             </>
           ) : null}

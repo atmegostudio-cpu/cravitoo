@@ -211,7 +211,7 @@ def test_resend_after_completion_yields_new_working_link(admin_session, test_ven
 
 # ---------- Test 4 (FIX 2a): magic_url uses PUBLIC_APP_URL (preview host) even through ingress ----------
 def test_magic_url_uses_public_app_url_via_ingress(admin_session, test_vendor):
-    preview_origin = "https://duplicate-prevention-4.preview.emergentagent.com"
+    preview_origin = "https://admin-sales-report.preview.emergentagent.com"
     # NOTE: intentionally do NOT pass Origin/Referer — we want to confirm
     # PUBLIC_APP_URL (backend/.env) is used, so the host is correct even when
     # the k8s ingress strips Origin.

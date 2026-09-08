@@ -16,7 +16,7 @@
     "/app/test_reports/pytest/iter47_resend.xml"
   ],
   "action_items": [
-    "Backend: augment resend_vendor_onboarding fallback chain — PUBLIC_APP_URL → X-Forwarded-Host+X-Forwarded-Proto → Origin → Referer → request.base_url. In this preview the ingress drops Origin, so today the URL is the internal cluster upstream host. OR set PUBLIC_APP_URL=https://duplicate-prevention-4.preview.emergentagent.com in backend/.env for preview.",
+    "Backend: augment resend_vendor_onboarding fallback chain — PUBLIC_APP_URL → X-Forwarded-Host+X-Forwarded-Proto → Origin → Referer → request.base_url. In this preview the ingress drops Origin, so today the URL is the internal cluster upstream host. OR set PUBLIC_APP_URL=https://admin-sales-report.preview.emergentagent.com in backend/.env for preview.",
     "No action required for FIX 1 — verified fully working."
   ],
   "critical_code_review_comments": [
@@ -29,6 +29,6 @@
   "seed_data_creation": "Each test creates a per-test throwaway vendor (email prefix TEST_vendor_*) and cleans up: DELETE /api/vendors/{id} plus users/vendor_magic_links/vendor_email_log rows by email. All test vendors cleaned up.",
   "retest_needed": false,
   "should_main_agent_self_test": true,
-  "context_for_next_testing_agent": "FIX 1 is fully validated end-to-end (window.location.replace path in MagicLinkConsumer). FIX 2 removes the app.cravitoo.com hardcode but through the preview ingress the Origin header is stripped, so the fallback yields the internal cluster upstream host. If main agent adds X-Forwarded-Host / Referer fallback OR sets PUBLIC_APP_URL, this should produce the preview host; retest by hitting /api/admin/vendors/{id}/resend-onboarding through the preview URL (NOT localhost) and asserting magic_url.startswith('https://duplicate-prevention-4.preview.emergentagent.com').",
+  "context_for_next_testing_agent": "FIX 1 is fully validated end-to-end (window.location.replace path in MagicLinkConsumer). FIX 2 removes the app.cravitoo.com hardcode but through the preview ingress the Origin header is stripped, so the fallback yields the internal cluster upstream host. If main agent adds X-Forwarded-Host / Referer fallback OR sets PUBLIC_APP_URL, this should produce the preview host; retest by hitting /api/admin/vendors/{id}/resend-onboarding through the preview URL (NOT localhost) and asserting magic_url.startswith('https://admin-sales-report.preview.emergentagent.com').",
   "rca of the issue": "Root cause of remaining FIX-2 gap: FastAPI's request.headers only see what the ingress actually forwards. The Kubernetes ingress in this environment drops the browser's Origin header (or maps to internal), and request.base_url reflects the upstream Host ('duplicate-prevention-4.cluster-3.preview.emergentcf.cloud'), not the public preview URL. Verified by (a) pytest hitting localhost:8001 with an explicit Origin — magic_url = preview origin (PASS), (b) same request through preview URL — magic_url = internal cluster host (still no app.cravitoo.com, so iter-46 leak is fixed but not the ideal preview host)."
 }
