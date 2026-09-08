@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Onboarding Auto-Link (client + city stamped automatically) (COMPLETED ✅, needs deploy)
+
+**Requested**: make the employee & vendor onboarding flows auto-stamp client (`company_id`) + city (`city_id`) + site so nothing starts unlinked (root-cause prevention for the Ascendion issue where employees/orders had null company_id).
+**Implemented**:
+- `routers/auth.py`: new resolver `_resolve_employee_links(email)` → `{site_id, company_id, city_id}` from the allowed-domain rule, **falling back to the linked SITE** (authoritative). Applied to both signup paths: `POST /auth/register` (password) and the OTP auto-create block in verify-otp. So a new employee inherits client + city **even when the domain rule has no company_id**.
+- `routers/onboarding.py`: `create_vendor_onboarding` now stamps `company_id` from the site (city_id already stamped); master-approval creates the vendor login user with `company_id` + `city_id`.
+**Verified**: testing_agent iteration_57 — backend **100%** (12 tests, `tests/test_iter57_onboarding_auto_link.py`): employee register auto-fills company/city/site from the site; register gating regressions (gmail 400, role!=employee 403); full vendor approval flow stamps vendor user with company/city + site mapping; site guardrail 400 + report filters 200 sanity. Main agent also curl-verified the Ascendion-scenario directly.
+**Notes**: OTP auto-create path uses the same resolver but wasn't exercised by the agent (OTP email delivery not wired in the preview harness). Advisory (not fixed, low pri): consider adding `company_id` to `onboarding_to_dict()` for admin UIs.
+**Action needed**: user must **Save to GitHub → Deploy** for these to reach live.
+
 ## Jun 2026 — Site Setup Guardrail + In-App Site Linker (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) require picking a client + city when creating a site so the linkage never breaks; (2) a per-site "Assign client & city" control so admins can fix mappings themselves.

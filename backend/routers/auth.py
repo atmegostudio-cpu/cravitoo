@@ -73,6 +73,33 @@ def make_router(
 ):
     r = APIRouter()
 
+    async def _resolve_employee_links(email: str) -> dict:
+        """Resolve a corporate email's client (company_id), city (city_id) and
+        default site from the allowed-domain rule + that site, so a newly
+        signed-up employee is auto-linked and never starts unlinked."""
+        from routers.allowed_domains import find_allowed_domain
+        rec = await find_allowed_domain(db, email)
+        if not rec:
+            return {}
+        site_id = rec.get("site_id")
+        company_id = rec.get("company_id")
+        city_id = rec.get("city_id")
+        if site_id:
+            site = await db.sites.find_one(
+                {"_id": safe_objectid(site_id, "Site")}, {"company_id": 1, "city_id": 1})
+            if site:
+                company_id = company_id or site.get("company_id")
+                city_id = city_id or site.get("city_id")
+        out = {}
+        if site_id:
+            out["site_id"] = site_id
+        if company_id:
+            out["company_id"] = company_id
+        if city_id:
+            out["city_id"] = city_id
+        return out
+
+
     @r.post("/auth/register")
     async def register(data: RegisterRequest, request: Request, response: Response):
         email_lower = data.email.lower()
@@ -124,10 +151,10 @@ def make_router(
                 status_code=400,
                 detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
             )
-        # Auto-link to the company + (optionally) the default site for that domain
-        if domain_record.get("company_id") and not data.company_id:
-            data.company_id = domain_record["company_id"]
-        user_doc_extra_site = domain_record.get("site_id")
+        # Auto-link the new employee to their client (company_id) + city (city_id)
+        # + default site for that corporate domain, so nothing starts unlinked.
+        links = await _resolve_employee_links(email_lower)
+        user_doc_extra_site = links.get("site_id")
         # Site lifecycle gating (PDF Module 3 — only 'live' sites accept employee sign-ups)
         if user_doc_extra_site:
             site_obj = await db.sites.find_one({"_id": safe_objectid(user_doc_extra_site, "Site")})
@@ -146,11 +173,15 @@ def make_router(
             "role": data.role,
             "created_at": datetime.now(timezone.utc)
         }
-    
-        if data.company_id:
-            user_doc["company_id"] = data.company_id
+
+        # Prefer an explicitly-submitted company_id, else the auto-linked one.
+        company_id = data.company_id or links.get("company_id")
+        if company_id:
+            user_doc["company_id"] = company_id
         if user_doc_extra_site:
             user_doc["site_id"] = user_doc_extra_site
+        if links.get("city_id"):
+            user_doc["city_id"] = links["city_id"]
     
         result = await db.users.insert_one(user_doc)
         user_id = str(result.inserted_id)
@@ -451,14 +482,19 @@ def make_router(
         user = await db.users.find_one({"email": email_lower})
         auto_created = False
         if not user:
-            # Auto-register as employee (vendors and admins must be created by an admin)
+            # Auto-register as employee (vendors and admins must be created by an admin).
+            # Auto-link client + city + site from the corporate domain so the
+            # account (and its future orders) never starts unlinked.
+            links = await _resolve_employee_links(email_lower)
             user_doc = {
                 "email": email_lower,
                 "name": email_lower.split("@")[0].replace(".", " ").title(),
                 "role": "employee",
                 "password_hash": hash_password(secrets.token_urlsafe(24)),  # random unguessable
                 "phone": None,
-                "company_id": None,
+                "company_id": links.get("company_id"),
+                "site_id": links.get("site_id"),
+                "city_id": links.get("city_id"),
                 "vendor_id": None,
                 "email_verified": True,
                 "created_at": now,

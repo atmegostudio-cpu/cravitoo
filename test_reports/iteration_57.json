@@ -1,0 +1,22 @@
+{
+  "summary": "Backend-only iter57 regression validated the onboarding auto-link feature. Wrote /app/backend/tests/test_iter57_onboarding_auto_link.py (12 tests, 100% pass). Flow: master admin creates fresh corporate client + city + site (linked to both, driven draft->configured->live), then adds an allowed-domain rule with ONLY site_id (no company_id/city_id). Verified: (a) POST /api/auth/register on that domain returns 200 and the created user's /api/auth/me shows company_id + city_id + site_id all populated (company_id & city_id inherited from the SITE via _resolve_employee_links). (b) Register gating regressions: gmail.com -> 400; role=vendor -> 403. (c) Vendor onboarding create stamps city_id from the site (and company_id via server logic). (d) Full approval flow (checklist 100% -> site-review approve -> master-decision approve) creates a vendor login user; completed magic-link, logged in as vendor, and confirmed /api/auth/me returns role=vendor with company_id + city_id + vendor_id. (e) Vendor is mapped to the site (visible on /api/sites/{id}/vendors). SANITY: POST /api/sites without company_id/city_id -> 400; /api/admin/sales-report/filters -> 200. All created rows (client cascade + city + allowed-domain + onboarding + vendor) cleaned up in test_zz_cleanup. OTP auto-create path (verify-otp) NOT exercised because outbound OTP email delivery isn't configurable from the test harness — the register + magic-link paths are the two auto-link entry points that matter for this iteration.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter57_onboarding_auto_link.py",
+    "/app/test_reports/pytest/iter57.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "onboarding_to_dict() intentionally omits company_id from the response — verified via master_decision output + user /auth/me instead. Consider adding company_id to the dict for admin UIs that want to display the client name on onboarding rows.",
+    "In routers/onboarding.py master-decision approve path, the magic_url/onboarding_token variables are referenced in the returned result even when vendor_email is empty (lines 1050-1051). If a vendor onboarding is ever approved without an email, this will NameError. Low priority — email is required by the model, but a null-guard would harden it.",
+    "OTP auto-create path in routers/auth.py verify_otp uses _resolve_employee_links but the OTP request path only gates on site lifecycle status; if the domain rule has no site_id, an OTP-registered user will end up with no company_id/city_id. Consider gating OTP auto-create on the same links-resolvable check as the password register path (register path itself already gates on lifecycle, but doesn't hard-require links)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter57_onboarding_auto_link.py"],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master admin only). Test creates ephemeral employee + vendor accounts on iter57auto{uid}.com / iter57vend.com domains that are torn down.",
+  "seed_data_creation": "None persisted. All rows created inside the test (TEST_Client_*, TEST_City_*, TEST_Site_*, allowed-domain iter57auto{uid}.com, vendor onboarding TEST__vendor_*, vendor + vendor user) are deleted / cascade-deleted in test_zz_cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter57 onboarding auto-link fully validated end-to-end: employee register auto-fills company_id + city_id + site_id from the linked SITE even when the allowed-domain rule has no company_id; vendor master-approval creates a vendor login user with company_id + city_id from the onboarding record. Test file /app/backend/tests/test_iter57_onboarding_auto_link.py is reusable regression (12 tests, ~5s). OTP auto-create (verify-otp) path not covered — OTP delivery isn't wired in the preview harness. If the next iteration needs OTP coverage, will need email_service configured or a test hook."
+}

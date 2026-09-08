@@ -552,6 +552,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         doc = {
             **data.model_dump(),
             "city_id": site.get("city_id"),
+            "company_id": site.get("company_id"),
             "status": "draft",
             "checklist": {},
             "documents": {},
@@ -955,6 +956,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
                         "name": o.get("contact_person") or o.get("vendor_name") or "Vendor",
                         "role": "vendor",
                         "vendor_id": vendor_id,
+                        "company_id": o.get("company_id"),
+                        "city_id": o.get("city_id"),
                         "created_at": datetime.now(timezone.utc),
                         "failed_attempts": 0,
                         "created_via": "vendor_onboarding_approval",
