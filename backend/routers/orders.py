@@ -355,6 +355,17 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
         await db.customer_types.update_one({"name": name}, {"$set": {"name": name, "active": True}}, upsert=True)
         return {"success": True, "name": name}
 
+    @r.patch("/admin/customer-types/{type_id}")
+    async def rename_customer_type(type_id: str, body: _CustomerTypeBody, user: dict = Depends(get_current_user)):
+        if user["role"] != "master_admin":
+            raise HTTPException(status_code=403, detail="Only master admin")
+        name = (body.name or "").strip()[:60]
+        if not name:
+            raise HTTPException(status_code=400, detail="Name required")
+        await db.customer_types.update_one(
+            {"_id": safe_objectid(type_id, "Customer type")}, {"$set": {"name": name}})
+        return {"success": True, "name": name}
+
     @r.delete("/admin/customer-types/{type_id}")
     async def delete_customer_type(type_id: str, user: dict = Depends(get_current_user)):
         if user["role"] != "master_admin":

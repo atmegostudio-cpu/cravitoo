@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, ChevronDown, X, Check } from 'lucide-react';
+import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -138,11 +138,12 @@ const SalesReport = () => {
   const [vendorGroup, setVendorGroup] = useState('site'); // 'site' | 'vendor'
 
   // filter option catalog + selections
-  const [catalog, setCatalog] = useState({ clients: [], cities: [], sites: [], vendors: [] });
+  const [catalog, setCatalog] = useState({ clients: [], cities: [], sites: [], vendors: [], customer_types: [] });
   const [clientIds, setClientIds] = useState([]);
   const [cityIds, setCityIds] = useState([]);
   const [siteIds, setSiteIds] = useState([]);
   const [vendorIds, setVendorIds] = useState([]);
+  const [customerTypeIds, setCustomerTypeIds] = useState([]);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -198,8 +199,9 @@ const SalesReport = () => {
     if (cityIds.length) p.set('city_ids', cityIds.join(','));
     if (siteIds.length) p.set('site_ids', siteIds.join(','));
     if (vendorIds.length) p.set('vendor_ids', vendorIds.join(','));
+    if (customerTypeIds.length) p.set('customer_types', customerTypeIds.join(','));
     return p;
-  }, [mode, date, month, start, end, clientIds, cityIds, siteIds, vendorIds]);
+  }, [mode, date, month, start, end, clientIds, cityIds, siteIds, vendorIds, customerTypeIds]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -232,7 +234,7 @@ const SalesReport = () => {
     } finally { setDownloading(false); }
   };
 
-  const anyFilter = clientIds.length || cityIds.length || siteIds.length || vendorIds.length;
+  const anyFilter = clientIds.length || cityIds.length || siteIds.length || vendorIds.length || customerTypeIds.length;
 
   return (
     <>
@@ -260,6 +262,8 @@ const SalesReport = () => {
                 options={visibleSites} selected={siteIds} onChange={setSiteIds} />
               <MultiSelect label="Vendor" icon={Store} testid="sales-filter-vendor"
                 options={visibleVendors} selected={vendorIds} onChange={setVendorIds} />
+              <MultiSelect label="Customer Type" icon={Users} testid="sales-filter-customer-type"
+                options={catalog.customer_types} selected={customerTypeIds} onChange={setCustomerTypeIds} />
             </div>
 
             {/* Date mode chips */}
@@ -283,7 +287,7 @@ const SalesReport = () => {
               {anyFilter ? (
                 <button
                   data-testid="sales-clear-filters"
-                  onClick={() => { setClientIds([]); setCityIds([]); setSiteIds([]); setVendorIds([]); }}
+                  onClick={() => { setClientIds([]); setCityIds([]); setSiteIds([]); setVendorIds([]); setCustomerTypeIds([]); }}
                   className="px-4 py-2 rounded-full text-sm font-medium text-text-muted hover:text-text-primary flex items-center gap-1"
                 >
                   <X className="h-3.5 w-3.5" /> Clear filters
@@ -366,6 +370,14 @@ const SalesReport = () => {
                   rows={data.client_summary || []} emptyText="No sales in this period."
                   cols={[
                     { key: 'client', label: 'Client', strong: true },
+                    { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
+                  ]}
+                />
+                <SummaryTable
+                  title="Sales by Customer Type" icon={Users} testid="sales-by-customer-type"
+                  rows={data.customer_type_summary || []} emptyText="No sales in this period."
+                  cols={[
+                    { key: 'customer_type', label: 'Customer Type', strong: true },
                     { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
                   ]}
                 />

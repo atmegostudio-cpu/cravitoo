@@ -126,9 +126,14 @@ def make_router(db, safe_objectid, get_current_user):
                 vendors.append({"id": vid, "name": vdoc.get("name") or vid, "site_ids": sorted(sids)})
         vendors.sort(key=lambda x: (x["name"] or "").lower())
 
-        return {"clients": clients, "cities": cities, "sites": sites, "vendors": vendors}
+        ct_docs = await db.customer_types.find({"active": {"$ne": False}}, {"name": 1}).to_list(200)
+        customer_types = [{"id": d["name"], "name": d["name"]} for d in ct_docs]
+        customer_types.append({"id": "Corporate", "name": "Corporate (employees)"})
+        customer_types.sort(key=lambda x: (x["name"] or "").lower())
 
-    async def _gather(user, date, start, end, month, client_ids, city_ids, site_ids, vendor_ids):
+        return {"clients": clients, "cities": cities, "sites": sites, "vendors": vendors, "customer_types": customer_types}
+
+    async def _gather(user, date, start, end, month, client_ids, city_ids, site_ids, vendor_ids, customer_types=None):
         allowed, meta = await _candidate_sites(user)
         s, e = _parse_range(date, start, end, month)
 
@@ -180,10 +185,17 @@ def make_router(db, safe_objectid, get_current_user):
                 vend_names[vid] = doc.get("name")
 
         rows = []
-        site_tot, city_tot, vend_tot, client_tot, grand = {}, {}, {}, {}, 0.0
+        ct_filter = set(customer_types) if customer_types else None
+        site_tot, city_tot, vend_tot, client_tot, ct_tot, grand = {}, {}, {}, {}, {}, 0.0
         for o in orders:
+            # Non-corporate (manual) orders carry a customer_type; corporate
+            # employee orders are bucketed as "Corporate".
+            ct_label = o.get("customer_type") or "Corporate"
+            if ct_filter and ct_label not in ct_filter:
+                continue
             amt = float(o.get("total_amount") or 0)
             grand += amt
+            ct_tot[ct_label] = ct_tot.get(ct_label, 0.0) + amt
             sid, vid = o.get("site_id"), o.get("vendor_id")
             site_name = (meta.get(sid) or {}).get("name") or (sid or "—")
             city_label = site_city_label(sid)
@@ -200,6 +212,7 @@ def make_router(db, safe_objectid, get_current_user):
                 "city": city_label,
                 "site": site_name,
                 "vendor": vend_names.get(vid, vid or "—"),
+                "customer_type": ct_label,
                 "employee": o.get("employee_name") or o.get("employee_email") or "",
                 "items": ", ".join(f"{i.get('quantity', 1)}× {i.get('name', '')}" for i in (o.get("items") or [])),
                 "amount": round(amt, 2),
@@ -216,6 +229,8 @@ def make_router(db, safe_objectid, get_current_user):
                         for k, v in sorted(city_tot.items(), key=lambda x: -x[1])]
         client_summary = [{"client": k, "total": round(v, 2)}
                           for k, v in sorted(client_tot.items(), key=lambda x: -x[1])]
+        customer_type_summary = [{"customer_type": k, "total": round(v, 2)}
+                                 for k, v in sorted(ct_tot.items(), key=lambda x: -x[1])]
         vendor_summary = [{"site": (meta.get(k[0]) or {}).get("name") or (k[0] or "—"),
                            "city": site_city_label(k[0]),
                            "vendor": vend_names.get(k[1], k[1] or "—"),
@@ -227,6 +242,7 @@ def make_router(db, safe_objectid, get_current_user):
             "grand_total": round(grand, 2),
             "order_count": len(rows),
             "client_summary": client_summary,
+            "customer_type_summary": customer_type_summary,
             "city_summary": city_summary,
             "site_summary": site_summary,
             "vendor_summary": vendor_summary,
@@ -243,6 +259,7 @@ def make_router(db, safe_objectid, get_current_user):
         city_ids: Optional[str] = None,
         site_ids: Optional[str] = None,
         vendor_ids: Optional[str] = None,
+        customer_types: Optional[str] = None,
         format: str = Query("json"),
         user: dict = Depends(get_current_user),
     ):
@@ -250,6 +267,7 @@ def make_router(db, safe_objectid, get_current_user):
             user, date, start, end, month,
             _split_ids(client_ids), _split_ids(city_ids),
             _split_ids(site_ids), _split_ids(vendor_ids),
+            _split_ids(customer_types),
         )
         if format != "xlsx":
             return data
@@ -260,15 +278,22 @@ def make_router(db, safe_objectid, get_current_user):
         # Sheet 1: Orders
         ws = wb.active
         ws.title = "Orders"
-        headers = ["Date", "Client", "City", "Site", "Vendor", "Employee", "Items", "Amount",
+        headers = ["Date", "Client", "City", "Site", "Vendor", "Customer Type", "Employee", "Items", "Amount",
                    "Payment Status", "Payment Method", "Fulfilment", "Order ID"]
         ws.append(headers)
         for c in ws[1]:
             c.font = Font(bold=True)
         for o in data["orders"]:
-            ws.append([o["date"], o["client"], o["city"], o["site"], o["vendor"], o["employee"],
+            ws.append([o["date"], o["client"], o["city"], o["site"], o["vendor"], o.get("customer_type", ""), o["employee"],
                        o["items"], o["amount"], o["payment_status"], o["payment_method"],
                        o["fulfilment"], o["order_id"]])
+        # Customer Type Totals
+        wsct = wb.create_sheet("Customer Types")
+        wsct.append(["Customer Type", "Total (₹)"])
+        for c in wsct[1]:
+            c.font = Font(bold=True)
+        for row in data["customer_type_summary"]:
+            wsct.append([row["customer_type"], row["total"]])
         # Sheet 2: City Totals
         wsc = wb.create_sheet("City Totals")
         wsc.append(["City", "Total (₹)"])

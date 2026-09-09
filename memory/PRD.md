@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Manage Customer Types + Non-Corporate (customer type) filter (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) a master-admin screen to add/rename/remove manual-order customer types; (2) a customer_type column/filter in Orders + Sales Report to slice non-corporate vs corporate.
+**Implemented**:
+- Backend `routers/orders.py`: added `PATCH /api/admin/customer-types/{id}` (rename) alongside existing GET/POST/DELETE (soft-delete). `routers/admin_sales.py`: `_gather` accepts `customer_types` filter + emits `customer_type_summary` (corporate employee orders bucket as "Corporate"); `/filters` returns `customer_types` (active + "Corporate (employees)"); Excel gets a "Customer Types" sheet + a "Customer Type" column on Orders.
+- Frontend: new master page `pages/master/CustomerTypes.js` (route `/master/customer-types`, Navbar link) with add/inline-rename/delete. `SalesReport.js`: 5th "Customer Type" multi-select filter + "Sales by Customer Type" table. Vendor `Orders.js`: manual orders show a "Manual · <type>" badge.
+- Testids: `customer-types-page`, `customer-type-new-input/-add-btn`, `customer-type-row-{id}`, `customer-type-edit-{id}/-edit-input/-save-btn`, `customer-type-delete-{id}`, `sales-filter-customer-type`, `sales-by-customer-type`, `vendor-order-customertype-{id}`.
+**Verified**: testing_agent iteration_60 — backend 15/15 + frontend 100%, zero issues (`tests/test_iter60_customer_types.py`): CRUD round-trip, RBAC 403 for non-master, filters + summary + customer_types filter param, Excel sheet/column, /orders projection. Preview left clean.
+**Action needed**: user must **Save to GitHub → Deploy** for these to reach live.
+
 ## Jun 2026 — Vendor Manual Order for non-corporate customers (COMPLETED ✅, needs deploy)
 
 **Requested**: a "Manual Order" option in the Vendor Panel to punch orders for walk-in / non-corporate customers with no corporate email — pick a customer type (Guest / Housekeeping / Security / Drivers / Facility Management), select items + qty, complete. Must flow through normal Orders / Sales Reports / history.

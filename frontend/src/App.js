@@ -39,6 +39,7 @@ import MasterVendors from './pages/master/Vendors';
 import MasterCities from './pages/master/Cities';
 import MasterAllowedDomains from './pages/master/AllowedDomains';
 import MasterCorporateClients from './pages/master/CorporateClients';
+import MasterCustomerTypes from './pages/master/CustomerTypes';
 import MasterBilling from './pages/master/Billing';
 import BulkOnboard from './pages/master/BulkOnboard';
 import SiteDetail from './pages/master/SiteDetail';
@@ -280,6 +281,11 @@ function AppRoutes() {
       <Route path="/master/corporate-clients" element={
         <ProtectedRoute allowedRoles={ROLES_MASTER}>
           <MasterCorporateClients />
+        </ProtectedRoute>
+      } />
+      <Route path="/master/customer-types" element={
+        <ProtectedRoute allowedRoles={ROLES_MASTER}>
+          <MasterCustomerTypes />
         </ProtectedRoute>
       } />
       <Route path="/master/billing" element={

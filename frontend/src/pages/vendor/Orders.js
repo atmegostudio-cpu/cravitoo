@@ -191,6 +191,11 @@ const VendorOrders = () => {
                     <div className="flex items-center gap-2 mb-2" data-testid={`vendor-order-employee-${order.id}`}>
                       <User className="h-4 w-4 text-text-muted" />
                       <span className="text-sm font-medium text-text-primary">{order.employee_name || 'Walk-in / Kiosk'}</span>
+                      {order.customer_type && (
+                        <span data-testid={`vendor-order-customertype-${order.id}`} className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                          Manual · {order.customer_type}
+                        </span>
+                      )}
                     </div>
                     <ul className="space-y-1" data-testid={`vendor-order-items-${order.id}`}>
                       {order.items.map((item, i) => (

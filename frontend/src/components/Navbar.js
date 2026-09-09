@@ -68,6 +68,7 @@ const Navbar = () => {
           { path: '/master/sites', label: 'Sites', icon: Building2 },
           { path: '/master/vendors', label: 'Vendors', icon: Store },
           { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
+          { path: '/master/customer-types', label: 'Customer Types', icon: Users },
           { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/master/billing', label: 'Billing', icon: Receipt },
           { path: '/reports/sales', label: 'Sales', icon: BarChart3 },

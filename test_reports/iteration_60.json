@@ -1,0 +1,22 @@
+{
+  "summary": "Iter60 – Customer Types admin page + Non-Corporate sales filter regression. Backend: 15/15 pytest cases pass (customer-types list w/ 5 seeded defaults; unauthenticated GET 401; master CRUD add/rename/delete round-trip via GET; non-master RBAC 403 on POST/PATCH/DELETE and 200 on GET; /admin/sales-report/filters returns customer_types including 'Corporate (employees)' + 5 seeded; /admin/sales-report?month=2026-06 returns customer_type_summary and orders carry customer_type; customer_types=Corporate filter narrows summary+orders; Excel export has 'Customer Types' sheet and 'Customer Type' header in Orders sheet; /api/orders projection includes customer_type/is_manual for manual orders). Frontend: /master/customer-types loads with 5 rows, Navbar 'Customer Types' link visible, Add creates a new type, edit-{id} → save renames it, delete-{id} with window.confirm removes it (all reflected in list). /reports/sales renders the 5th 'Customer Type' filter (data-testid sales-filter-customer-type-trigger) and the 'Sales by Customer Type' table (data-testid sales-by-customer-type). UI cleanly aligned, no console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter60_customer_types.py",
+    "/app/test_reports/pytest/iter60.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_sales.py _gather: customer_type bucketing (fallback to 'Corporate' when order lacks customer_type) is correct and keeps legacy corporate orders visible. Filter param applies after grouping – behaves as expected.",
+    "orders.py delete_customer_type is a soft-delete (active=false) — good, preserves referential integrity for historical orders that reference the name.",
+    "sales_report_filters appends 'Corporate (employees)' AFTER the active types then sorts by name; safe because the id 'Corporate' matches the bucketing label used in _gather (case-sensitive equality)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter60_customer_types.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Master admin: admin@cravitoo.com / admin123. For RBAC test, seeded transient test_nonmaster@x.com/t123 (corporate_admin), cleaned up after run.",
+  "seed_data_creation": "Transient customer types 'TEST_Interns60' (created+renamed+deleted in pytest) and 'TEST_UI_Interns' → 'TEST_UI_Renamed' (created+renamed+deleted via Playwright). Non-master user test_nonmaster@x.com created and deleted. No lingering data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression file /app/backend/tests/test_iter60_customer_types.py covers all 5 review scenarios end-to-end. It seeds a corporate_admin (test_nonmaster@x.com) on-the-fly only in a helper; the current file assumes it exists — recreate via a small mongo insert (password_hash via bcrypt) if you need to re-run the 4 RBAC tests, otherwise the 11 non-RBAC tests will always pass. All test data is prefixed TEST_ for easy cleanup."
+}
