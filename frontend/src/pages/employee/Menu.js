@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { ShoppingCart, Plus, Minus, Store, X, ChevronDown, ShieldAlert, WifiOff } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Store, X, ChevronDown, ShieldAlert, WifiOff, Star } from 'lucide-react';
 import logger from '../../lib/logger';
 import VegIndicator from '../../components/VegIndicator';
 
@@ -162,6 +162,7 @@ const EmployeeMenu = () => {
   const [vendors, setVendors] = useState([]);
   const [selectedVendor, setSelectedVendor] = useState(vendorId || '');
   const [menuItems, setMenuItems] = useState([]);
+  const [menuRatings, setMenuRatings] = useState({});
   const [cartByVendor, setCartByVendor] = useState(() => {
     try {
       const saved = localStorage.getItem('cravitoo_cart');
@@ -235,11 +236,22 @@ const EmployeeMenu = () => {
     }
   }, [selectedVendor]);
 
+  const fetchMenuRatings = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/feedback/menu-ratings?vendor_id=${selectedVendor}`, { withCredentials: true });
+      const map = {};
+      (data || []).forEach((r) => { map[(r.item || '').trim().toLowerCase()] = r; });
+      setMenuRatings(map);
+    } catch {
+      setMenuRatings({});
+    }
+  }, [selectedVendor]);
+
   useEffect(() => {
     fetchVendors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => { if (selectedVendor) fetchMenu(); }, [selectedVendor, fetchMenu]);
+  useEffect(() => { if (selectedVendor) { fetchMenu(); fetchMenuRatings(); } }, [selectedVendor, fetchMenu, fetchMenuRatings]);
   useEffect(() => {
     localStorage.setItem('cravitoo_cart', JSON.stringify(cartByVendor));
   }, [cartByVendor]);
@@ -578,7 +590,16 @@ const EmployeeMenu = () => {
                     )}
                     <div className="p-4 sm:p-6">
                       <div className="flex justify-between items-start mb-2 gap-2">
-                        <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary leading-tight">{item.name}</h3>
+                        <div className="min-w-0">
+                          <h3 className="font-heading text-base sm:text-lg font-medium text-text-primary leading-tight">{item.name}</h3>
+                          {menuRatings[(item.name || '').trim().toLowerCase()] && (
+                            <div data-testid={`menu-item-rating-${item.id}`} className="flex items-center gap-1 mt-1">
+                              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                              <span className="text-sm font-semibold text-amber-600">{menuRatings[(item.name || '').trim().toLowerCase()].avg}</span>
+                              <span className="text-xs text-text-secondary">· {menuRatings[(item.name || '').trim().toLowerCase()].count} rating{menuRatings[(item.name || '').trim().toLowerCase()].count === 1 ? '' : 's'}</span>
+                            </div>
+                          )}
+                        </div>
                         <VegIndicator isVeg={!!item.is_vegetarian} size="md" />
                       </div>
                       <p className="text-text-secondary text-sm mb-3 line-clamp-2">{item.description}</p>

@@ -72,8 +72,60 @@ def make_router(db, safe_objectid, get_current_user):
             if not doc["comment"]:
                 raise HTTPException(status_code=400, detail="Please add a short note about the issue")
 
+        doc["priority"] = "high" if (kind == "issue" or (doc.get("rating") or 5) <= 2) else "normal"
         res = await db.feedback.insert_one(doc)
-        return {"success": True, "id": str(res.inserted_id)}
+        return {"success": True, "id": str(res.inserted_id), "priority": doc["priority"]}
+
+    def _scope(user):
+        role = user.get("role")
+        if role == "vendor":
+            return {"vendor_id": user.get("vendor_id")}
+        if role == "site_admin":
+            return {"site_id": user.get("site_id")}
+        if role == "corporate_admin":
+            return {"company_id": user.get("company_id")}
+        if role == "master_admin":
+            return {}
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    @r.get("/feedback/analytics")
+    async def feedback_analytics(user: dict = Depends(get_current_user)):
+        q = _scope(user)
+        docs = await db.feedback.find(q).to_list(5000)
+        ratings = [d["rating"] for d in docs if d.get("rating")]
+        by_cat, by_day = {}, {}
+        for d in docs:
+            if d.get("category"):
+                by_cat[d["category"]] = by_cat.get(d["category"], 0) + 1
+            day = (d.get("created_at") or "")[:10]
+            if day:
+                by_day[day] = by_day.get(day, 0) + 1
+        return {
+            "total": len(docs),
+            "open": sum(1 for d in docs if d.get("status") == "open"),
+            "high_priority_open": sum(1 for d in docs if d.get("priority") == "high" and d.get("status") == "open"),
+            "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
+            "rating_count": len(ratings),
+            "by_category": [{"category": k, "count": v} for k, v in sorted(by_cat.items(), key=lambda x: -x[1])],
+            "by_day": [{"day": k, "count": by_day[k]} for k in sorted(by_day)][-14:],
+        }
+
+    @r.get("/feedback/menu-ratings")
+    async def menu_ratings(vendor_id: Optional[str] = None, user: dict = Depends(get_current_user)):
+        role = user.get("role")
+        vid = user.get("vendor_id") if role == "vendor" else vendor_id
+        if not vid:
+            raise HTTPException(status_code=400, detail="vendor_id required")
+        docs = await db.feedback.find({"vendor_id": vid, "kind": "food", "rating": {"$ne": None}}).to_list(5000)
+        agg = {}
+        for d in docs:
+            name = d.get("item_name") or "General"
+            a = agg.setdefault(name, {"item": name, "sum": 0, "count": 0})
+            a["sum"] += d["rating"]; a["count"] += 1
+        out = [{"item": a["item"], "avg": round(a["sum"] / a["count"], 2), "count": a["count"]}
+               for a in agg.values()]
+        out.sort(key=lambda x: -x["count"])
+        return out
 
     @r.get("/employee/feedback")
     async def my_feedback(user: dict = Depends(get_current_user)):
@@ -98,6 +150,7 @@ def make_router(db, safe_objectid, get_current_user):
         else:
             raise HTTPException(status_code=403, detail="Not allowed")
         docs = await db.feedback.find(q).sort("created_at", -1).to_list(1000)
+        docs.sort(key=lambda d: (0 if d.get("priority") == "high" and d.get("status") == "open" else 1, d.get("created_at") or ""), reverse=False)
         return [_ser(d) for d in docs]
 
     @r.patch("/feedback/{fid}/resolve")

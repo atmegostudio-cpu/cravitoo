@@ -1,5 +1,16 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Feedback Alerts + Analytics + Menu Ratings (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) Alerts that make 1-2★ ratings and issues jump out for vendors/admins; (2) show each dish's avg star rating on the employee menu; (3) Feedback Analytics (avg-rating trend + top issues).
+**Implemented** (backend was already in `routers/feedback.py` from the prior fork; this session finished the UI):
+- Backend (pre-built, verified this session): `GET /api/feedback/analytics` (role-scoped: total, open, high_priority_open, avg_rating, rating_count, by_category, by_day last-14), `GET /api/feedback/menu-ratings?vendor_id=` (per-item avg + count). Each feedback doc carries `priority` = "high" for issues OR rating≤2.
+- Frontend `pages/FeedbackInbox.js` (`/vendor/feedback` + `/admin/feedback`): analytics summary cards (Total / Open+urgent / Avg rating / Urgent open), a 14-day volume bar trend, a Top-issues list, a new **Urgent** filter chip (red), and a red ring + pulsing "URGENT" badge on every open high-priority item. Testids: `feedback-analytics`, `fb-stat-{total,open,avg,urgent}`, `feedback-trend`, `feedback-top-issues`, `feedback-filter-urgent`, `feedback-urgent-{id}`.
+- Frontend `pages/employee/Menu.js`: fetches `/feedback/menu-ratings` for the selected vendor and shows ⭐ avg · N ratings under each dish name (matched by lowercased item name; shows from the first rating). Testid: `menu-item-rating-{id}`.
+**Verified**: curl (analytics + menu-ratings return correct aggregates: avg 4.67/3) + screenshots — inbox analytics/trend/urgent badges (desktop+mobile 390, no real overflow) and employee menu showing "4.67 · 3 ratings". Seeded test feedback was cleaned up afterward.
+**Action needed**: user must **Save to GitHub → Deploy**.
+
+
 ## Jun 2026 — Employee Feedback experience (COMPLETED ✅, needs deploy)
 
 **Requested**: a creative, simple, mobile-friendly feedback flow. Food: pick order/item, 1-5 emoji rating, optional comment ("How was your meal today?"). Other Issues: category (service/hygiene/delay/billing/other) + note. Recorded & visible to the relevant Vendor/Admin with order/employee/site/vendor mapping.
