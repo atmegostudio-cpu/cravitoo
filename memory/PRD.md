@@ -1,5 +1,12 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Employee Menu load speedup (COMPLETED ✅, frontend-only)
+
+**Requested**: employee menu loads slowly — make it faster.
+**Measured first**: all APIs are fast (`/vendors` 0.19s, `/menu` 0.12s, `/menu-ratings` 0.18s, `/preferences` 0.12s) → **backend is NOT the bottleneck; no index needed.** Slowness was a frontend waterfall + blocking full-screen spinner + no caching.
+**Implemented** (`pages/employee/Menu.js`, front-end only): (1) **stale-while-revalidate cache** — vendors, per-vendor menu, and last-selected vendor persisted to localStorage and used as initial state so the page paints instantly on return; (2) **broke the waterfall** — when a vendor is already known (URL `?vendor=` or cached), the menu fetch fires in parallel with `/vendors` instead of waiting; (3) **skeletons + non-blocking spinner** — full-screen spinner only shows on a true cold start (no cache); menu shows 4 shimmer skeleton cards while fetching; vendor tab clicks paint the cached menu immediately then revalidate.
+**Verified**: screenshot cold (2 tabs, 5 items, ratings) + warm reload (full menu already painted 400ms after reload, before network completes); no mobile overflow; compiles clean.
+
 ## Jun 2026 — Full End-to-End QA Audit (COMPLETED ✅ — system healthy)
 
 **Requested**: complete E2E QA across UI (web/employee/vendor/admin), backend/APIs, DB hierarchy, auth/RBAC, payments, orders, multi-site isolation, reports/Excel, security, demo-vs-live — positive + negative, root-cause each bug, audit first then fix, **do not touch live data**.

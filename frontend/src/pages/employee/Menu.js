@@ -159,9 +159,20 @@ const CartInner = ({
 const EmployeeMenu = () => {
   const [searchParams] = useSearchParams();
   const vendorId = searchParams.get('vendor');
-  const [vendors, setVendors] = useState([]);
-  const [selectedVendor, setSelectedVendor] = useState(vendorId || '');
-  const [menuItems, setMenuItems] = useState([]);
+  const [vendors, setVendors] = useState(() => {
+    try { const s = localStorage.getItem('cravitoo_vendors'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  const [selectedVendor, setSelectedVendor] = useState(() => {
+    if (vendorId) return vendorId;
+    try { return localStorage.getItem('cravitoo_last_vendor') || ''; } catch { return ''; }
+  });
+  const [menuItems, setMenuItems] = useState(() => {
+    try {
+      const lv = vendorId || localStorage.getItem('cravitoo_last_vendor') || '';
+      const s = lv ? localStorage.getItem(`cravitoo_menu_${lv}`) : null;
+      return s ? JSON.parse(s) : [];
+    } catch { return []; }
+  });
   const [menuRatings, setMenuRatings] = useState({});
   const [cartByVendor, setCartByVendor] = useState(() => {
     try {
@@ -171,7 +182,10 @@ const EmployeeMenu = () => {
       return {};
     }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try { const s = localStorage.getItem('cravitoo_vendors'); return !(s && JSON.parse(s).length); } catch { return true; }
+  });
+  const [menuLoading, setMenuLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Mobile bottom-sheet cart drawer.
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
@@ -217,22 +231,28 @@ const EmployeeMenu = () => {
     try {
       const { data } = await axios.get(`${API}/vendors`, { withCredentials: true });
       setVendors(data);
-      if (!selectedVendor && data.length > 0) {
-        setSelectedVendor(data[0].id);
-      }
+      try { localStorage.setItem('cravitoo_vendors', JSON.stringify(data)); } catch { /* quota */ }
+      setSelectedVendor((cur) => {
+        if (cur && data.some((v) => v.id === cur)) return cur;
+        return data.length > 0 ? data[0].id : '';
+      });
     } catch (error) {
       logger.error('Error:', error);
     } finally {
       setLoading(false);
     }
-  }, [selectedVendor]);
+  }, []);
 
   const fetchMenu = useCallback(async () => {
+    setMenuLoading(true);
     try {
       const { data } = await axios.get(`${API}/menu/${selectedVendor}`, { withCredentials: true });
       setMenuItems(data);
+      try { localStorage.setItem(`cravitoo_menu_${selectedVendor}`, JSON.stringify(data)); } catch { /* quota */ }
     } catch (error) {
       logger.error('Error:', error);
+    } finally {
+      setMenuLoading(false);
     }
   }, [selectedVendor]);
 
@@ -252,6 +272,7 @@ const EmployeeMenu = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { if (selectedVendor) { fetchMenu(); fetchMenuRatings(); } }, [selectedVendor, fetchMenu, fetchMenuRatings]);
+  useEffect(() => { if (selectedVendor) { try { localStorage.setItem('cravitoo_last_vendor', selectedVendor); } catch { /* quota */ } } }, [selectedVendor]);
   useEffect(() => {
     localStorage.setItem('cravitoo_cart', JSON.stringify(cartByVendor));
   }, [cartByVendor]);
@@ -261,6 +282,14 @@ const EmployeeMenu = () => {
     document.body.style.overflow = cartSheetOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [cartSheetOpen]);
+
+  // Instant vendor switch: paint the cached menu for that vendor immediately,
+  // then the effect refetches to revalidate (stale-while-revalidate).
+  const selectVendor = (vid) => {
+    setSelectedVendor(vid);
+    try { const s = localStorage.getItem(`cravitoo_menu_${vid}`); setMenuItems(s ? JSON.parse(s) : []); }
+    catch { setMenuItems([]); }
+  };
 
   const getCurrentVendor = () => vendors.find(v => v.id === selectedVendor);
 
@@ -460,7 +489,7 @@ const EmployeeMenu = () => {
     submitting,
   };
 
-  if (loading) {
+  if (loading && vendors.length === 0) {
     return (
       <>
         <Navbar />
@@ -505,7 +534,7 @@ const EmployeeMenu = () => {
                 <button
                   key={vendor.id}
                   data-testid={`vendor-tab-${vendor.id}`}
-                  onClick={() => setSelectedVendor(vendor.id)}
+                  onClick={() => selectVendor(vendor.id)}
                   className={`flex-shrink-0 snap-start px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
                     selectedVendor === vendor.id
                       ? 'bg-primary text-white'
@@ -553,6 +582,19 @@ const EmployeeMenu = () => {
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                {menuLoading && menuItems.length === 0 && [0, 1, 2, 3].map((i) => (
+                  <div key={`skeleton-${i}`} data-testid={`menu-skeleton-${i}`} className="bg-card border border-border-light rounded-xl overflow-hidden animate-pulse">
+                    <div className="h-40 sm:h-48 bg-border-light/60" />
+                    <div className="p-4 sm:p-6 space-y-3">
+                      <div className="h-4 w-2/3 bg-border-light/70 rounded" />
+                      <div className="h-3 w-full bg-border-light/50 rounded" />
+                      <div className="flex justify-between items-center pt-2">
+                        <div className="h-5 w-16 bg-border-light/70 rounded" />
+                        <div className="h-8 w-20 bg-border-light/60 rounded-lg" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 {menuItems
                   .filter((item) => {
                     if (!hideAllergenItems || userAllergens.length === 0) return true;
