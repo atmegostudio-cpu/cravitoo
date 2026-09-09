@@ -1,5 +1,13 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — BUGFIX: Customer Type filter blank-screen on Sales Report (FIXED ✅, needs deploy)
+
+**Reported**: clicking the "Customer Type" filter on the Sales Report opened a blank white screen (React crash).
+**Root cause**: `SalesReport.js` `setCatalog(...)` (filters load) omitted `customer_types`, so `catalog.customer_types` became `undefined` after the catalog fetch; `MultiSelect` then did `options.length` on `undefined` and crashed the whole tree (no error boundary).
+**Fix**: include `customer_types: data.customer_types || []` in `setCatalog`; hardened `MultiSelect` with default props `options=[]`, `selected=[]` so a missing prop can never blank the page again.
+**Verified**: testing_agent iteration_61 — frontend **100%, zero issues**: all 6 customer types open/select/deselect with no crash, Apply loads + renders "Sales by Customer Type", other filters + mobile (390x844) regression-clean.
+**Action needed**: user must **Save to GitHub → Deploy**.
+
 ## Jun 2026 — Manage Customer Types + Non-Corporate (customer type) filter (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) a master-admin screen to add/rename/remove manual-order customer types; (2) a customer_type column/filter in Orders + Sales Report to slice non-corporate vs corporate.

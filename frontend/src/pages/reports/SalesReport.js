@@ -10,7 +10,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 /* Lightweight checkbox multi-select dropdown */
-const MultiSelect = ({ label, icon: Icon, options, selected, onChange, testid, disabled }) => {
+const MultiSelect = ({ label, icon: Icon, options = [], selected = [], onChange, testid, disabled }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -155,7 +155,7 @@ const SalesReport = () => {
     (async () => {
       try {
         const { data } = await axios.get(`${API}/admin/sales-report/filters`, { withCredentials: true });
-        setCatalog({ clients: data.clients || [], cities: data.cities || [], sites: data.sites || [], vendors: data.vendors || [] });
+        setCatalog({ clients: data.clients || [], cities: data.cities || [], sites: data.sites || [], vendors: data.vendors || [], customer_types: data.customer_types || [] });
       } catch (_) { /* filters optional */ }
     })();
   }, []);
