@@ -186,7 +186,7 @@ const EmployeeDashboard = () => {
                           {order.status}
                         </span>
                       </div>
-                      <p className="text-text-primary font-medium">₹{order.total_amount.toFixed(2)}</p>
+                      <p className="text-text-primary font-medium">₹{Number(order.total_amount ?? 0).toFixed(2)}</p>
                     </div>
                   ))}
                 </div>

@@ -37,12 +37,14 @@ const Navbar = () => {
           { path: '/employee/bulk-order', label: 'Team Order', icon: Users },
           { path: '/employee/events', label: 'Events', icon: CalendarDays },
           { path: '/employee/loyalty', label: 'Rewards', icon: Award },
+          { path: '/employee/feedback', label: 'Feedback', icon: MessageSquare },
         ];
       case 'vendor':
         return [
           { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
           { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
           { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
+          { path: '/vendor/feedback', label: 'Feedback', icon: MessageSquare },
           { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
           { path: '/vendor/menu-requests', label: 'Menu Requests', icon: MessageSquare },
@@ -69,6 +71,7 @@ const Navbar = () => {
           { path: '/master/vendors', label: 'Vendors', icon: Store },
           { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
           { path: '/master/customer-types', label: 'Customer Types', icon: Users },
+          { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
           { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/master/billing', label: 'Billing', icon: Receipt },
           { path: '/reports/sales', label: 'Sales', icon: BarChart3 },

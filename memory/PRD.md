@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Employee Feedback experience (COMPLETED ✅, needs deploy)
+
+**Requested**: a creative, simple, mobile-friendly feedback flow. Food: pick order/item, 1-5 emoji rating, optional comment ("How was your meal today?"). Other Issues: category (service/hygiene/delay/billing/other) + note. Recorded & visible to the relevant Vendor/Admin with order/employee/site/vendor mapping.
+**Implemented**:
+- Backend `routers/feedback.py` (registered in server.py): `POST /api/feedback` (food rating 1-5 or issue+category+note; maps vendor/site/company/order_code from the selected order), `GET /api/employee/feedback` (own), `GET /api/feedback` (role-scoped inbox: vendor→vendor_id, site_admin→site, corporate_admin→company, master→all), `PATCH /api/feedback/{id}/resolve`. Data in `feedback` collection.
+- Frontend: `pages/employee/Feedback.js` (route `/employee/feedback`) — emoji faces 1-5, recent-order chips, "Other issue" tab with category chips + note, mobile-first, success state. `pages/FeedbackInbox.js` (routes `/vendor/feedback` + `/admin/feedback`) — filter chips + Mark resolved. Nav links for employee/vendor/master.
+**Verified**: testing_agent iteration_62 — backend **18/18** + frontend **100%** (`tests/test_feedback.py`): food+issue submit, validations, order-mapping (vendor/site/company/order_code), RBAC, role-scoped inbox, resolve, mobile 390x844 no-overflow.
+**Also fixed (from iter62 RCA)**: `pages/employee/Dashboard.js` line 189 crashed with `order.total_amount.toFixed` when total was undefined → guarded with `Number(order.total_amount ?? 0).toFixed(2)`. (Self-login smoke-test blocked by stale preview employee creds; fix matches the testing agent's exact RCA + recommended solution.)
+**Action needed**: user must **Save to GitHub → Deploy**.
+
 ## Jun 2026 — BUGFIX: Customer Type filter blank-screen on Sales Report (FIXED ✅, needs deploy)
 
 **Reported**: clicking the "Customer Type" filter on the Sales Report opened a blank white screen (React crash).
