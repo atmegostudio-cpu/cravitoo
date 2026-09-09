@@ -26,7 +26,7 @@ from veg_classifier import classify_veg, reclassify_batch  # noqa: E402
 
 BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://admin-sales-report.preview.emergentagent.com",
+    "https://feedback-analytics-20.preview.emergentagent.com",
 ).rstrip("/")
 API = f"{BASE_URL}/api"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")

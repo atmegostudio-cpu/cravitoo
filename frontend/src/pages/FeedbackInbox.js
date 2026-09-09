@@ -98,7 +98,7 @@ const FeedbackInbox = () => {
               {trend.length > 0 && (
                 <div data-testid="feedback-trend" className="bg-card border border-border-light rounded-2xl p-4">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-3">
-                    <TrendingUp className="h-3.5 w-3.5" /> Last {trend.length} days
+                    <TrendingUp className="h-3.5 w-3.5" /> Last {trend.length} day{trend.length === 1 ? '' : 's'}
                   </div>
                   <div className="flex items-end gap-1 h-16">
                     {trend.map((d) => (

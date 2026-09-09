@@ -1,0 +1,37 @@
+{
+  "summary": "End-to-end QA audit of Cravitoo across master/corporate/site admin + employee + vendor roles, plus forgot-password, mobile responsiveness, and duplicate-order race. All 12 requested master nav routes render without crashes. Sales Report at Month=2026-06 shows the expected ₹3,975.00 grand total & 14 orders; Sales-by-Site/Vendor/City/Client tables render; Client/City/Site/Vendor cascading multi-select filters open (options: 4/3/6/6) and Customer Type filter is present; Excel download works (200 OK, 7480 bytes .xlsx). Employee A: dashboard renders (no toFixed crash from prev iteration — regression clean), Menu shows both AUDIT_Vendor1 & AUDIT_Vendor2, add-to-cart works, Orders shows CRV-AUDA01 (₹210, 1:42 pm local, itemised). Employee Feedback: 5★ food + comment + order-chip attached submitted successfully (success screen 'You\u2019re a star!'); Other Issue with category (Delay) + note submitted successfully. Cross-tenant isolation VERIFIED: audit_emp_b sees only AUDIT_Vendor1 (not V2) and only CRV-AUDB01 (never AUDA01). Vendor: dashboard 'Today at a Glance' renders (₹210 sales, 2 orders, AUDIT_Paneer top item), Orders lists both CRV-AUDA01 & CRV-AUDB01 with employee name + itemized list + Counter 1 badge, Manual Order page + testids OK, Feedback inbox shows analytics cards (Total 1 / Open 1 / Avg 5 / Urgent 0), 14-day trend, urgent filter chip, and the just-submitted 5\u2605 feedback with AUDIT_Paneer + audit_emp_a + #CRV-AUDA01. Corporate Admin A: Corporate Dashboard renders, per-site breakdown shows only AUDIT_SiteA (no SiteB) — RBAC correct. Forgot password: known + unknown email both return identical 'If this email is registered, a reset link has been sent.' (no email enumeration), forgot-done testid present. Mobile 390x844: employee menu, employee feedback, vendor orders, vendor feedback inbox, master sales report — ALL have NO horizontal overflow (scrollW==390); vendor hamburger drawer opens. Duplicate-order race script (`scripts/test_duplicate_order_race.py`) reports 'exactly one order created despite the race' and created_at UTC-aware — PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "missing_testids": [
+      {"page": "/reports/sales", "testid": "sales-clear-filters", "note": "Task spec references a 'Clear filters' button with testid sales-clear-filters — could not find it in DOM; button may not exist or lacks the testid. Filters can still be reset manually via 'All client/city/site/vendor'."},
+      {"page": "/employee/menu", "testid": "menu-item-rating-{id}", "note": "0 elements matching data-testid^='menu-item-rating-' found on AUDIT vendor menu items. Item cards render fine but the rating widget testid isn't applied (or ratings are hidden when no rating exists yet)."},
+      {"page": "/vendor/feedback", "testid": "feedback-top-issues", "note": "data-testid='feedback-top-issues' not present in DOM. The other analytics testids (feedback-analytics, feedback-trend, feedback-filter-urgent, fb-stat-*) are all present."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/scripts/test_duplicate_order_race.py",
+    "/app/backend/tests/test_feedback.py"
+  ],
+  "action_items": [
+    "Add data-testid='sales-clear-filters' to the Sales Report clear-filters control (or add the control if missing) so automation can reset filters deterministically.",
+    "Add data-testid='menu-item-rating-{id}' on each employee menu item's rating widget so QA can assert dish star ratings.",
+    "Add data-testid='feedback-top-issues' to the top-issues card on /vendor/feedback (analytics section)."
+  ],
+  "critical_code_review_comments": [
+    "Employee feedback empty-state validation: submitting food feedback with no rating and issue with no note produced NO visible toast/error — the button silently does nothing. Add a user-facing validation toast (e.g., 'Please pick a rating' / 'Please describe the issue') to make the failure explicit; today it feels like the app is broken.",
+    "Corporate Admin scope: /reports/sales for a corporate_admin returns their own data correctly (verified: only SiteA in per-site breakdown, no SiteB), but the top-of-page 'Sales by Client' table is empty for scoped users — either hide the card for corp/site roles or show a single-row summary of just their own client to avoid confusion.",
+    "Vendor Feedback inbox 'Last 1 days' trend label reads awkward when only 1 day of data exists — pluralize ('Last 14 days' vs 'Today only') for clarity.",
+    "Sales Report defaults to 'Date range' with today's window (08/10/2026\u201409/09/2026), which returns ₹330/2 orders — could be confusing right after clicking 'Sales'. Consider defaulting to 'Month' = current month or showing an empty-state hint when 0\u20132 orders are found."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (duplicate-order race PASS; role-scoped APIs already verified by main agent)", "frontend": "~97% (all rendering, RBAC scoping, cart, feedback, sales, forgot-pw, and mobile PASS; only 3 missing testids + 1 silent validation UX gap)"},
+  "test_credentials": "Used as provided: admin@cravitoo.com/admin123, audit_emp_a@corpa.com, audit_emp_b@corpb.com, audit_corpadmin_a@corpa.com, audit_vendor1@corpa.com — all Audit#1234.",
+  "seed_data_creation": "None (used existing AUDIT hierarchy). Submitted 1 real feedback doc (5\u2605 'Great meal, thanks!' on CRV-AUDA01) + 1 issue feedback (Delay category). The dup-order-race script self-cleans.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The AUDIT_Vendor1 feedback inbox now has 1 food + 1 issue feedback from this run. If re-testing feedback analytics counts, expect Total>=2 / Open>=2 / Avg rating still 5 (issue has no rating). Duplicate-order guard script location: /app/backend/scripts/test_duplicate_order_race.py — runs clean.",
+  "rca of the issue": "N/A \u2014 no functional blockers. Only cosmetic/UX + 3 missing data-testids."
+}

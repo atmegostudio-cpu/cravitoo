@@ -4,7 +4,7 @@
 **Generated (UTC):** 2026-06-24T07:34:13Z
 **Source commit (preview):** `19a1946`
 **Frontend bundle hash:** `7f1fcbdb9dd3`
-**Environment under test:** `https://admin-sales-report.preview.emergentagent.com`
+**Environment under test:** `https://feedback-analytics-20.preview.emergentagent.com`
 **Target:** `https://app.cravitoo.com` (NOT yet deployed — awaiting your Deploy click)
 
 ---

@@ -26,7 +26,7 @@
 
 ## 1 · Testing Methodology
 
-- All testing executed on `https://admin-sales-report.preview.emergentagent.com` (preview).
+- All testing executed on `https://feedback-analytics-20.preview.emergentagent.com` (preview).
 - Production (`app.cravitoo.com`) is **not touched** — pending Emergent Support response on the deploy blockers.
 - The testing agent ran two parallel pytest suites:
   - `backend/tests/test_phase1_critical_fixes.py` — 21 tests, every Phase 1 fix

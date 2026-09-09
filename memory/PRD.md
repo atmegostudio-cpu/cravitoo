@@ -1,5 +1,17 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Full End-to-End QA Audit (COMPLETED ✅ — system healthy)
+
+**Requested**: complete E2E QA across UI (web/employee/vendor/admin), backend/APIs, DB hierarchy, auth/RBAC, payments, orders, multi-site isolation, reports/Excel, security, demo-vs-live — positive + negative, root-cause each bug, audit first then fix, **do not touch live data**.
+**How**: read-only DB integrity scan + code review + curl RBAC smoke tests (me) then functional/UI E2E via testing_agent (iteration_63). Re-seeded a clean `AUDIT_*` hierarchy + `DEMO_*` sales data on the **preview** DB only (live untouched). Full report at `/app/QA_AUDIT_REPORT.md`.
+**Result**: **No Critical/High/Medium functional bugs.** All auth/RBAC/multi-tenant isolation, orders, duplicate-order guard, sales report + Excel, feedback, and mobile (390px) PASS (backend 100%, frontend ~97%).
+- Verified curl: employee vendor visibility (empA=[V1,V2], empB=[V1]), cross-company order isolation (corpA/siteA only see CRV-AUDA01), vendor sees own orders across sites, 401/403/400 negatives, uniform forgot-password, sales totals ₹3975/14.
+- Verified UI (iter63): 12 master routes render, sales filters + Excel (7480-byte .xlsx), cart/checkout reachable, feedback submit + analytics, forgot-pw uniform, no mobile overflow, duplicate-order race = exactly 1 order.
+- "Missing testid" reports were **false alarms** (present but conditionally rendered): `menu-item-rating-{id}`, `feedback-top-issues`, `sales-clear-filters`; feedback validation toasts already exist.
+**Fixed**: F11 — feedback trend label grammar "Last 1 days" → "Last 1 day" (`FeedbackInbox.js`), screenshot-verified.
+**Low/preview-only data hygiene (D1–D5, not live)**: orphaned test vendor-login users, unlinked "Demo Cafeteria Site", DEMO companies w/o city_id, timefix employee w/o company_id, 1 orphan mapping — all fixable via existing repair endpoints; do not affect the deployed DB.
+**Payment limitation**: preview runs live Razorpay (MOCK=false) so a real payment success can't be completed here; intent + signature-rejection + dup-guard all pass.
+
 ## Jun 2026 — Feedback Alerts + Analytics + Menu Ratings (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) Alerts that make 1-2★ ratings and issues jump out for vendors/admins; (2) show each dish's avg star rating on the employee menu; (3) Feedback Analytics (avg-rating trend + top issues).

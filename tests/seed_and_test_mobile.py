@@ -3,7 +3,7 @@ Then register scratch employee. Returns credentials.
 """
 import os, sys, json, requests, uuid
 
-BASE = os.environ.get('REACT_APP_BACKEND_URL', 'https://admin-sales-report.preview.emergentagent.com').rstrip('/')
+BASE = os.environ.get('REACT_APP_BACKEND_URL', 'https://feedback-analytics-20.preview.emergentagent.com').rstrip('/')
 API = f"{BASE}/api"
 s = requests.Session()
 

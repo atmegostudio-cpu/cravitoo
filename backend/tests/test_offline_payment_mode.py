@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 # Load backend .env so MONGO_URL / DB_NAME point at the real DB the API uses.
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://admin-sales-report.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://feedback-analytics-20.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "admin@cravitoo.com"
