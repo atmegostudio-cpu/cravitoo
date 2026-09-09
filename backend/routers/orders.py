@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel, Field
 
 from models import (
-    OrderCreate, OrderStatus, BulkOrderCreate,
+    OrderCreate, OrderStatus, BulkOrderCreate, OrderItemInput,
     RazorpayCheckoutIntent, RazorpayOrderCreate, RazorpayVerify,
 )
 from bson import ObjectId
@@ -51,6 +51,20 @@ class _MarkPaidBody(BaseModel):
     # Cash payments are no longer accepted at the counter — only Physical QR (UPI).
     # Historical orders paid in cash remain in the DB; new collects must be physical_qr.
     method: str = Field(default="physical_qr", pattern="^physical_qr$")
+
+
+class _ManualOrderBody(BaseModel):
+    """Vendor-punched counter order for a non-corporate customer (Guest, etc.)."""
+    customer_type: str
+    items: List[OrderItemInput]
+    site_id: Optional[str] = None
+    special_instructions: Optional[str] = None
+    mark_paid: bool = True
+    payment_method: str = Field(default="physical_qr", pattern="^physical_qr$")
+
+
+class _CustomerTypeBody(BaseModel):
+    name: str
 
 
 def make_router(db, safe_objectid, get_current_user, create_notification, manager,
@@ -313,6 +327,109 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
             "payment_status": order_doc["payment_status"],
         }
 
+    # ─── Manual counter orders (non-corporate customers) ─────────────────
+    _DEFAULT_CUSTOMER_TYPES = ["Guest", "Housekeeping", "Security", "Drivers", "Facility Management"]
+
+    async def _get_customer_types():
+        docs = await db.customer_types.find({"active": {"$ne": False}}).sort("name", 1).to_list(200)
+        if not docs:
+            for n in _DEFAULT_CUSTOMER_TYPES:
+                await db.customer_types.update_one(
+                    {"name": n}, {"$setOnInsert": {"name": n, "active": True}}, upsert=True)
+            docs = await db.customer_types.find({"active": {"$ne": False}}).sort("name", 1).to_list(200)
+        return docs
+
+    @r.get("/customer-types")
+    async def list_customer_types(user: dict = Depends(get_current_user)):
+        """Customer types for manual orders. Auto-seeds sensible defaults."""
+        docs = await _get_customer_types()
+        return [{"id": str(d["_id"]), "name": d["name"]} for d in docs]
+
+    @r.post("/admin/customer-types")
+    async def add_customer_type(body: _CustomerTypeBody, user: dict = Depends(get_current_user)):
+        if user["role"] != "master_admin":
+            raise HTTPException(status_code=403, detail="Only master admin")
+        name = (body.name or "").strip()[:60]
+        if not name:
+            raise HTTPException(status_code=400, detail="Name required")
+        await db.customer_types.update_one({"name": name}, {"$set": {"name": name, "active": True}}, upsert=True)
+        return {"success": True, "name": name}
+
+    @r.delete("/admin/customer-types/{type_id}")
+    async def delete_customer_type(type_id: str, user: dict = Depends(get_current_user)):
+        if user["role"] != "master_admin":
+            raise HTTPException(status_code=403, detail="Only master admin")
+        await db.customer_types.update_one(
+            {"_id": safe_objectid(type_id, "Customer type")}, {"$set": {"active": False}})
+        return {"success": True}
+
+    @r.post("/vendor/manual-order")
+    async def create_manual_order(body: _ManualOrderBody, user: dict = Depends(get_current_user)):
+        """Vendor punches an order for a non-corporate customer (Guest, Housekeeping,
+        etc.). Scoped strictly to the vendor's own counter + site. Flows through the
+        same Orders / Sales Report / history as any other order."""
+        if user.get("role") != "vendor" or not user.get("vendor_id"):
+            raise HTTPException(status_code=403, detail="Only vendors can punch manual orders")
+        vendor_id = user["vendor_id"]
+        maps = await db.vendor_site_mappings.find(
+            {"vendor_id": vendor_id, "status": "active"}, {"site_id": 1}).to_list(20)
+        site_ids = [str(m["site_id"]) for m in maps if m.get("site_id")]
+        uniq = list(dict.fromkeys(site_ids))
+        if body.site_id:
+            if body.site_id not in uniq:
+                raise HTTPException(status_code=403, detail="That site is not assigned to you")
+            site_id = body.site_id
+        elif len(uniq) == 1:
+            site_id = uniq[0]
+        elif len(uniq) == 0:
+            raise HTTPException(status_code=400, detail="Your vendor account isn't linked to a site yet")
+        else:
+            raise HTTPException(status_code=400, detail="You serve multiple sites — please pick one")
+
+        ct = (body.customer_type or "").strip()
+        valid = {d["name"] for d in await _get_customer_types()}
+        if ct not in valid:
+            raise HTTPException(status_code=400, detail="Unknown customer type")
+
+        validated_items, total_amount = await _validate_cart(body.items)
+        site = await db.sites.find_one(
+            {"_id": safe_objectid(site_id, "Site")}, {"company_id": 1, "city_id": 1}) or {}
+        now = datetime.now(timezone.utc)
+        order_doc = {
+            "user_id": None,
+            "employee_name": ct,
+            "employee_email": None,
+            "customer_type": ct,
+            "is_manual": True,
+            "created_by_vendor": user["id"],
+            "vendor_id": vendor_id,
+            "site_id": site_id,
+            "company_id": site.get("company_id"),
+            "city_id": site.get("city_id"),
+            "items": validated_items,
+            "total_amount": total_amount,
+            "status": "pending",
+            "payment_status": "paid" if body.mark_paid else "pending",
+            "collection_code": f"CRV-{random.randint(100000, 999999)}",
+            "payment_mode": os.environ.get("PAYMENT_MODE", "OFFLINE").upper(),
+            "payment_method": body.payment_method if body.mark_paid else None,
+            "delivery_type": "pickup",
+            "special_instructions": body.special_instructions,
+            "counter": next((it.get("counter") for it in validated_items if it.get("counter")), None),
+            "created_at": now,
+        }
+        if body.mark_paid:
+            order_doc["paid_at"] = now
+            order_doc["paid_by"] = user["email"]
+        res = await db.orders.insert_one(order_doc)
+        return {
+            "id": str(res.inserted_id),
+            "collection_code": order_doc["collection_code"],
+            "total_amount": total_amount,
+            "customer_type": ct,
+            "payment_status": order_doc["payment_status"],
+        }
+
     # ─── Offline payment mode (Feb 2026) ─────────────────────────────────
     @r.get("/config/payment-mode")
     async def get_payment_mode():
@@ -481,7 +598,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
             query["site_id"] = {"$in": assigned}
         # master_admin: no filter — sees every order.
 
-        orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "employee_name": 1, "employee_email": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
+        orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "employee_name": 1, "employee_email": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "customer_type": 1, "is_manual": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1}).sort("created_at", -1).to_list(1000)
         # Resolve employee names for legacy orders that were placed before we started
         # stamping employee_name on the order document.
         missing = {o.get("user_id") for o in orders if not o.get("employee_name") and o.get("user_id")}

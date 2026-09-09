@@ -1,0 +1,23 @@
+{
+  "summary": "Fully tested Vendor Manual Order (non-corporate walk-in). Backend: 9/9 pytest cases pass — customer-types list (5 seeded), admin CRUD + RBAC 403, happy-path punch returns 200 with ₹280/paid/CRV-code, appears in /api/orders with is_manual=true + customer_type='Guest', unknown type → 400, cross-site site_id → 403, master admin punch → 403, and sales report (2026-06-01→2026-12-31) rolls up under 'MO Client'/'MO Vendor'. Frontend: /vendor/manual-order loads, Navbar 'Manual Order' link visible, 5 customer-type chips render, submit disabled until BOTH a type is picked AND items are added, +/- steppers work, live total updates to ₹280.00, Complete Order produces receipt with collection code CRV-303132 and total ₹280.00, and New Manual Order resets state. UI is clean, responsive, well-aligned.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter59_manual_order.py",
+    "/app/test_reports/pytest/iter59_manual_order.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "orders.py _get_customer_types() lazy-seeds defaults on empty — good, idempotent via $setOnInsert.",
+    "create_manual_order correctly forces vendor role + site scoping (rejects unassigned site_id with 403).",
+    "Manual orders bypass PAYMENT_MODE gating by design (counter QR) — documented and safe: mark_paid=True path sets payment_status='paid' + paid_by=vendor email at insert time.",
+    "ManualOrder.js: cart state keyed by menu_item_id with delete-on-zero — clean; total is a simple reduce so it stays consistent with the server-validated price on submit."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter59_manual_order.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "vendor movendor@x.com / vpass123 ; master admin@cravitoo.com / admin123",
+  "seed_data_creation": "Created & deleted transient customer type 'TEST_Interns' during admin CRUD test. Punched one live Guest manual order (₹280) under MO Client/MO Site/MO Vendor — NOT cleaned up (main agent will handle per instructions).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression file /app/backend/tests/test_iter59_manual_order.py covers all 5 review scenarios and can be re-run standalone. Uses python-dotenv to load REACT_APP_BACKEND_URL from /app/frontend/.env."
+}

@@ -1,5 +1,16 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Vendor Manual Order for non-corporate customers (COMPLETED ✅, needs deploy)
+
+**Requested**: a "Manual Order" option in the Vendor Panel to punch orders for walk-in / non-corporate customers with no corporate email — pick a customer type (Guest / Housekeeping / Security / Drivers / Facility Management), select items + qty, complete. Must flow through normal Orders / Sales Reports / history.
+**User choices**: non-corporate sales roll up under the site's corporate client (simplest); online payment (UPI/Physical-QR at counter) marked paid at punch; customer types admin-editable; keep it simple.
+**Implemented**:
+- `routers/orders.py`: `POST /api/vendor/manual-order` (vendor-only, scoped to the vendor's own active site; stamps `customer_type`, `is_manual`, site's `company_id`/`city_id`; created `paid` via physical_qr). `GET /api/customer-types` (auto-seeds the 5 defaults). Master-only `POST`/`DELETE /api/admin/customer-types`. `get_orders` projection now returns `customer_type` + `is_manual`.
+- Frontend `pages/vendor/ManualOrder.js` (route `/vendor/manual-order`, Navbar link): customer-type chips, menu picker with +/- steppers, live total, Complete Order → receipt with collection code. Testids: `manual-order-page/-types/-search/-total/-submit/-receipt/-code/-new-btn`, `manual-type-{id}`, `manual-plus-{id}`/`manual-minus-{id}`.
+- Manual orders are NOT gated by PAYMENT_MODE=RAZORPAY (counter QR), unlike POST /orders.
+**Verified**: testing_agent iteration_59 — backend 9/9 + frontend 100%, zero issues (`tests/test_iter59_manual_order.py`): punch ₹280/paid, appears in /orders (customer_type+is_manual), rolls up under client/site/vendor in Sales Report, RBAC 403 (non-vendor + cross-site), unknown type 400, admin customer-type CRUD.
+**Action needed**: user must **Save to GitHub → Deploy** for this to reach live.
+
 ## Jun 2026 — Sales-by-Vendor mismatch fix: reconcile order sites to vendor mapping (COMPLETED ✅, needs deploy + live run)
 
 **Reported**: live "Sales by Vendor" showed vendors under the WRONG site — e.g. Brew & Blend (Ascendion-only) under Demo Cravitoo (₹214/14 orders), The Kitchen (₹47), Quick Bites (₹32) under Demo Cravitoo; Cravitoo Foods (Demo-only) under Ascendion (₹47.25). Site totals summed correctly, but per-vendor rows were scattered across sites.

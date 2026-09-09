@@ -42,6 +42,7 @@ const Navbar = () => {
         return [
           { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
           { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
+          { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
           { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },
           { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
           { path: '/vendor/menu-requests', label: 'Menu Requests', icon: MessageSquare },
