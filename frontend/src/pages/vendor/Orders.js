@@ -182,6 +182,11 @@ const VendorOrders = () => {
                           Picked up at {new Date(order.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       )}
+                      {order.status === 'collected' && order.ready_at && order.collected_at && (
+                        <p data-testid={`vendor-sla-${order.id}`} className="text-xs text-text-muted mt-0.5">
+                          Collected {Math.max(0, Math.round((new Date(order.collected_at) - new Date(order.ready_at)) / 60000))} min after ready
+                        </p>
+                      )}
                       {order.counter && (
                         <span data-testid={`vendor-order-counter-${order.id}`} className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">
                           {order.counter}

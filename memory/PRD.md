@@ -1,5 +1,10 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Collection SLA + banner "since" (COMPLETED ✅, needs deploy)
+- Backend stamps `ready_at` on the ready transition (mirrors `collected_at`); orders GET projects+ISO-normalises both. Vendor card shows "Collected N min after ready" (ready→collected wait) so slow counters stand out.
+- `POST /auth/employee-mode` now stores `employee_mode_since`; banner shows "· since HH:MM".
+- Verified: curl (ready_at+collected_at stamped, employee_mode_since in /me) + screenshot (vendor "Collected 0 min after ready"). Needs deploy.
+
 ## Jun 2026 — Collected timestamp + Employee-mode banner (COMPLETED ✅, needs deploy)
 
 **Collected timestamp**: manual "Mark Collected" PATCH now stamps `collected_at` (mirrors scan-collect); orders GET projects+ISO-normalises it; vendor & employee order cards show "Picked up at HH:MM" on collected orders.

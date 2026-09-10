@@ -242,7 +242,7 @@ const Navbar = () => {
       {user?.impersonating_admin && (
         <div data-testid="employee-mode-banner" className="-mx-4 sm:-mx-6 -mb-3 sm:-mb-4 mt-3 sm:mt-4 bg-primary text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-center gap-3 text-sm">
-            <span className="text-center"><span className="font-semibold">Employee view</span> — you're ordering as your own account</span>
+            <span className="text-center"><span className="font-semibold">Employee view</span> — you're ordering as your own account{user?.employee_mode_since ? ` · since ${new Date(user.employee_mode_since).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
             <button
               data-testid="employee-banner-back"
               onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: false }, { withCredentials: true }); window.location.href = '/admin/dashboard'; } catch { /* ignore */ } }}

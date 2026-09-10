@@ -609,7 +609,7 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
             query["site_id"] = {"$in": assigned}
         # master_admin: no filter — sees every order.
 
-        orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "employee_name": 1, "employee_email": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "customer_type": 1, "is_manual": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1, "collected_at": 1}).sort("created_at", -1).to_list(1000)
+        orders = await db.orders.find(query, {"_id": 1, "user_id": 1, "employee_name": 1, "employee_email": 1, "vendor_id": 1, "site_id": 1, "company_id": 1, "counter": 1, "customer_type": 1, "is_manual": 1, "items": 1, "total_amount": 1, "status": 1, "payment_status": 1, "delivery_type": 1, "created_at": 1, "pickup_qr": 1, "collection_code": 1, "payment_mode": 1, "payment_method": 1, "paid_at": 1, "collected_at": 1, "ready_at": 1}).sort("created_at", -1).to_list(1000)
         # Resolve employee names for legacy orders that were placed before we started
         # stamping employee_name on the order document.
         missing = {o.get("user_id") for o in orders if not o.get("employee_name") and o.get("user_id")}
@@ -640,6 +640,11 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
                 if col.tzinfo is None:
                     col = col.replace(tzinfo=timezone.utc)
                 order["collected_at"] = col.astimezone(timezone.utc).isoformat()
+            rdy = order.get("ready_at")
+            if isinstance(rdy, datetime):
+                if rdy.tzinfo is None:
+                    rdy = rdy.replace(tzinfo=timezone.utc)
+                order["ready_at"] = rdy.astimezone(timezone.utc).isoformat()
         return orders
 
     @r.patch("/orders/{order_id}")
@@ -684,6 +689,8 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
         # Stamp collected_at for the manual "Mark Collected" path (mirrors scan-collect).
         if target_status == "collected":
             await db.orders.update_one({"_id": order_oid}, {"$set": {"collected_at": datetime.now(timezone.utc)}})
+        elif target_status == "ready":
+            await db.orders.update_one({"_id": order_oid}, {"$set": {"ready_at": datetime.now(timezone.utc)}})
 
         # Notify employee with push + ws
         status_messages = {

@@ -708,6 +708,8 @@ def make_router(
             raise HTTPException(status_code=403, detail="Only corporate admins can switch to employee mode")
         turn_on = bool(body.get("on"))
         update = {"employee_mode": turn_on}
+        if turn_on:
+            update["employee_mode_since"] = datetime.now(timezone.utc)
         if turn_on and not udoc.get("employee_site_id"):
             site = await db.sites.find_one({"company_id": udoc.get("company_id")}, sort=[("created_at", 1)])
             update["employee_site_id"] = str(site["_id"]) if site else None
