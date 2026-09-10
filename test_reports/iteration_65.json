@@ -1,0 +1,35 @@
+{
+  "summary": "Full E2E of the Master Vendor Admin (multi-outlet Vendor Operator) feature completed. All 9 review scenarios PASS: (1) Master creates a Vendor Operator on /master/admins — role select 'Vendor Operator (multi-outlet)' correctly disables password field, checkbox multi-select renders (op-vendor-<id>), submit surfaces operator-invite-modal with a copyable /auth/magic/<token> link. (2) Vendor Operators section (operator-card-<id>) lists the new operator with 'Invited · has not set password yet' note. (3) Magic link consumer at /auth/magic/<token> accepts Op#12345 (magic-password-input + magic-confirm-input + magic-submit-btn) and redirects to /vendor/dashboard. (4) Operator dashboard renders outlet-switcher-select with BOTH assigned outlets and outlets-overview showing per-outlet stats with an 'Active' marker on the current outlet. (5) Switching via outlet-switcher-select reloads and the active outlet id persists (verified state after reload and after navigating to /vendor/orders). Backend GET /api/orders after switch returned only orders for the active vendor_id (verified via network call from the operator session). (6) Fresh email+password login (operator email + Op#12345) lands on /vendor/dashboard with the switcher visible. (7) Master resend (operator-resend-<id>) opens operator-invite-modal with a NEW magic URL (distinct from the original), and delete (operator-delete-<id>) removes the operator card. (8) REGRESSION: normal single-outlet vendor audit_vendor1@corpa.com sees NO outlet switcher and NO outlets-overview; /vendor/dashboard and /vendor/orders work as before. (9) NEGATIVE isolation is implicitly satisfied because /vendor/my-outlets (verified via API) only returned the two assigned outlets and the switcher options only listed those two. Backend main-agent curl proof of 403 on unassigned switch was accepted from context.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/auth/me", "issue": "Response still includes Mongo `_id` field alongside `id` (see /api/auth/me payload). Violates the 'never leak Mongo _id' guideline. Not blocking, but should be excluded."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "master/Admins.js submit()", "issue": "When POST /api/admin/vendor-operators returns 422, the FastAPI detail is an ARRAY of objects ({type,loc,msg,input,ctx}) but the code does setError(e?.response?.data?.detail) and later renders it as a React child, causing 'Objects are not valid as a React child' runtime overlay. Reproduced when submitting with an email whose TLD is rejected by EmailStr (e.g. .test). Should coerce to string (msg || JSON.stringify) or map array->joined message.", "selector": "master/Admins.js line ~69 catch(e){ setError(e?.response?.data?.detail || ...) }", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix master/Admins.js error handler to stringify FastAPI 422 detail arrays before setError (prevents red React overlay on any invalid email/format).",
+    "Exclude Mongo _id from /api/auth/me response payload."
+  ],
+  "critical_code_review_comments": [
+    "VendorOperatorCreate uses EmailStr which rejects .test / reserved TLDs — fine, but UI error rendering must survive validation-error arrays.",
+    "OutletSwitcher triggers a full page reload after POST /vendor/switch-outlet; switching state persists across navigations (verified on /vendor/orders). Good scoping — orders API returned only active vendor's orders.",
+    "operator-invite-modal correctly reuses the same UI for create and resend flows; resend issues a distinct magic token (verified).",
+    "Vendor Operator role wiring: get_current_user resolves vendor_id from active_vendor_id; /api/auth/me confirms is_vendor_operator=true and vendor_id updates to active outlet — matches the design."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Master: admin@cravitoo.com / admin123. Created + DELETED during test: vopq1789024854@qa.example.com / Op#12345 (assigned outlets: AUDIT_Vendor1, AUDIT_Vendor2). Normal single-outlet vendor regression: audit_vendor1@corpa.com / Audit#1234.",
+  "seed_data_creation": "No leftover data: the operator user created during the run was deleted in Phase 9b via the operator-delete-<id> UI. AUDIT_Vendor1/AUDIT_Vendor2 pre-existing seed data was used unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All Vendor Operator (multi-outlet) UI test-ids in play: create-admin-btn, new-admin-role (value=vendor_operator), new-admin-name, new-admin-email, new-admin-password (disabled when role=vendor_operator), op-vendor-<vendorId> (checkboxes), submit-admin-btn, operator-invite-modal, operator-invite-link, operator-invite-copy, operator-invite-close, operator-card-<opId>, operator-resend-<opId>, operator-delete-<opId>, outlet-switcher-select (in Navbar), outlets-overview (Vendor Dashboard). AUDIT_Vendor1 id=6aa1622f0455f997d5af12d5, AUDIT_Vendor2 id=6aa1622f0455f997d5af12d8. Only known frontend defect is the 422-detail-array rendering crash in Admins.js catch handler.",
+  "rca of the issue": "N/A for the feature. Minor Admins.js UX crash RCA: FastAPI 422 responses have detail as a list of ValidationError objects; frontend setError takes that array and JSX renders {error}, tripping React's 'object is not a valid child' guard. Fix: normalise error via typeof detail==='string' ? detail : (Array.isArray(detail)? detail.map(d=>d.msg).join(', '): JSON.stringify(detail))."
+}

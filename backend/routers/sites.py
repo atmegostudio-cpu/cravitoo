@@ -11,12 +11,13 @@ from __future__ import annotations
 import io
 import logging
 import os
+import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import openpyxl
 from bson import ObjectId
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from models import (
@@ -26,6 +27,7 @@ from models import (
     SiteAdminCreate,
     SiteCreate,
     SuperAdminCreate,
+    VendorOperatorCreate,
     VendorSiteMappingCreate,
 )
 
@@ -1078,6 +1080,129 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         })
         _send_invitation_safe(email_lower, data.name, "master_admin")
         return {"id": str(result.inserted_id), "email": email_lower, "role": "master_admin", "invite_sent": True}
+
+    # ---- Vendor Operator (one login → multiple outlets) ----
+    @r.get("/admin/all-vendors")
+    async def all_vendors_for_operator(user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        vs = await db.vendors.find({"status": "active"}, {"name": 1}).sort("name", 1).to_list(2000)
+        return [{"id": str(v["_id"]), "name": v.get("name")} for v in vs]
+
+    @r.post("/admin/vendor-operators")
+    async def create_vendor_operator(data: VendorOperatorCreate, request: Request, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can create vendor operators")
+        email_lower = data.email.strip().lower()
+        if not data.vendor_ids:
+            raise HTTPException(status_code=400, detail="Select at least one outlet")
+        valid = []
+        for vid in data.vendor_ids:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")})
+            if v:
+                valid.append(str(v["_id"]))
+        if not valid:
+            raise HTTPException(status_code=404, detail="No valid outlets selected")
+        existing = await db.users.find_one({"email": email_lower})
+        if existing and existing.get("role") in ("master_admin", "super_admin", "site_admin", "corporate_admin"):
+            raise HTTPException(status_code=400, detail=f"{email_lower} already belongs to a {existing.get('role')} account")
+        fields = {
+            "name": data.name, "role": "vendor",
+            "assigned_vendors": valid, "active_vendor_id": valid[0], "vendor_id": valid[0],
+            "is_vendor_operator": True, "is_active": True,
+        }
+        if existing:
+            await db.users.update_one({"_id": existing["_id"]}, {"$set": fields})
+            uid = str(existing["_id"])
+        else:
+            placeholder = hash_password(secrets.token_urlsafe(24))
+            res = await db.users.insert_one({
+                "email": email_lower, "password_hash": placeholder, "failed_attempts": 0,
+                "created_at": datetime.now(timezone.utc), "created_via": "vendor_operator", **fields,
+            })
+            uid = str(res.inserted_id)
+        token = secrets.token_urlsafe(32)
+        await db.vendor_magic_links.insert_one({
+            "token": token, "vendor_user_id": uid, "vendor_id": valid[0], "email": email_lower,
+            "purpose": "onboarding", "expires_at": None, "used_at": None,
+            "created_by_admin": user.get("id"), "created_at": datetime.now(timezone.utc),
+        })
+        base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if not base:
+            base = (request.headers.get("origin") or "").rstrip("/") or str(request.base_url).rstrip("/")
+        magic_url = f"{base}/auth/magic/{token}"
+        delivered = False
+        try:
+            import email_service as _es
+            html, text = _es.render_corporate_admin_invite_email(
+                name=data.name, company_name=f"{len(valid)} outlet(s) on Cravitoo", magic_url=magic_url)
+            r2 = _es.send_email(email_lower, "Your Cravitoo outlet access — set your password", html, text)
+            delivered = bool(r2[0]) if isinstance(r2, tuple) else bool(r2)
+        except Exception as e:
+            logger.warning(f"Vendor operator invite email failed for {email_lower}: {e}")
+        return {"success": True, "id": uid, "email": email_lower, "magic_url": magic_url,
+                "email_delivered": delivered, "outlets": len(valid)}
+
+    @r.get("/admin/vendor-operators")
+    async def list_vendor_operators(user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        ops = await db.users.find({"is_vendor_operator": True}).sort("created_at", -1).to_list(500)
+        vname_cache: Dict[str, str] = {}
+        out = []
+        for o in ops:
+            names = []
+            for vid in (o.get("assigned_vendors") or []):
+                if vid not in vname_cache:
+                    v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+                    vname_cache[vid] = v.get("name") if v else vid
+                names.append(vname_cache[vid])
+            ll = o.get("last_login_at")
+            out.append({
+                "id": str(o["_id"]), "email": o.get("email"), "name": o.get("name"),
+                "outlets": names, "active_vendor_id": o.get("active_vendor_id"),
+                "activated": bool(o.get("password_updated_at")),
+                "last_login_at": ll.isoformat() if hasattr(ll, "isoformat") else ll,
+                "is_active": o.get("is_active", True),
+            })
+        return out
+
+    @r.delete("/admin/vendor-operators/{op_id}")
+    async def delete_vendor_operator(op_id: str, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        await db.users.delete_one({"_id": safe_objectid(op_id, "User"), "is_vendor_operator": True})
+        return {"success": True}
+
+    @r.post("/admin/vendor-operators/{op_id}/resend")
+    async def resend_vendor_operator(op_id: str, request: Request, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        op = await db.users.find_one({"_id": safe_objectid(op_id, "User"), "is_vendor_operator": True})
+        if not op:
+            raise HTTPException(status_code=404, detail="Vendor operator not found")
+        token = secrets.token_urlsafe(32)
+        await db.vendor_magic_links.insert_one({
+            "token": token, "vendor_user_id": str(op["_id"]),
+            "vendor_id": op.get("active_vendor_id"), "email": op.get("email"),
+            "purpose": "onboarding", "expires_at": None, "used_at": None,
+            "created_by_admin": user.get("id"), "created_at": datetime.now(timezone.utc),
+        })
+        base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if not base:
+            base = (request.headers.get("origin") or "").rstrip("/") or str(request.base_url).rstrip("/")
+        magic_url = f"{base}/auth/magic/{token}"
+        delivered = False
+        try:
+            import email_service as _es
+            html, text = _es.render_corporate_admin_invite_email(
+                name=op.get("name") or "there",
+                company_name=f"{len(op.get('assigned_vendors') or [])} outlet(s) on Cravitoo", magic_url=magic_url)
+            r2 = _es.send_email(op.get("email"), "Your Cravitoo outlet access — set your password", html, text)
+            delivered = bool(r2[0]) if isinstance(r2, tuple) else bool(r2)
+        except Exception as e:
+            logger.warning(f"Vendor operator resend failed: {e}")
+        return {"success": True, "magic_url": magic_url, "email_delivered": delivered}
 
     @r.post("/admin/users/{user_id}/resend-invite")
     async def resend_invite(user_id: str, user: dict = Depends(get_current_user)):

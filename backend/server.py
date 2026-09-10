@@ -194,6 +194,14 @@ async def get_current_user(request: Request) -> dict:
         user["_id"] = str(user["_id"])
         user["id"] = user["_id"]
         user.pop("password_hash", None)
+        # Vendor operator: resolve the active outlet into vendor_id so every
+        # existing role=='vendor' endpoint operates on the selected outlet.
+        assigned = user.get("assigned_vendors")
+        if assigned:
+            active = user.get("active_vendor_id")
+            if active not in assigned:
+                active = assigned[0]
+            user["vendor_id"] = active
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")

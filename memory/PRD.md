@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Master Vendor Admin: multi-outlet Vendor Operator (COMPLETED ✅ P1, needs deploy)
+
+**Requested (deferred P1)**: one operator login that manages multiple vendor outlets from a single dashboard and switches between them effortlessly.
+**User choices**: switch between vendor OUTLETS at a site; Master Admin explicitly assigns the vendor set; full existing vendor experience per outlet; combined "All outlets" overview; created via Admins + email magic-link.
+**Design (low-risk)**: the operator keeps role `vendor` + new fields `assigned_vendors[]`, `active_vendor_id`, `is_vendor_operator`. `get_current_user` resolves `user.vendor_id` from `active_vendor_id` → every existing role==vendor endpoint (~30) scopes automatically with no changes. Switch = update `active_vendor_id`.
+**Backend** (`sites.py`, `vendor_reports.py`, `server.py`): `POST/GET/DELETE /admin/vendor-operators`, `POST /admin/vendor-operators/{id}/resend`, `GET /admin/all-vendors`; `GET /vendor/my-outlets`, `POST /vendor/switch-outlet` (validates ∈ assigned → 403 otherwise), `GET /vendor/outlets-overview` (today per-outlet). Operator provisioned with magic-link set-password (reuses existing flow).
+**Frontend**: Navbar `OutletSwitcher` dropdown (only for operators w/ ≥2 outlets) → switch + reload; Vendor `Dashboard` "All outlets · today" overview with active highlight; `master/Admins.js` new role "Vendor Operator (multi-outlet)" (disabled password, outlet multi-select, operator cards w/ resend + delete, copy-link modal). Also fixed Admins.js to stringify FastAPI 422 detail arrays (was crashing React on invalid email).
+**Verified**: curl E2E (create 2-outlet operator → set-password role vendor default outlet1 → login → my-outlets → orders scoped to active → switch re-scopes orders → overview → unassigned switch 403 → resend) + testing_agent **iteration_65 = 100%** backend & frontend (incl. regression: normal single-outlet vendor sees no switcher/overview) + screenshot of the 422-fix. Test operators cleaned up.
+**Action needed**: Save to GitHub → Deploy (set PUBLIC_APP_URL=https://app.cravitoo.com in deploy env for email links).
+
 ## Jun 2026 — Corp client: onboarding completion ring (COMPLETED ✅, needs deploy)
 
 **Requested**: a small completion ring per client to see at a glance who's fully set up.

@@ -10,6 +10,7 @@ const VendorDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const [today, setToday] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
+  const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ const VendorDashboard = () => {
       setAnalytics(analyticsRes.data);
       setToday(todayRes.data);
       setRecentOrders(ordersRes.data.slice(0, 5));
+      axios.get(`${API}/vendor/outlets-overview`, { withCredentials: true }).then((r) => setOverview(r.data)).catch(() => {});
     } catch (error) {
       logger.error('Error fetching data:', error);
     } finally {
@@ -52,6 +54,34 @@ const VendorDashboard = () => {
           <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary mb-6 sm:mb-8">
             Vendor Dashboard
           </h1>
+
+          {overview && overview.outlets && overview.outlets.length > 1 && (
+            <div data-testid="outlets-overview" className="mb-8 bg-card border border-border-light rounded-2xl p-5 sm:p-6">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <h2 className="font-heading text-lg font-semibold text-text-primary">All outlets · today</h2>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="text-text-secondary">Orders <b data-testid="overview-total-orders" className="text-text-primary">{overview.total_orders}</b></span>
+                  <span className="text-text-secondary">Revenue <b data-testid="overview-total-revenue" className="text-text-primary">₹{Number(overview.total_revenue).toFixed(0)}</b></span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {overview.outlets.map((o) => (
+                  <div key={o.vendor_id} data-testid={`overview-outlet-${o.vendor_id}`}
+                    className={`rounded-xl border p-4 ${o.active ? 'border-primary bg-primary/5' : 'border-border-light bg-background/60'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-medium text-text-primary text-sm truncate">{o.name}</p>
+                      {o.active && <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Active</span>}
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1 text-text-secondary"><ShoppingBag className="h-3.5 w-3.5" /> {o.orders}</span>
+                      <span className="flex items-center gap-1 text-text-secondary"><IndianRupee className="h-3.5 w-3.5" /> {Number(o.revenue).toFixed(0)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-text-muted">Use the outlet switcher in the top bar to manage a specific outlet.</p>
+            </div>
+          )}
 
           <div data-testid="today-command-center" className="mb-6 sm:mb-8">
             <h2 className="font-heading text-lg sm:text-xl font-medium text-text-primary mb-3 sm:mb-4">Today at a Glance</h2>

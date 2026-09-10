@@ -21,6 +21,10 @@ class _CounterAssignBody(BaseModel):
     counter: Optional[str] = None      # None / empty → clears the tag
 
 
+class _SwitchOutletBody(BaseModel):
+    vendor_id: str
+
+
 def make_router(db, safe_objectid, get_current_user):
     r = APIRouter()
 
@@ -65,6 +69,65 @@ def make_router(db, safe_objectid, get_current_user):
         vendor_id = _require_vendor(user)
         names = await db.menu_items.distinct("counter", {"vendor_id": vendor_id, "counter": {"$nin": [None, ""]}})
         return sorted(names)
+
+    @r.get("/vendor/my-outlets")
+    async def my_outlets(user: dict = Depends(get_current_user)):
+        """Outlets this vendor login can operate + which one is active."""
+        if user.get("role") != "vendor":
+            raise HTTPException(status_code=403, detail="Vendor account required")
+        assigned = user.get("assigned_vendors") or ([user["vendor_id"]] if user.get("vendor_id") else [])
+        outlets = []
+        for vid in assigned:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+            if v:
+                outlets.append({"id": str(v["_id"]), "name": v.get("name")})
+        return {"outlets": outlets, "active_vendor_id": user.get("vendor_id"),
+                "is_operator": bool(user.get("assigned_vendors"))}
+
+    @r.post("/vendor/switch-outlet")
+    async def switch_outlet(body: _SwitchOutletBody, user: dict = Depends(get_current_user)):
+        assigned = user.get("assigned_vendors") or []
+        if not assigned:
+            raise HTTPException(status_code=403, detail="This account manages a single outlet")
+        if body.vendor_id not in assigned:
+            raise HTTPException(status_code=403, detail="You don't manage that outlet")
+        await db.users.update_one({"_id": safe_objectid(user["id"], "User")},
+                                  {"$set": {"active_vendor_id": body.vendor_id}})
+        v = await db.vendors.find_one({"_id": safe_objectid(body.vendor_id, "Vendor")}, {"name": 1})
+        return {"success": True, "active_vendor_id": body.vendor_id, "name": v.get("name") if v else None}
+
+    @r.get("/vendor/outlets-overview")
+    async def outlets_overview(user: dict = Depends(get_current_user)):
+        """Today's orders + revenue per outlet (IST day) for a multi-outlet operator."""
+        assigned = user.get("assigned_vendors") or []
+        if not assigned:
+            raise HTTPException(status_code=403, detail="Not a multi-outlet operator")
+        now = datetime.now(timezone.utc)
+        ist_today = (now + timedelta(hours=5, minutes=30)).date()
+        per, tot_orders, tot_rev = [], 0, 0.0
+        for vid in assigned:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+            docs = await db.orders.find(
+                {"vendor_id": vid}, {"total_amount": 1, "created_at": 1, "payment_status": 1}).to_list(5000)
+            cnt, rev = 0, 0.0
+            for d in docs:
+                ca = d.get("created_at")
+                if isinstance(ca, str):
+                    try:
+                        ca = datetime.fromisoformat(ca.replace("Z", "+00:00"))
+                    except ValueError:
+                        ca = None
+                if ca and ca.tzinfo is None:
+                    ca = ca.replace(tzinfo=timezone.utc)
+                if ca and (ca + timedelta(hours=5, minutes=30)).date() == ist_today:
+                    cnt += 1
+                    if d.get("payment_status") == "paid":
+                        rev += d.get("total_amount") or 0
+            per.append({"vendor_id": vid, "name": v.get("name") if v else vid,
+                        "orders": cnt, "revenue": round(rev, 2), "active": vid == user.get("vendor_id")})
+            tot_orders += cnt
+            tot_rev += rev
+        return {"outlets": per, "total_orders": tot_orders, "total_revenue": round(tot_rev, 2)}
 
     @r.patch("/vendor/menu-items/{item_id}/counter")
     async def set_menu_item_counter(item_id: str, body: _CounterAssignBody, user: dict = Depends(get_current_user)):

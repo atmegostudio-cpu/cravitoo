@@ -2,11 +2,41 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import axios from 'axios';
 import VendorOrderNotifier from './VendorOrderNotifier';
 import NotificationBell from './NotificationBell';
 import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, KeyRound, Trash2, Menu as MenuIcon, X } from 'lucide-react';
 
 const LOGO_URL = '/logo.png';
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+const OutletSwitcher = () => {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    axios.get(`${API}/vendor/my-outlets`, { withCredentials: true }).then((r) => setData(r.data)).catch(() => {});
+  }, []);
+  if (!data || !data.is_operator || (data.outlets || []).length < 2) return null;
+  const change = async (vid) => {
+    if (vid === data.active_vendor_id) return;
+    try {
+      await axios.post(`${API}/vendor/switch-outlet`, { vendor_id: vid }, { withCredentials: true });
+      window.location.reload();
+    } catch { /* ignore */ }
+  };
+  return (
+    <div className="flex items-center gap-1.5" data-testid="outlet-switcher" title="Switch outlet">
+      <Store className="h-4 w-4 text-primary flex-shrink-0" />
+      <select
+        data-testid="outlet-switcher-select"
+        value={data.active_vendor_id || ''}
+        onChange={(e) => change(e.target.value)}
+        className="text-sm font-medium bg-background border border-border-light rounded-lg px-2 py-1.5 max-w-[150px] focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
+        {data.outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </div>
+  );
+};
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -152,6 +182,7 @@ const Navbar = () => {
               <span className="text-xs">Plans</span>
             </Link>
           )}
+          {user?.role === 'vendor' && <OutletSwitcher />}
           <NotificationBell />
           <Link
             to="/settings/security"

@@ -357,6 +357,12 @@ class MasterAdminCreate(BaseModel):
     name: str
 
 
+class VendorOperatorCreate(BaseModel):
+    email: EmailStr
+    name: str
+    vendor_ids: List[str]
+
+
 # ============== REVIEWS / PREFERENCES / SUBSCRIPTIONS ==============
 
 class ReviewCreate(BaseModel):
