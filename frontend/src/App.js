@@ -19,6 +19,7 @@ import BulkOrder from './pages/employee/BulkOrder';
 
 import VendorDashboard from './pages/vendor/Dashboard';
 import VendorOrders from './pages/vendor/Orders';
+import VendorAllOrders from './pages/vendor/AllOrders';
 import VendorManualOrder from './pages/vendor/ManualOrder';
 import EmployeeFeedback from './pages/employee/Feedback';
 import FeedbackInbox from './pages/FeedbackInbox';
@@ -171,6 +172,11 @@ function AppRoutes() {
       <Route path="/vendor/orders" element={
         <ProtectedRoute allowedRoles={ROLES_VENDOR}>
           <VendorOrders />
+        </ProtectedRoute>
+      } />
+      <Route path="/vendor/all-orders" element={
+        <ProtectedRoute allowedRoles={ROLES_VENDOR}>
+          <VendorAllOrders />
         </ProtectedRoute>
       } />
       <Route path="/vendor/manual-order" element={

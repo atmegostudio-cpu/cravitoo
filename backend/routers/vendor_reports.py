@@ -129,6 +129,35 @@ def make_router(db, safe_objectid, get_current_user):
             tot_rev += rev
         return {"outlets": per, "total_orders": tot_orders, "total_revenue": round(tot_rev, 2)}
 
+    @r.get("/vendor/all-outlets-orders")
+    async def all_outlets_orders(user: dict = Depends(get_current_user)):
+        """Recent orders across ALL of a multi-outlet operator's outlets, each tagged with its outlet."""
+        assigned = user.get("assigned_vendors") or []
+        if not assigned:
+            raise HTTPException(status_code=403, detail="Not a multi-outlet operator")
+        names = {}
+        for vid in assigned:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+            names[vid] = v.get("name") if v else vid
+        docs = await db.orders.find(
+            {"vendor_id": {"$in": assigned}},
+            {"vendor_id": 1, "employee_name": 1, "items": 1, "total_amount": 1, "status": 1,
+             "payment_status": 1, "counter": 1, "collection_code": 1, "created_at": 1, "delivery_type": 1},
+        ).sort("created_at", -1).to_list(200)
+        out = []
+        for d in docs:
+            ca = d.get("created_at")
+            out.append({
+                "id": str(d["_id"]), "vendor_id": d.get("vendor_id"),
+                "outlet": names.get(d.get("vendor_id"), d.get("vendor_id")),
+                "employee_name": d.get("employee_name"), "items": d.get("items", []),
+                "total_amount": d.get("total_amount"), "status": d.get("status"),
+                "payment_status": d.get("payment_status"), "counter": d.get("counter"),
+                "collection_code": d.get("collection_code"),
+                "created_at": ca.isoformat() if hasattr(ca, "isoformat") else ca,
+            })
+        return {"orders": out, "outlets": [{"id": vid, "name": names[vid]} for vid in assigned]}
+
     @r.patch("/vendor/menu-items/{item_id}/counter")
     async def set_menu_item_counter(item_id: str, body: _CounterAssignBody, user: dict = Depends(get_current_user)):
         vendor_id = _require_vendor(user)
