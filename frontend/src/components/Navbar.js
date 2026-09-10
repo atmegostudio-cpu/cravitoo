@@ -56,6 +56,7 @@ const Navbar = () => {
           { path: '/admin/dashboard', label: 'Dashboard', icon: BarChart3 },
           { path: '/admin/employees', label: 'Employees', icon: Users },
           { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
+          { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
           { path: '/admin/bulk-pre-order', label: 'Bulk Pre-Order', icon: ClipboardList },
           { path: '/admin/events', label: 'Events', icon: CalendarDays },
         ];

@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Create Corporate Admin on client approval (COMPLETED ✅, needs deploy)
+
+**Requested**: a real way to CREATE a Corporate Admin account (the role/permissions already existed but no account could be made). **User choices**: provision + email access on the **Approved** lifecycle step; login email = **billing_contact_email → contact_email** fallback; also add the missing **Feedback** nav link for corporate_admin; keep it simple.
+**Root cause of old gap**: the approval step's welcome email called `render_welcome_email(name, email=, role=, login_url=)` with wrong kwargs → it silently failed in try/except and **never created a login account** (dead-end link).
+**Implemented** (reuses the existing role-agnostic magic-link set-password flow — `vendor_magic_links` + `GET/POST /auth/magic/{token}`):
+- Backend `routers/corporate_clients.py`: `_provision_corporate_admin(client, actor, request)` — on `approved`, creates/refreshes a `corporate_admin` user (billing/contact email, `company_id` stamped, placeholder bcrypt), mints a single-use non-expiring onboarding magic link, emails a new `render_corporate_admin_invite_email` (email_service.py), and returns `magic_url`+`token`+`email_delivered`. Idempotent; guards against hijacking an existing master/super_admin email. New `POST /master/corporate-clients/{id}/resend-admin-invite` (master-only) re-issues + re-emails the link.
+- Frontend `master/CorporateClients.js`: Approve now shows a **"Corporate Admin access ready"** modal (`corp-invite-modal`) with a copyable set-password link (`corp-invite-link`/`corp-invite-copy`) + a **Resend admin invite** button (`resend-invite-{id}`) on Approved/Active cards. `MagicLinkConsumer.js` redirects `corporate_admin` → `/admin/dashboard` after set-password. `Navbar.js` corporate_admin nav gains a **Feedback** link (`/admin/feedback`).
+**Verified**: curl E2E (approve→provision, email_delivered=true, magic_url returned; set-password→role corporate_admin + correct company_id; fresh login 200; token reuse 410; resend OK) + testing_agent **iteration_64 = 100%** frontend (create→approve→copy-link modal→set password→lands on /admin/dashboard→Feedback link renders→fresh login→resend→single-use 410). No regressions. Test artifacts cleaned up.
+**Action needed**: user must **Save to GitHub → Deploy**.
+
 ## Jun 2026 — Employee Menu load speedup (COMPLETED ✅, frontend-only)
 
 **Requested**: employee menu loads slowly — make it faster.

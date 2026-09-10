@@ -82,18 +82,31 @@ const CorporateClients = () => {
     } finally { setSubmitting(false); }
   };
 
+  const [invite, setInvite] = useState(null);
+
   const advance = async (client, target) => {
-    if (!window.confirm(`Advance "${client.name}" to "${target}"?` + (target === 'approved' ? '\n\nA Welcome email will be sent to the billing contact.' : ''))) return;
+    if (!window.confirm(`Advance "${client.name}" to "${target}"?` + (target === 'approved' ? '\n\nThe Corporate Admin account will be created and a set-password link emailed to the billing contact.' : ''))) return;
     try {
       const { data } = await axios.post(`${API}/master/corporate-clients/${client.id}/lifecycle`, { to: target }, { withCredentials: true });
       if (target === 'approved') {
-        alert(data?.welcome_email_sent
-          ? 'Approved. Welcome email sent.'
-          : 'Approved. (Welcome email could not be sent — check billing email.)');
+        if (data?.magic_url) {
+          setInvite({ clientName: client.name, email: data.admin_email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+        } else {
+          alert('Approved. ' + (data?.provision_skipped_reason ? `Admin account not created: ${data.provision_skipped_reason}` : ''));
+        }
       }
       await load();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Lifecycle change failed');
+    }
+  };
+
+  const resendInvite = async (client) => {
+    try {
+      const { data } = await axios.post(`${API}/master/corporate-clients/${client.id}/resend-admin-invite`, {}, { withCredentials: true });
+      setInvite({ clientName: client.name, email: data.admin_email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Could not resend admin invite');
     }
   };
 
@@ -134,6 +147,28 @@ const CorporateClients = () => {
   return (
     <>
       <Navbar />
+      {invite && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="corp-invite-modal">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="font-heading text-lg font-semibold text-text-primary mb-1">Corporate Admin access ready</h3>
+            <p className="text-sm text-text-secondary mb-4">
+              {invite.delivered
+                ? `We emailed a one-time set-password link to ${invite.email}.`
+                : `Couldn't email ${invite.email}. Copy the link below and send it directly — it works the same way.`}
+            </p>
+            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Set-password link · {invite.clientName}</label>
+            <div className="flex gap-2 mt-1 mb-4">
+              <input data-testid="corp-invite-link" readOnly value={invite.magic_url || ''} className="flex-1 px-3 py-2 border border-border-light rounded-lg text-xs font-mono bg-background" />
+              <button
+                data-testid="corp-invite-copy"
+                onClick={() => { try { navigator.clipboard.writeText(invite.magic_url); } catch { /* noop */ } }}
+                className="px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-hover whitespace-nowrap"
+              >Copy link</button>
+            </div>
+            <button data-testid="corp-invite-close" onClick={() => setInvite(null)} className="w-full px-4 py-2.5 border border-border-light rounded-xl text-sm font-medium text-text-secondary hover:bg-background">Done</button>
+          </div>
+        </div>
+      )}
       <div className="min-h-screen bg-background">
         <div className="max-w-6xl mx-auto px-6 py-8">
           <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
@@ -186,6 +221,15 @@ const CorporateClients = () => {
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-hover"
                       >
                         {NEXT_STAGE[c.lifecycle_status].label} <ArrowRight className="h-3 w-3" />
+                      </button>
+                    )}
+                    {(c.lifecycle_status === 'approved' || c.lifecycle_status === 'active') && (
+                      <button
+                        data-testid={`resend-invite-${c.id}`}
+                        onClick={() => resendInvite(c)}
+                        className="flex items-center gap-1 px-3 py-1.5 border border-border-light rounded-lg text-xs font-medium text-text-secondary hover:bg-background"
+                      >
+                        <Mail className="h-3 w-3" /> Resend admin invite
                       </button>
                     )}
                     {c.lifecycle_status === 'active' && (

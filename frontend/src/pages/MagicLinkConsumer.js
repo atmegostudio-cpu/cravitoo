@@ -71,6 +71,7 @@ export default function MagicLinkConsumer() {
       setTimeout(() => {
         const dest = data?.role === 'vendor' ? '/vendor/dashboard'
                    : data?.role === 'master_admin' ? '/master/dashboard'
+                   : data?.role === 'corporate_admin' ? '/admin/dashboard'
                    : '/';
         // Hard redirect (not client-side navigate) so AuthProvider re-mounts
         // and re-reads the freshly-set auth cookies — otherwise the stale

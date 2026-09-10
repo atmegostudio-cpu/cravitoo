@@ -21,7 +21,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 logger = logging.getLogger(__name__)
@@ -82,6 +85,82 @@ def _doc_to_dict(doc: Dict[str, Any]) -> Dict[str, Any]:
 def make_router(db, safe_objectid, get_current_user):
     r = APIRouter()
 
+    def _resolve_public_base(request: Request) -> str:
+        base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if base:
+            return base
+        hdrs = request.headers
+        origin = (hdrs.get("origin") or "").rstrip("/")
+        if origin:
+            return origin
+        fwd_host = hdrs.get("x-forwarded-host")
+        if fwd_host:
+            proto = hdrs.get("x-forwarded-proto", "https")
+            return f"{proto}://{fwd_host.split(',')[0].strip()}"
+        return str(request.base_url).rstrip("/")
+
+    async def _provision_corporate_admin(client: Dict[str, Any], actor: dict, request: Request) -> Dict[str, Any]:
+        """Create/refresh the corporate_admin login user for this client and email
+        a single-use set-password magic link. Reuses the existing magic-link flow
+        (vendor_magic_links + /auth/magic/{token}). Idempotent + safe to resend."""
+        email = (client.get("billing_contact_email") or client.get("contact_email") or "").strip().lower()
+        if not email or "@" not in email:
+            return {"skipped": True, "reason": "This client has no valid billing/contact email to send access to."}
+        company_id = str(client["_id"])
+        name = client.get("billing_contact_name") or client.get("contact_name") or client.get("name") or "there"
+
+        existing = await db.users.find_one({"email": email})
+        if existing and existing.get("role") in ("master_admin", "super_admin"):
+            return {"skipped": True, "reason": f"{email} already belongs to a {existing.get('role')} account."}
+
+        if existing:
+            await db.users.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"role": "corporate_admin", "company_id": company_id, "is_active": True}},
+            )
+            admin_user_id = str(existing["_id"])
+        else:
+            import bcrypt as _bc
+            placeholder = _bc.hashpw(secrets.token_urlsafe(24).encode(), _bc.gensalt()).decode()
+            ins = await db.users.insert_one({
+                "email": email,
+                "password_hash": placeholder,
+                "name": name,
+                "role": "corporate_admin",
+                "company_id": company_id,
+                "is_active": True,
+                "failed_attempts": 0,
+                "created_at": datetime.now(timezone.utc),
+                "created_via": "corporate_client_approval",
+            })
+            admin_user_id = str(ins.inserted_id)
+
+        token = secrets.token_urlsafe(32)
+        await db.vendor_magic_links.insert_one({
+            "token": token,
+            "vendor_user_id": admin_user_id,
+            "vendor_id": None,
+            "email": email,
+            "purpose": "onboarding",
+            "expires_at": None,
+            "used_at": None,
+            "created_by_admin": actor.get("id"),
+            "created_at": datetime.now(timezone.utc),
+        })
+        magic_url = f"{_resolve_public_base(request)}/auth/magic/{token}"
+        delivered = False
+        try:
+            import email_service as _es
+            html, text = _es.render_corporate_admin_invite_email(
+                name=name, company_name=client.get("name") or "your company", magic_url=magic_url,
+            )
+            res = _es.send_email(email, "Your Cravitoo admin access — set your password", html, text)
+            delivered = bool(res[0]) if isinstance(res, tuple) else bool(res)
+        except Exception as e:
+            logger.warning(f"Corporate admin invite email failed for {email}: {e}")
+        return {"skipped": False, "admin_email": email, "magic_url": magic_url,
+                "token": token, "email_delivered": delivered}
+
     @r.get("/master/corporate-clients")
     async def list_clients(user: dict = Depends(get_current_user)):
         if not _is_master(user):
@@ -126,7 +205,7 @@ def make_router(db, safe_objectid, get_current_user):
         return _doc_to_dict(client)
 
     @r.post("/master/corporate-clients/{client_id}/lifecycle")
-    async def transition_lifecycle(client_id: str, payload: LifecycleTransition, user: dict = Depends(get_current_user)):
+    async def transition_lifecycle(client_id: str, payload: LifecycleTransition, request: Request, user: dict = Depends(get_current_user)):
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can change client lifecycle")
         target = payload.to.lower().strip()
@@ -168,34 +247,42 @@ def make_router(db, safe_objectid, get_current_user):
             {"$set": update, "$push": {"lifecycle_history": history_entry}},
         )
 
-        # Fire welcome email on 'approved' (PDF Module 2 — welcome email for client)
-        email_sent = False
+        # On 'approved': provision the Corporate Admin login + email a one-time
+        # set-password link (reuses the existing magic-link flow). This replaces
+        # the old welcome email that created no account.
+        provision = None
         if target == "approved":
-            recipient = (client.get("billing_contact_email") or client.get("contact_email") or "").strip()
-            if recipient:
-                try:
-                    import email_service as _email_service
-                    recipient_name = client.get("billing_contact_name") or "there"
-                    html, text = _email_service.render_welcome_email(
-                        name=recipient_name,
-                        email=recipient,
-                        role="corporate_admin",
-                        login_url="https://app.cravitoo.com/login",
-                    )
-                    ok, _err = _email_service.send_email(
-                        recipient,
-                        f"Welcome to Cravitoo, {client.get('name', 'team')} 🎉",
-                        html, text,
-                    )
-                    email_sent = bool(ok)
-                except Exception as e:
-                    logger.warning(f"Corporate client welcome email failed for {recipient}: {e}")
+            provision = await _provision_corporate_admin(client, user, request)
 
-        return {
+        resp: Dict[str, Any] = {
             "message": f"Lifecycle moved to '{target}'",
             "lifecycle_status": target,
-            "welcome_email_sent": email_sent,
         }
+        if provision is not None:
+            resp["admin_provisioned"] = not provision.get("skipped")
+            resp["email_delivered"] = provision.get("email_delivered", False)
+            resp["welcome_email_sent"] = provision.get("email_delivered", False)  # back-compat
+            if provision.get("skipped"):
+                resp["provision_skipped_reason"] = provision.get("reason")
+            else:
+                resp["admin_email"] = provision.get("admin_email")
+                resp["magic_url"] = provision.get("magic_url")
+                resp["token"] = provision.get("token")
+        return resp
+
+    @r.post("/master/corporate-clients/{client_id}/resend-admin-invite")
+    async def resend_admin_invite(client_id: str, request: Request, user: dict = Depends(get_current_user)):
+        """Re-issue the Corporate Admin set-password link and email it again.
+        Also returns the link so the master can copy it directly (Master only)."""
+        if not _is_master(user):
+            raise HTTPException(status_code=403, detail="Only Master Admin can resend admin invites")
+        client = await db.companies.find_one({"_id": safe_objectid(client_id, "Company")})
+        if not client:
+            raise HTTPException(status_code=404, detail="Corporate client not found")
+        result = await _provision_corporate_admin(client, user, request)
+        if result.get("skipped"):
+            raise HTTPException(status_code=400, detail=result.get("reason") or "Could not create the admin account")
+        return {"success": True, **result}
 
     @r.delete("/master/corporate-clients/{client_id}")
     async def delete_client(

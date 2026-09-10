@@ -469,6 +469,62 @@ with your email + password.
     return html, text
 
 
+def render_corporate_admin_invite_email(*, name: str, company_name: str, magic_url: str) -> Tuple[str, str]:
+    """One-time set-password invite for a Corporate Admin, sent when a corporate
+    client is approved. Single-use link; does not expire until used."""
+    safe_name = (name or "there").split()[0][:40]
+    safe_company = (company_name or "your company")[:80]
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Your Cravitoo admin access</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#FFF7F0;color:#1F1410;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#FFF7F0;"><tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid rgba(255,90,31,0.15);border-radius:16px;overflow:hidden;">
+    <tr><td style="background:linear-gradient(135deg,#FF5A1F 0%,#FF7A3F 100%);padding:20px 32px;color:#ffffff;">
+      <p style="margin:0;font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.9;">Cravitoo Admin</p>
+      <p style="margin:6px 0 0 0;font-size:20px;font-weight:700;">Your admin access is ready, {safe_name}</p>
+    </td></tr>
+    <tr><td style="padding:32px;">
+      <p style="margin:0 0 16px 0;font-size:15px;color:#52443A;line-height:1.6;">
+        <strong>{safe_company}</strong> is now onboarded on Cravitoo. You've been set up as the <strong>Corporate Admin</strong>. Tap below to <strong>set your password</strong> — you'll only do this once.
+      </p>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:24px 0;"><tr><td align="center">
+        <a href="{magic_url}" style="display:inline-block;background:#FF5A1F;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:600;font-size:15px;">Set My Password &rarr;</a>
+      </td></tr></table>
+      <p style="margin:0 0 12px 0;font-size:13px;color:#7C6B60;line-height:1.6;">
+        This is a one-time link. Once you set your password, sign in normally at
+        <a href="https://app.cravitoo.com/login" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com/login</a>
+        with your email + password.
+      </p>
+      <p style="margin:24px 0 8px 0;font-weight:600;color:#1F1410;font-size:14px;">As Corporate Admin you can</p>
+      <ul style="padding-left:20px;margin:0 0 16px 0;color:#52443A;line-height:1.8;font-size:14px;">
+        <li>Manage your company's employees</li>
+        <li>View company-wide sales reports + download Excel</li>
+        <li>Place bulk pre-orders and organise event catering</li>
+        <li>See feedback from your employees</li>
+      </ul>
+      <p style="margin:24px 0 0 0;font-size:13px;color:#9C8B80;">
+        Didn't expect this? You can safely ignore this email — the link stays unused.
+      </p>
+    </td></tr>
+    <tr><td style="background:#FFF7EE;padding:16px 32px;text-align:center;color:#9C8B80;font-size:12px;">
+      Cravitoo · Smart Corporate Cafeteria · <a href="https://app.cravitoo.com" style="color:#FF5A1F;text-decoration:none;">app.cravitoo.com</a>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+    text = f"""Your Cravitoo admin access is ready, {safe_name}.
+
+{safe_company} is now onboarded on Cravitoo and you're set up as Corporate Admin.
+
+Set your password (one-time link):
+{magic_url}
+
+Once set, sign in at https://app.cravitoo.com/login with your email + password.
+
+— Team Cravitoo
+"""
+    return html, text
+
+
 def render_password_reset_email(*, name: str, reset_url: str) -> Tuple[str, str]:
     """Password-reset email for any Cravitoo user (vendors, employees, admins)."""
     safe_name = (name or "there").split()[0][:40]
