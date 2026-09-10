@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { TrendingUp, ShoppingBag, DollarSign, IndianRupee, Trophy, Clock } from 'lucide-react';
+import { TrendingUp, ShoppingBag, IndianRupee, Trophy, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -150,7 +150,7 @@ const VendorDashboard = () => {
             <div data-testid="total-revenue-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="bg-green-100 rounded-xl p-3">
-                  <DollarSign className="h-6 w-6 text-green-600" />
+                  <IndianRupee className="h-6 w-6 text-green-600" />
                 </div>
               </div>
               <p className="text-3xl font-heading font-semibold text-text-primary mb-1">₹{analytics?.total_revenue?.toFixed(2) || 0}</p>

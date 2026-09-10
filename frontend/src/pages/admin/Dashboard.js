@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import ExportButtons from '../../components/ExportButtons';
-import { TrendingUp, Users, DollarSign } from 'lucide-react';
+import { TrendingUp, Users, IndianRupee } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -74,7 +74,7 @@ const CorporateAdminDashboard = () => {
             <div data-testid="corporate-total-spend" className="bg-card border border-border-light rounded-2xl p-8">
               <div className="flex items-center justify-between mb-4">
                 <div className="bg-green-100 rounded-xl p-3">
-                  <DollarSign className="h-8 w-8 text-green-600" />
+                  <IndianRupee className="h-8 w-8 text-green-600" />
                 </div>
               </div>
               <p className="text-4xl font-heading font-semibold text-text-primary mb-2">₹{analytics?.total_spend?.toFixed(2) || 0}</p>
