@@ -158,6 +158,15 @@ def make_router(db, safe_objectid, get_current_user):
             delivered = bool(res[0]) if isinstance(res, tuple) else bool(res)
         except Exception as e:
             logger.warning(f"Corporate admin invite email failed for {email}: {e}")
+        await db.companies.update_one(
+            {"_id": client["_id"]},
+            {"$set": {"admin_invite": {
+                "email": email,
+                "status": "delivered" if delivered else "failed",
+                "at": datetime.now(timezone.utc).isoformat(),
+                "user_id": admin_user_id,
+            }}},
+        )
         return {"skipped": False, "admin_email": email, "magic_url": magic_url,
                 "token": token, "email_delivered": delivered}
 
@@ -166,7 +175,48 @@ def make_router(db, safe_objectid, get_current_user):
         if not _is_master(user):
             raise HTTPException(status_code=403, detail="Only Master Admin can view corporate clients")
         clients = await db.companies.find().sort("created_at", -1).to_list(500)
-        return [_doc_to_dict(c) for c in clients]
+
+        # Batch the counts for the per-client onboarding checklist (few queries).
+        sites = await db.sites.find({}, {"_id": 1, "company_id": 1}).to_list(5000)
+        site_company: Dict[str, Any] = {str(s["_id"]): s.get("company_id") for s in sites}
+        sites_count: Dict[str, int] = {}
+        for s in sites:
+            cid = s.get("company_id")
+            if cid:
+                sites_count[cid] = sites_count.get(cid, 0) + 1
+
+        admins = await db.users.find(
+            {"role": "corporate_admin"}, {"company_id": 1, "password_updated_at": 1, "email": 1},
+        ).to_list(5000)
+        admin_map: Dict[str, Dict[str, Any]] = {}
+        for a in admins:
+            cid = a.get("company_id")
+            if cid:
+                admin_map[cid] = {"exists": True, "activated": bool(a.get("password_updated_at"))}
+
+        maps = await db.vendor_site_mappings.find({}, {"vendor_id": 1, "site_id": 1, "status": 1}).to_list(20000)
+        vendors_by_company: Dict[str, set] = {}
+        for m in maps:
+            if m.get("status") not in (None, "active"):
+                continue
+            cid = site_company.get(str(m.get("site_id")))
+            if cid:
+                vendors_by_company.setdefault(cid, set()).add(str(m.get("vendor_id")))
+
+        out = []
+        for c in clients:
+            d = _doc_to_dict(c)
+            cid = d["id"]
+            ai = c.get("admin_invite") or {}
+            info = admin_map.get(cid, {"exists": False, "activated": False})
+            d["onboarding"] = {
+                "admin_invited": bool(ai) or info["exists"],
+                "admin_activated": info.get("activated", False),
+                "sites_count": sites_count.get(cid, 0),
+                "vendors_mapped": len(vendors_by_company.get(cid, set())),
+            }
+            out.append(d)
+        return out
 
     @r.post("/master/corporate-clients")
     async def create_client(data: CorporateClientCreate, user: dict = Depends(get_current_user)):

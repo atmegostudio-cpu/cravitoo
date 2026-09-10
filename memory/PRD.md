@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Corp client: email-status badge + onboarding checklist (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) a delivered/failed **email badge** on each client card so admins know when to use the copy-link; (2) a per-client **onboarding checklist** (admin invited → sites added → vendors mapped); and confirm it reaches live after deploy.
+**Implemented**:
+- Backend `routers/corporate_clients.py`: `_provision_corporate_admin` now persists `admin_invite = {email, status: delivered|failed, at, user_id}` on the company doc. `GET /master/corporate-clients` enriched (few batched queries) with `onboarding = {admin_invited, admin_activated, sites_count, vendors_mapped}`.
+- Frontend `master/CorporateClients.js`: green "Admin invite emailed…" / red "Invite failed — use Resend & copy link" badge (`admin-email-status-{id}`) + a "Setup progress" checklist (`onboarding-checklist-{id}`) with ✓/○ rows; resend now refreshes the list.
+**Verified**: curl (list returns `admin_invite.status=delivered` + correct onboarding counts, e.g. AUDIT_CorpA sites 1/vendors 2, DEMO Acme 2/2) + screenshot (badge + checklist render on cards). `deployment_agent` = **PASS** (no blockers). Temp test client cleaned up.
+**Live/deploy note**: code deploys via Save to GitHub → Deploy and works on live. The **badge** only appears after an invite is sent on live (approve/resend); the **checklist** computes live from live data so it reflects immediately for all clients. ⚠️ For magic links to point to the live domain, the deploy env must have **`PUBLIC_APP_URL=https://app.cravitoo.com`** (code falls back to request headers if unset).
+
 ## Jun 2026 — Create Corporate Admin on client approval (COMPLETED ✅, needs deploy)
 
 **Requested**: a real way to CREATE a Corporate Admin account (the role/permissions already existed but no account could be made). **User choices**: provision + email access on the **Approved** lifecycle step; login email = **billing_contact_email → contact_email** fallback; also add the missing **Feedback** nav link for corporate_admin; keep it simple.

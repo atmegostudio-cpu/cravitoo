@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Building2, Plus, Mail, ArrowRight, Trash2, X, CheckCircle2, Edit3 } from 'lucide-react';
+import { Building2, Plus, Mail, ArrowRight, Trash2, X, CheckCircle2, Edit3, Circle, AlertTriangle, Store, MapPin } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -26,6 +26,16 @@ const StageBadge = ({ stage }) => {
     </span>
   );
 };
+
+const ChecklistItem = ({ done, label, icon: Icon }) => (
+  <li className="flex items-center gap-2">
+    {done
+      ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+      : <Circle className="h-3.5 w-3.5 text-text-muted flex-shrink-0" />}
+    <Icon className="h-3.5 w-3.5 text-text-muted flex-shrink-0" />
+    <span className={done ? 'text-text-primary' : 'text-text-muted'}>{label}</span>
+  </li>
+);
 
 const CorporateClients = () => {
   const [clients, setClients] = useState([]);
@@ -105,6 +115,7 @@ const CorporateClients = () => {
     try {
       const { data } = await axios.post(`${API}/master/corporate-clients/${client.id}/resend-admin-invite`, {}, { withCredentials: true });
       setInvite({ clientName: client.name, email: data.admin_email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+      await load();
     } catch (e) {
       alert(e?.response?.data?.detail || 'Could not resend admin invite');
     }
@@ -213,6 +224,35 @@ const CorporateClients = () => {
                       </div>
                     )}
                   </div>
+
+                  {c.admin_invite && (
+                    <div
+                      data-testid={`admin-email-status-${c.id}`}
+                      className={`flex items-center gap-1.5 text-xs font-medium mb-3 px-2.5 py-1.5 rounded-lg border ${
+                        c.admin_invite.status === 'delivered'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                          : 'bg-red-50 border-red-200 text-red-700'
+                      }`}
+                    >
+                      {c.admin_invite.status === 'delivered'
+                        ? <><CheckCircle2 className="h-3.5 w-3.5" /> Admin invite emailed to {c.admin_invite.email}</>
+                        : <><AlertTriangle className="h-3.5 w-3.5" /> Invite email failed — use “Resend admin invite” &amp; copy the link</>}
+                    </div>
+                  )}
+
+                  {c.onboarding && (c.lifecycle_status === 'approved' || c.lifecycle_status === 'active' || c.onboarding.admin_invited) && (
+                    <div data-testid={`onboarding-checklist-${c.id}`} className="mb-4 rounded-xl border border-border-light bg-background/60 p-3">
+                      <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-2">Setup progress</p>
+                      <ul className="space-y-1.5 text-xs">
+                        <ChecklistItem done={c.onboarding.admin_invited} icon={Mail}
+                          label={c.onboarding.admin_activated ? 'Admin invited & active' : (c.onboarding.admin_invited ? 'Admin invited (awaiting password set)' : 'Admin not invited yet')} />
+                        <ChecklistItem done={c.onboarding.sites_count > 0} icon={MapPin}
+                          label={`Sites added${c.onboarding.sites_count ? ` (${c.onboarding.sites_count})` : ''}`} />
+                        <ChecklistItem done={c.onboarding.vendors_mapped > 0} icon={Store}
+                          label={`Vendors mapped${c.onboarding.vendors_mapped ? ` (${c.onboarding.vendors_mapped})` : ''}`} />
+                      </ul>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-border-light">
                     {NEXT_STAGE[c.lifecycle_status] && (
                       <button
