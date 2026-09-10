@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Mail, Plus, Trash2, X, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Mail, Plus, Trash2, X, ShieldAlert, CheckCircle2, Link2, Search } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -15,6 +15,9 @@ const AllowedDomains = () => {
   const [form, setForm] = useState({ domain: '', company_id: '', site_id: '', notes: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [testEmail, setTestEmail] = useState('');
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +71,28 @@ const AllowedDomains = () => {
     }
   };
 
+  const backfill = async (d) => {
+    try {
+      await axios.post(`${API}/admin/allowed-domains/${d.id}/backfill-company`, {}, { withCredentials: true });
+      await load();
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Could not link company');
+    }
+  };
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data } = await axios.get(`${API}/admin/allowed-domains/test`, { params: { email: testEmail }, withCredentials: true });
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ allowed: false, message: err?.response?.data?.detail || 'Test failed' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -109,6 +134,30 @@ const AllowedDomains = () => {
             </div>
           </div>
 
+          <div className="bg-card border border-border-light rounded-2xl p-4 mb-6" data-testid="domain-test-panel">
+            <div className="flex items-center gap-2 mb-1">
+              <Search className="h-4 w-4 text-primary" />
+              <p className="font-medium text-text-primary text-sm">Test a domain</p>
+            </div>
+            <p className="text-xs text-text-muted mb-3">See which company &amp; site a new employee on this email/domain would be mapped to.</p>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                data-testid="domain-test-input"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') runTest(); }}
+                placeholder="someone@company.com or company.com"
+                className="flex-1 min-w-[220px] px-3 py-2 border border-border-light rounded-lg text-sm font-mono focus:outline-none focus:border-primary"
+              />
+              <button data-testid="domain-test-btn" onClick={runTest} disabled={testing || !testEmail} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50">{testing ? 'Testing…' : 'Test'}</button>
+            </div>
+            {testResult && (
+              <div data-testid="domain-test-result" className={`mt-3 text-sm px-3 py-2 rounded-lg border ${testResult.allowed ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                {testResult.allowed ? '✓ ' : '✗ '}{testResult.message}
+              </div>
+            )}
+          </div>
+
           {domains.length === 0 ? (
             <div className="bg-card border border-border-light rounded-2xl p-12 text-center" data-testid="empty-domains">
               <Mail className="h-12 w-12 text-text-muted mx-auto mb-4" />
@@ -137,7 +186,24 @@ const AllowedDomains = () => {
                           <span className="font-mono text-text-primary">@{d.domain}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-text-secondary">{d.company_name || '—'}</td>
+                      <td className="px-5 py-3 text-text-secondary">
+                        {d.company_name ? (
+                          <span className="inline-flex items-center gap-1">
+                            {d.company_name}
+                            {d.company_via_site && <span className="text-[10px] text-text-muted">(via site)</span>}
+                          </span>
+                        ) : '—'}
+                        {d.can_backfill && (
+                          <button
+                            data-testid={`backfill-domain-${d.domain}`}
+                            onClick={() => backfill(d)}
+                            title="Link this domain directly to its site's company"
+                            className="ml-2 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                          >
+                            <Link2 className="h-3 w-3" /> Link company
+                          </button>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-text-secondary">{d.site_name || '—'}</td>
                       <td className="px-5 py-3 text-text-muted text-xs">{d.notes || '—'}</td>
                       <td className="px-5 py-3 text-text-muted text-xs">{d.created_by || '—'}</td>

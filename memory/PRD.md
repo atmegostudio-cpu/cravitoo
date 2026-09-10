@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Allowed Domains: backfill link + signup test + company-via-site (COMPLETED ✅, needs deploy)
+
+**Requested** (3 follow-ups to the domain bugfix): (1) one-click **Backfill** to set a domain's company from its site; (2) **Test a domain** to preview which company+site a new employee would map to; (3) **Show company** in the list via the site so site-linked domains stop reading "—".
+**Implemented** (`routers/allowed_domains.py` + `master/AllowedDomains.js`):
+- List endpoint now resolves `company_name` via the domain's default site when there's no direct `company_id`, and returns `company_via_site` + `can_backfill` flags. UI shows "Company (via site)" + a "🔗 Link company" button.
+- `POST /admin/allowed-domains/{id}/backfill-company` — sets `company_id` from the site's company (idempotent; 400 if no site/company).
+- `GET /admin/allowed-domains/test?email=` — returns allowed/blocked/not-listed + resolved company+site (mirrors signup mapping logic). UI "Test a domain" panel with input + result.
+**Verified**: curl (list via_site=True→backfill→via_site=False+company_id set; test: mapped/blocked/unlisted cases) + screenshot (test panel green result, COMPANY "(via site)" + Link button render). Repro data cleaned up.
+**Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — BUGFIX: "Domains allowed" checklist ignored site-linked domains (FIXED ✅, needs deploy)
 
 **Reported**: A corporate client's onboarding "Domains allowed" step showed INCOMPLETE even though an allowed domain (e.g. @cravitoo.com) existed mapped to that client — because the domain was linked via its DEFAULT SITE (COMPANY column "—", no direct `company_id`).

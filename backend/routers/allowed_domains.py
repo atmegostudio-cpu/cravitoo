@@ -72,22 +72,34 @@ def make_router(db, safe_objectid, get_current_user):
         cursor = db.allowed_domains.find({}).sort("created_at", -1).limit(500)
         out = []
         async for d in cursor:
-            # Resolve names for nicer display
+            # Resolve names for nicer display. If a domain has no direct company_id
+            # but its default site belongs to a company, surface that (via_site).
             company_name = None
-            if d.get("company_id"):
-                co = await db.companies.find_one({"_id": safe_objectid(d["company_id"], "Company")})
-                if co:
-                    company_name = co.get("name")
+            company_id = d.get("company_id")
+            company_via_site = False
             site_name = None
+            site_company_id = None
             if d.get("site_id"):
                 s = await db.sites.find_one({"_id": safe_objectid(d["site_id"], "Site")})
                 if s:
                     site_name = s.get("name")
+                    site_company_id = s.get("company_id")
+            if company_id:
+                co = await db.companies.find_one({"_id": safe_objectid(company_id, "Company")})
+                if co:
+                    company_name = co.get("name")
+            elif site_company_id:
+                co = await db.companies.find_one({"_id": safe_objectid(site_company_id, "Company")})
+                if co:
+                    company_name = co.get("name")
+                    company_via_site = True
             out.append({
                 "id": str(d["_id"]),
                 "domain": d.get("domain"),
-                "company_id": d.get("company_id"),
+                "company_id": company_id,
                 "company_name": company_name,
+                "company_via_site": company_via_site,
+                "can_backfill": bool(not company_id and site_company_id),
                 "site_id": d.get("site_id"),
                 "site_name": site_name,
                 "notes": d.get("notes", ""),
@@ -155,5 +167,61 @@ def make_router(db, safe_objectid, get_current_user):
                     company_name = co.get("name")
             return {"allowed": True, "company_name": company_name}
         return {"allowed": False, "reason": "not_in_allowlist"}
+
+    @r.get("/admin/allowed-domains/test")
+    async def test_domain_mapping(email: str = "", user: dict = Depends(get_current_user)):
+        """Preview which company + site a new employee on this email/domain would map to."""
+        if user.get("role") != "master_admin":
+            raise HTTPException(status_code=403, detail="Master Admin only")
+        raw = (email or "").strip().lower()
+        if raw and "@" not in raw:
+            raw = f"someone@{normalize_domain(raw)}"
+        dom = email_domain(raw)
+        if not dom:
+            return {"allowed": False, "reason": "invalid", "message": "Enter a valid work email or domain."}
+        if dom in BLOCKED_FREE_DOMAINS:
+            return {"allowed": False, "reason": "free_provider", "domain": dom,
+                    "message": f"{dom} is a free-email provider — signup is blocked."}
+        rec = await db.allowed_domains.find_one({"domain": dom})
+        if not rec:
+            return {"allowed": False, "reason": "not_in_allowlist", "domain": dom,
+                    "message": f"{dom} is not in the allowlist — signup would be rejected."}
+        company_id = rec.get("company_id")
+        site_id = rec.get("site_id")
+        site_name = None
+        if site_id:
+            s = await db.sites.find_one({"_id": safe_objectid(site_id, "Site")}, {"name": 1, "company_id": 1})
+            if s:
+                site_name = s.get("name")
+                company_id = company_id or s.get("company_id")
+        company_name = None
+        if company_id:
+            co = await db.companies.find_one({"_id": safe_objectid(company_id, "Company")}, {"name": 1})
+            company_name = co.get("name") if co else None
+        return {"allowed": True, "domain": dom, "company_id": company_id, "company_name": company_name,
+                "site_id": site_id, "site_name": site_name,
+                "message": f"New employees on @{dom} → {company_name or 'no company'}"
+                           + (f" · site: {site_name}" if site_name else " · no default site")}
+
+    @r.post("/admin/allowed-domains/{domain_id}/backfill-company")
+    async def backfill_domain_company(domain_id: str, user: dict = Depends(get_current_user)):
+        """One-click: set a domain's company_id from its default site's company."""
+        if user.get("role") != "master_admin":
+            raise HTTPException(status_code=403, detail="Master Admin only")
+        d = await db.allowed_domains.find_one({"_id": safe_objectid(domain_id, "Domain")})
+        if not d:
+            raise HTTPException(status_code=404, detail="Domain not found")
+        if d.get("company_id"):
+            return {"success": True, "company_id": d["company_id"], "message": "Already linked to a company"}
+        if not d.get("site_id"):
+            raise HTTPException(status_code=400, detail="This domain has no default site to derive a company from")
+        s = await db.sites.find_one({"_id": safe_objectid(d["site_id"], "Site")}, {"company_id": 1})
+        cid = s.get("company_id") if s else None
+        if not cid:
+            raise HTTPException(status_code=400, detail="The domain's default site isn't linked to a company")
+        await db.allowed_domains.update_one({"_id": d["_id"]}, {"$set": {"company_id": cid}})
+        co = await db.companies.find_one({"_id": safe_objectid(cid, "Company")}, {"name": 1})
+        return {"success": True, "company_id": cid, "company_name": co.get("name") if co else None,
+                "message": "Domain now directly linked to its company"}
 
     return r
