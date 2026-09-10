@@ -177,6 +177,11 @@ const VendorOrders = () => {
                         </p>
                       )}
                       <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString()}</p>
+                      {order.status === 'collected' && order.collected_at && (
+                        <p data-testid={`vendor-collected-at-${order.id}`} className="text-xs text-emerald-600 font-medium mt-0.5">
+                          Picked up at {new Date(order.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
                       {order.counter && (
                         <span data-testid={`vendor-order-counter-${order.id}`} className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">
                           {order.counter}

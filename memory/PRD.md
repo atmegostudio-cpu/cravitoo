@@ -1,5 +1,11 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Collected timestamp + Employee-mode banner (COMPLETED ✅, needs deploy)
+
+**Collected timestamp**: manual "Mark Collected" PATCH now stamps `collected_at` (mirrors scan-collect); orders GET projects+ISO-normalises it; vendor & employee order cards show "Picked up at HH:MM" on collected orders.
+**Employee-mode banner**: when a Corporate Admin is in Employee mode (`impersonating_admin`), a slim orange banner "Employee view — you're ordering as your own account" + a "Back to Admin" pill renders under the navbar on every employee page (Navbar.js). Shown only in that case.
+**Verified**: curl (`collected_at` returned as ISO) + screenshots (employee "Picked up at 01:01 pm" + banner after Switch to Employee). Needs deploy.
+
 ## Jun 2026 — Vendor collect "[object Object]" + Corporate-Admin-as-Employee (FIXED ✅, needs deploy)
 
 **Issue 2 (vendor order flow "[object Object]")** — Root cause: `collected` was used by the scan-collect flow, stats & dashboards but was NOT in the `OrderStatus` enum / state machine, so the "Mark Collected" button's `PATCH /orders/{id}?status=collected` returned a 422 whose object was alerted as "[object Object]". **Fix**: made `collected` first-class — added to `OrderStatus` enum, to VENDOR_/ADMIN_TRANSITIONS (`ready→collected`) and TERMINAL_STATES; vendor `Orders.js` now stringifies all error alerts (`errMsg` helper) and shows errors on confirm/prepare/ready (were silent); employee `Orders.js` now labels `collected` as green "Collected" (was falling through to "Processing"). Full lifecycle pending→confirmed→preparing→ready→collected verified 200.

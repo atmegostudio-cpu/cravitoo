@@ -239,6 +239,19 @@ const Navbar = () => {
         </div>
       </div>
 
+      {user?.impersonating_admin && (
+        <div data-testid="employee-mode-banner" className="-mx-4 sm:-mx-6 -mb-3 sm:-mb-4 mt-3 sm:mt-4 bg-primary text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-center gap-3 text-sm">
+            <span className="text-center"><span className="font-semibold">Employee view</span> — you're ordering as your own account</span>
+            <button
+              data-testid="employee-banner-back"
+              onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: false }, { withCredentials: true }); window.location.href = '/admin/dashboard'; } catch { /* ignore */ } }}
+              className="ml-1 bg-white text-primary rounded-full px-3 py-0.5 text-xs font-semibold hover:bg-white/90 whitespace-nowrap"
+            >Back to Admin</button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile slide-in drawer — rendered via portal so backdrop-filter on <nav>
           doesn't clip fixed-positioning to the navbar's own bounds. */}
       {mobileOpen && createPortal(

@@ -214,6 +214,11 @@ const EmployeeOrders = () => {
                          order.status === 'preparing' ? 'Preparing' :
                          'Processing'}
                       </span>
+                      {order.status === 'collected' && order.collected_at && (
+                        <p data-testid={`emp-collected-at-${order.id}`} className="text-xs text-emerald-600 font-medium w-full sm:w-auto">
+                          Picked up at {new Date(order.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
                       
                       <div className="flex gap-2 flex-wrap">
                         {(order.status === 'ready' || order.status === 'confirmed') && order.pickup_qr && (
