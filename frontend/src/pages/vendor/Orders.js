@@ -45,12 +45,20 @@ const VendorOrders = () => {
     ? orders.filter((o) => (o.counter || '') === counterFilter)
     : orders;
 
+  const errMsg = (error, fallback) => {
+    const d = error?.response?.data?.detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join(', ');
+    return d?.msg || error?.message || fallback;
+  };
+
   const updateStatus = async (orderId, newStatus) => {
     try {
       await axios.patch(`${API}/orders/${orderId}?status=${newStatus}`, {}, { withCredentials: true });
       fetchOrders();
     } catch (error) {
       logger.error('Error updating order:', error);
+      alert(errMsg(error, 'Could not update the order. Please reload and try again.'));
     }
   };
 
@@ -60,7 +68,7 @@ const VendorOrders = () => {
       await axios.post(`${API}/orders/${orderId}/mark-paid`, { method: 'physical_qr' }, { withCredentials: true });
       fetchOrders();
     } catch (error) {
-      alert(error.response?.data?.detail || 'Could not mark paid');
+      alert(errMsg(error, 'Could not mark paid'));
     }
   };
 
@@ -70,7 +78,7 @@ const VendorOrders = () => {
       await axios.patch(`${API}/orders/${orderId}?status=collected`, {}, { withCredentials: true });
       fetchOrders();
     } catch (error) {
-      alert(error.response?.data?.detail || 'Could not mark collected');
+      alert(errMsg(error, 'Could not mark collected'));
     }
   };
 

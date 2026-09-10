@@ -184,6 +184,24 @@ const Navbar = () => {
             </Link>
           )}
           {user?.role === 'vendor' && <OutletSwitcher />}
+          {user?.role === 'corporate_admin' && (
+            <button
+              data-testid="switch-to-employee-btn"
+              onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: true }, { withCredentials: true }); window.location.href = '/employee/dashboard'; } catch { /* ignore */ } }}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg px-3 py-1.5 hover:bg-primary/5"
+            >
+              Switch to Employee
+            </button>
+          )}
+          {user?.impersonating_admin && (
+            <button
+              data-testid="back-to-admin-btn"
+              onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: false }, { withCredentials: true }); window.location.href = '/admin/dashboard'; } catch { /* ignore */ } }}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-primary rounded-lg px-3 py-1.5 hover:bg-primary-hover"
+            >
+              Back to Admin
+            </button>
+          )}
           <NotificationBell />
           <Link
             to="/settings/security"

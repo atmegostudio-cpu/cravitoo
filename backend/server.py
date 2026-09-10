@@ -202,6 +202,14 @@ async def get_current_user(request: Request) -> dict:
             if active not in assigned:
                 active = assigned[0]
             user["vendor_id"] = active
+        # Corporate Admin acting as an Employee: present as employee (keeps their
+        # admin account intact; toggled off restores admin) so they can order food.
+        if user.get("role") == "corporate_admin" and user.get("employee_mode"):
+            user["role"] = "employee"
+            user["impersonating_admin"] = True
+            if user.get("employee_site_id"):
+                user["site_id"] = user["employee_site_id"]
+                user["assigned_sites"] = [user["employee_site_id"]]
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")

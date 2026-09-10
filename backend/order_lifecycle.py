@@ -46,14 +46,14 @@ from typing import Iterable, Optional
 from fastapi import HTTPException
 
 
-TERMINAL_STATES = frozenset({"completed", "cancelled", "expired", "no_show", "rejected"})
+TERMINAL_STATES = frozenset({"completed", "collected", "cancelled", "expired", "no_show", "rejected"})
 
 # Vendor-controlled forward transitions
 VENDOR_TRANSITIONS: dict[str, frozenset[str]] = {
     "pending":   frozenset({"confirmed", "rejected"}),
     "confirmed": frozenset({"preparing", "rejected"}),
     "preparing": frozenset({"ready"}),
-    "ready":     frozenset({"completed", "no_show"}),
+    "ready":     frozenset({"completed", "collected", "no_show"}),
 }
 
 # Customer-controlled transitions (employee cancellations)
@@ -67,7 +67,7 @@ ADMIN_TRANSITIONS: dict[str, frozenset[str]] = {
     "pending":   frozenset({"confirmed", "cancelled", "rejected", "expired"}),
     "confirmed": frozenset({"preparing", "cancelled", "rejected"}),
     "preparing": frozenset({"ready", "cancelled"}),
-    "ready":     frozenset({"completed", "no_show"}),
+    "ready":     frozenset({"completed", "collected", "no_show"}),
 }
 
 # System-triggered transitions (cron / background sweep)

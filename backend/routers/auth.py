@@ -699,6 +699,22 @@ def make_router(
     # Requires the CURRENT password (defence against session-hijack attacks
     # where the attacker has a valid access_token but not the password).
     # =========================================================================
+    @r.post("/auth/employee-mode")
+    async def set_employee_mode(body: dict, user: dict = Depends(get_current_user)):
+        """Corporate Admin <-> Employee view switch on the same login. Keeps the
+        admin account intact; toggling off restores full admin access."""
+        udoc = await db.users.find_one({"_id": safe_objectid(user["id"], "User")})
+        if not udoc or udoc.get("role") != "corporate_admin":
+            raise HTTPException(status_code=403, detail="Only corporate admins can switch to employee mode")
+        turn_on = bool(body.get("on"))
+        update = {"employee_mode": turn_on}
+        if turn_on and not udoc.get("employee_site_id"):
+            site = await db.sites.find_one({"company_id": udoc.get("company_id")}, sort=[("created_at", 1)])
+            update["employee_site_id"] = str(site["_id"]) if site else None
+        await db.users.update_one({"_id": udoc["_id"]}, {"$set": update})
+        return {"success": True, "employee_mode": turn_on,
+                "has_site": bool(update.get("employee_site_id") or udoc.get("employee_site_id"))}
+
     @r.post("/auth/change-password")
     async def change_password(data: ChangePasswordRequest, user: dict = Depends(get_current_user)):
         # Minimum strength — keep the rule small but real

@@ -202,12 +202,14 @@ const EmployeeOrders = () => {
                         order.status === 'confirmed' ? 'bg-green-100 text-green-700' :
                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                         order.status === 'ready' ? 'bg-primary-light text-primary' :
+                        order.status === 'collected' ? 'bg-emerald-100 text-emerald-700' :
                         order.status === 'completed' ? 'bg-gray-100 text-gray-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
                         {order.status === 'confirmed' ? 'Order Confirmed' :
                          order.status === 'pending' ? 'Order Pending' :
                          order.status === 'ready' ? 'Ready for Pickup' :
+                         order.status === 'collected' ? 'Collected' :
                          order.status === 'completed' ? 'Completed' :
                          order.status === 'preparing' ? 'Preparing' :
                          'Processing'}

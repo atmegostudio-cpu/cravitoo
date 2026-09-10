@@ -1,5 +1,13 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Vendor collect "[object Object]" + Corporate-Admin-as-Employee (FIXED ✅, needs deploy)
+
+**Issue 2 (vendor order flow "[object Object]")** — Root cause: `collected` was used by the scan-collect flow, stats & dashboards but was NOT in the `OrderStatus` enum / state machine, so the "Mark Collected" button's `PATCH /orders/{id}?status=collected` returned a 422 whose object was alerted as "[object Object]". **Fix**: made `collected` first-class — added to `OrderStatus` enum, to VENDOR_/ADMIN_TRANSITIONS (`ready→collected`) and TERMINAL_STATES; vendor `Orders.js` now stringifies all error alerts (`errMsg` helper) and shows errors on confirm/prepare/ready (were silent); employee `Orders.js` now labels `collected` as green "Collected" (was falling through to "Processing"). Full lifecycle pending→confirmed→preparing→ready→collected verified 200.
+
+**Issue 1 (Corporate Admin who is also an Employee)** — Single-role model blocked admins from ordering. **Fix**: "Switch to Employee" on the SAME login. `POST /auth/employee-mode {on}` sets `employee_mode` (+ resolves `employee_site_id` = company's first site); `get_current_user` presents a corporate_admin in employee_mode as role `employee` (with `impersonating_admin` flag + site) so all employee/ordering endpoints work unchanged; toggling off restores full admin. Navbar shows "Switch to Employee" (corp admin) / "Back to Admin" (while impersonating). Admin permissions untouched.
+
+**Verified**: curl (order→collected 200; toggle flips role corporate_admin↔employee, /vendors 200 in employee mode) + testing_agent **iteration_67** (backend 100%, core UI pass) + screenshots (employee "Collected" label). Test artifacts: one seeded order left as `collected`. **Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — Allowed Domains: signup-rejection log + site health badge (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) **Signup Attempts Log** — show recent rejected sign-ups by domain to spot a client's missing domain; (2) **Domain Health Badge** — flag domains whose default site isn't Live yet.

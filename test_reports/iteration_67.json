@@ -1,0 +1,40 @@
+{
+  "summary": "Verified Issue 1 (Corporate Admin 'Switch to Employee' <-> 'Back to Admin') and Issue 2 (vendor Mark Collected no longer alerts [object Object]) via backend pytest + Playwright UI. Both primary bugs are resolved. Found ONE remaining minor UI gap: employee Orders page does not label 'collected' status — it falls through to 'Processing'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "employee/Orders.js (status label switch)",
+        "issue": "Order status 'collected' is not handled in the label switch (lines 208-213). After vendor marks an order collected, employee sees 'Processing' instead of 'Collected'. Review request explicitly required: 'reflect the correct status in employee Orders/history'. Add: order.status === 'collected' ? 'Collected' : ...",
+        "selector": "/app/frontend/src/pages/employee/Orders.js:208-213",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_issue_switch_and_collected.py"
+  ],
+  "action_items": [
+    "Add 'collected' branch to status-label switch in /app/frontend/src/pages/employee/Orders.js (~L208) so it renders 'Collected' with an appropriate style (e.g. emerald)."
+  ],
+  "critical_code_review_comments": [
+    "Employee Orders label switch missing 'collected' case — fallthrough to 'Processing' is misleading (bug).",
+    "Vendor Orders.js errMsg() helper is well-structured — handles string, list-of-dicts, dict, and Error.message fallbacks. Good fix for [object Object] alerts.",
+    "Navbar switch buttons: switch-to-employee-btn hidden below md breakpoint (hidden md:inline-flex). On mobile the corp-admin would not see it. Consider adding to the mobile drawer as well (not blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_issue_switch_and_collected.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "test_credentials": "Vendor audit_vendor1@corpa.com / Audit#1234; Corp admin audit_corpadmin_a@corpa.com; Employees audit_emp_a@corpa.com, audit_emp_b@corpb.com — all Audit#1234",
+  "seed_data_creation": "None. Used pre-seeded audit orders. One order (id ...8251dd31) was walked preparing→ready→collected via UI during test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend PATCH /orders/{id}?status=collected returns 200; enum + terminal states configured; employee-mode toggle flips role corporate_admin<->employee with impersonating_admin flag. Navbar renders switch-to-employee-btn only on md+ screens.",
+  "rca of the issue": "employee/Orders.js label switch has cases for pending/confirmed/preparing/ready/completed but not 'collected'; unknown statuses fall through to the default 'Processing' label. Fix: add order.status === 'collected' ? 'Collected' : ... branch."
+}

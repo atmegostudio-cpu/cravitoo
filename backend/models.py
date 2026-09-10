@@ -210,6 +210,7 @@ class OrderStatus(str, Enum):
     preparing = "preparing"
     ready = "ready"
     completed = "completed"
+    collected = "collected"
     cancelled = "cancelled"
     expired = "expired"
     no_show = "no_show"
