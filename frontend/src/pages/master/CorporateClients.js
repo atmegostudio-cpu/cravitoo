@@ -37,6 +37,33 @@ const ChecklistItem = ({ done, label, icon: Icon }) => (
   </li>
 );
 
+const CompletionRing = ({ onboarding, id }) => {
+  const steps = onboarding ? [
+    onboarding.admin_invited,
+    onboarding.domains_allowed > 0,
+    onboarding.sites_count > 0,
+    onboarding.vendors_mapped > 0,
+    onboarding.first_order,
+  ] : [];
+  const total = steps.length || 1;
+  const done = steps.filter(Boolean).length;
+  const pct = Math.round((done / total) * 100);
+  const r = 16;
+  const circ = 2 * Math.PI * r;
+  const color = pct === 100 ? '#059669' : '#FF5A1F';
+  return (
+    <div className="relative flex-shrink-0" data-testid={`completion-ring-${id}`} title={`${done}/${total} setup steps complete`}>
+      <svg width="46" height="46" viewBox="0 0 46 46" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="23" cy="23" r={r} fill="none" stroke="#EDE6E0" strokeWidth="4" />
+        <circle cx="23" cy="23" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+          strokeDasharray={circ} strokeDashoffset={circ - (pct / 100) * circ}
+          style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold" style={{ color }}>{pct}%</span>
+    </div>
+  );
+};
+
 const CorporateClients = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +241,10 @@ const CorporateClients = () => {
                       <h3 className="font-heading text-lg font-semibold text-text-primary">{c.name}</h3>
                       <p className="text-xs text-text-muted mt-1">{c.address}</p>
                     </div>
-                    <StageBadge stage={c.lifecycle_status} />
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                      <StageBadge stage={c.lifecycle_status} />
+                      {c.onboarding && <CompletionRing onboarding={c.onboarding} id={c.id} />}
+                    </div>
                   </div>
                   <div className="space-y-1 text-sm text-text-secondary mb-4">
                     <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-text-muted" /> {c.contact_email}</div>

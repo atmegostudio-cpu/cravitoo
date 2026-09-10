@@ -1,5 +1,11 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Corp client: onboarding completion ring (COMPLETED ✅, needs deploy)
+
+**Requested**: a small completion ring per client to see at a glance who's fully set up.
+**Implemented** (frontend-only, `master/CorporateClients.js`): `CompletionRing` SVG in each card header (next to the stage badge) showing % of the 5 onboarding steps done (Admin invited, Domains, Sites, Vendors, First order). Orange while incomplete, green at 100%; `data-testid="completion-ring-{id}"`.
+**Verified**: screenshot — AUDIT_CorpA 80% (4/5), DEMO/AUDIT_CorpB 60% (3/5), matches their checklists. Uses the existing `onboarding` payload (no backend change).
+
 ## Jun 2026 — Corp client: admin last-login + checklist expansion (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) show each corporate admin's **last login** on the client card (spot invited-but-never-signed-in admins); (2) expand the onboarding checklist with **Domains allowed** and **First order placed**.
