@@ -18,18 +18,21 @@ const AllowedDomains = () => {
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
+  const [rejections, setRejections] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, c, s] = await Promise.all([
+      const [d, c, s, rej] = await Promise.all([
         axios.get(`${API}/admin/allowed-domains`, { withCredentials: true }),
         axios.get(`${API}/companies`, { withCredentials: true }).catch(() => ({ data: [] })),
         axios.get(`${API}/sites`, { withCredentials: true }).catch(() => ({ data: [] })),
+        axios.get(`${API}/admin/signup-rejections`, { withCredentials: true }).catch(() => ({ data: { summary: [], recent: [] } })),
       ]);
       setDomains(d.data);
       setCompanies(c.data || []);
       setSites(s.data || []);
+      setRejections(rej.data);
     } catch (e) {
       logger.error(e);
     } finally {
@@ -204,7 +207,16 @@ const AllowedDomains = () => {
                           </button>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-text-secondary">{d.site_name || '—'}</td>
+                      <td className="px-5 py-3 text-text-secondary">
+                        {d.site_name ? (
+                          <span className="inline-flex items-center gap-2">
+                            {d.site_name}
+                            {d.site_status && d.site_status !== 'live' && (
+                              <span data-testid={`site-notlive-${d.domain}`} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200" title="Employees can't sign up until this site is Live">Not live</span>
+                            )}
+                          </span>
+                        ) : '—'}
+                      </td>
                       <td className="px-5 py-3 text-text-muted text-xs">{d.notes || '—'}</td>
                       <td className="px-5 py-3 text-text-muted text-xs">{d.created_by || '—'}</td>
                       <td className="px-5 py-3 text-right">
@@ -220,6 +232,39 @@ const AllowedDomains = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {rejections && rejections.recent.length > 0 && (
+            <div className="mt-10" data-testid="signup-rejections">
+              <h2 className="font-heading text-2xl font-semibold text-text-primary mb-1">Rejected sign-ups</h2>
+              <p className="text-sm text-text-muted mb-4">Recent attempts blocked because the domain isn't allowed (or its site isn't live). Tap a red chip to add that domain.</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {rejections.summary.filter((s) => !s.in_allowlist && s.domain !== '(none)').map((s) => (
+                  <button key={s.domain} data-testid={`reject-domain-${s.domain}`}
+                    onClick={() => { setForm({ domain: s.domain, company_id: '', site_id: '', notes: '' }); setShowForm(true); }}
+                    className="inline-flex items-center gap-1.5 text-xs bg-red-50 border border-red-200 text-red-700 rounded-full px-3 py-1.5 hover:bg-red-100">
+                    <span className="font-mono">@{s.domain}</span> · {s.count} <Plus className="h-3 w-3" /> Add
+                  </button>
+                ))}
+              </div>
+              <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-background"><tr className="text-left text-text-muted text-xs uppercase tracking-wider">
+                    <th className="px-5 py-3">Email</th><th className="px-5 py-3">Domain</th><th className="px-5 py-3">Reason</th><th className="px-5 py-3">When</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-border-light">
+                    {rejections.recent.map((r, i) => (
+                      <tr key={i} data-testid={`rejection-row-${i}`}>
+                        <td className="px-5 py-2.5 text-text-secondary">{r.email}</td>
+                        <td className="px-5 py-2.5 font-mono text-text-primary">@{r.domain}</td>
+                        <td className="px-5 py-2.5 text-xs text-text-muted">{r.reason === 'not_in_allowlist' ? 'Domain not allowed' : r.reason === 'free_provider' ? 'Free email blocked' : r.reason === 'site_not_live' ? 'Site not live' : r.reason}</td>
+                        <td className="px-5 py-2.5 text-text-muted text-xs">{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

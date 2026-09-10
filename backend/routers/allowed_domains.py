@@ -79,11 +79,13 @@ def make_router(db, safe_objectid, get_current_user):
             company_via_site = False
             site_name = None
             site_company_id = None
+            site_status = None
             if d.get("site_id"):
                 s = await db.sites.find_one({"_id": safe_objectid(d["site_id"], "Site")})
                 if s:
                     site_name = s.get("name")
                     site_company_id = s.get("company_id")
+                    site_status = s.get("lifecycle_status")
             if company_id:
                 co = await db.companies.find_one({"_id": safe_objectid(company_id, "Company")})
                 if co:
@@ -102,6 +104,7 @@ def make_router(db, safe_objectid, get_current_user):
                 "can_backfill": bool(not company_id and site_company_id),
                 "site_id": d.get("site_id"),
                 "site_name": site_name,
+                "site_status": site_status,
                 "notes": d.get("notes", ""),
                 "created_at": d.get("created_at").isoformat() if d.get("created_at") else None,
                 "created_by": d.get("created_by_email"),
@@ -223,5 +226,26 @@ def make_router(db, safe_objectid, get_current_user):
         co = await db.companies.find_one({"_id": safe_objectid(cid, "Company")}, {"name": 1})
         return {"success": True, "company_id": cid, "company_name": co.get("name") if co else None,
                 "message": "Domain now directly linked to its company"}
+
+    @r.get("/admin/signup-rejections")
+    async def signup_rejections(user: dict = Depends(get_current_user)):
+        """Recent rejected employee sign-ups, grouped by domain — spot missing allowlist entries."""
+        if user.get("role") != "master_admin":
+            raise HTTPException(status_code=403, detail="Master Admin only")
+        docs = await db.signup_rejections.find({}).sort("created_at", -1).to_list(200)
+        allowed = set(await db.allowed_domains.distinct("domain"))
+        by_domain: dict = {}
+        recent = []
+        for d in docs:
+            dom = d.get("domain") or "(none)"
+            by_domain[dom] = by_domain.get(dom, 0) + 1
+            ca = d.get("created_at")
+            recent.append({
+                "email": d.get("email"), "domain": dom, "reason": d.get("reason"),
+                "created_at": ca.isoformat() if hasattr(ca, "isoformat") else ca,
+            })
+        summary = [{"domain": k, "count": v, "in_allowlist": k in allowed}
+                   for k, v in sorted(by_domain.items(), key=lambda x: -x[1])]
+        return {"summary": summary, "recent": recent[:40]}
 
     return r

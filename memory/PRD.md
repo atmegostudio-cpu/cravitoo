@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Allowed Domains: signup-rejection log + site health badge (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) **Signup Attempts Log** — show recent rejected sign-ups by domain to spot a client's missing domain; (2) **Domain Health Badge** — flag domains whose default site isn't Live yet.
+**Implemented**:
+- Backend `auth.py` register now logs every rejection to a new `signup_rejections` collection (reasons: `not_in_allowlist`, `free_provider`, `site_not_live`) at both gates. New `GET /admin/signup-rejections` (master) returns per-domain summary (with `in_allowlist` flag) + recent list. Allowed-domains list endpoint now also returns `site_status`.
+- Frontend `master/AllowedDomains.js`: "Rejected sign-ups" section with red "+ Add" chips (tap → pre-fills Add-Domain form) + recent table with friendly reasons; a "Not live" amber badge next to a domain's default site when its lifecycle_status != live.
+**Verified**: curl (blocked gmail + unlisted both 400 & logged with correct reasons; summary/recent returned; list returns site_status) + screenshot (rejections panel with chips + table). Test data cleaned up.
+**Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — Allowed Domains: backfill link + signup test + company-via-site (COMPLETED ✅, needs deploy)
 
 **Requested** (3 follow-ups to the domain bugfix): (1) one-click **Backfill** to set a domain's company from its site; (2) **Test a domain** to preview which company+site a new employee would map to; (3) **Show company** in the list via the site so site-linked domains stop reading "—".

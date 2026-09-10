@@ -100,6 +100,17 @@ def make_router(
         return out
 
 
+    async def _log_signup_rejection(email: str, reason: str, request):
+        try:
+            dom = (email.split("@")[-1] or "").strip().lower() if "@" in (email or "") else ""
+            await db.signup_rejections.insert_one({
+                "email": email, "domain": dom, "reason": reason,
+                "ip": request.client.host if request.client else None,
+                "created_at": datetime.now(timezone.utc),
+            })
+        except Exception as e:  # pragma: no cover - best effort
+            logger.warning(f"signup_rejection log failed: {e}")
+
     @r.post("/auth/register")
     async def register(data: RegisterRequest, request: Request, response: Response):
         email_lower = data.email.lower()
@@ -147,6 +158,9 @@ def make_router(
         from routers.allowed_domains import find_allowed_domain
         domain_record = await find_allowed_domain(db, email_lower)
         if not domain_record:
+            from routers.allowed_domains import BLOCKED_FREE_DOMAINS, normalize_domain
+            _dom = normalize_domain(email_lower.split("@")[-1]) if "@" in email_lower else ""
+            await _log_signup_rejection(email_lower, "free_provider" if _dom in BLOCKED_FREE_DOMAINS else "not_in_allowlist", request)
             raise HTTPException(
                 status_code=400,
                 detail="Sign-up is restricted to corporate email addresses. Please use your work email.",
@@ -161,6 +175,7 @@ def make_router(
             if site_obj:
                 site_lc = site_obj.get("lifecycle_status", "live")
                 if site_lc != "live":
+                    await _log_signup_rejection(email_lower, "site_not_live", request)
                     raise HTTPException(
                         status_code=400,
                         detail="Your office site isn't open for sign-ups yet. Please contact your Cravitoo admin.",
