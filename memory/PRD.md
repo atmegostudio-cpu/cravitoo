@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Corp client: admin last-login + checklist expansion (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) show each corporate admin's **last login** on the client card (spot invited-but-never-signed-in admins); (2) expand the onboarding checklist with **Domains allowed** and **First order placed**.
+**Implemented**:
+- Backend: `POST /auth/login` now stamps `last_login_at` on the user (and the magic-link set-password `/complete` sets it too). `GET /master/corporate-clients` `onboarding` now also returns `admin_last_login`, `domains_allowed` (count from `allowed_domains` by company), and `first_order` (from `orders.distinct("company_id")`).
+- Frontend `master/CorporateClients.js`: checklist is now 5 steps (Admin invited → Domains allowed → Sites added → Vendors mapped → First order placed) + a last-login line (`admin-last-login-{id}`): "Admin last signed in <date>" or "⚠ Admin invited but has not signed in yet".
+**Verified**: curl (AUDIT_CorpA → last_login stamped on login, first_order true, sites 1/vendors 2; DEMO Acme first_order true 2/2) + screenshot (5-step checklist + last-login line render, no overflow). No regression to the login path (datetime already imported; login still returns 200).
+**Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — Corp client: email-status badge + onboarding checklist (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) a delivered/failed **email badge** on each client card so admins know when to use the copy-link; (2) a per-client **onboarding checklist** (admin invited → sites added → vendors mapped); and confirm it reaches live after deploy.

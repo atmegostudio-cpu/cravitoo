@@ -186,13 +186,18 @@ def make_router(db, safe_objectid, get_current_user):
                 sites_count[cid] = sites_count.get(cid, 0) + 1
 
         admins = await db.users.find(
-            {"role": "corporate_admin"}, {"company_id": 1, "password_updated_at": 1, "email": 1},
+            {"role": "corporate_admin"}, {"company_id": 1, "password_updated_at": 1, "email": 1, "last_login_at": 1},
         ).to_list(5000)
         admin_map: Dict[str, Dict[str, Any]] = {}
         for a in admins:
             cid = a.get("company_id")
             if cid:
-                admin_map[cid] = {"exists": True, "activated": bool(a.get("password_updated_at"))}
+                ll = a.get("last_login_at")
+                admin_map[cid] = {
+                    "exists": True,
+                    "activated": bool(a.get("password_updated_at")),
+                    "last_login_at": ll.isoformat() if isinstance(ll, datetime) else ll,
+                }
 
         maps = await db.vendor_site_mappings.find({}, {"vendor_id": 1, "site_id": 1, "status": 1}).to_list(20000)
         vendors_by_company: Dict[str, set] = {}
@@ -203,17 +208,29 @@ def make_router(db, safe_objectid, get_current_user):
             if cid:
                 vendors_by_company.setdefault(cid, set()).add(str(m.get("vendor_id")))
 
+        # Domains allowed per company + companies that already have >=1 order.
+        domains = await db.allowed_domains.find({}, {"company_id": 1}).to_list(5000)
+        domains_count: Dict[str, int] = {}
+        for d in domains:
+            cid = d.get("company_id")
+            if cid:
+                domains_count[cid] = domains_count.get(cid, 0) + 1
+        companies_with_orders = set(str(x) for x in await db.orders.distinct("company_id") if x)
+
         out = []
         for c in clients:
             d = _doc_to_dict(c)
             cid = d["id"]
             ai = c.get("admin_invite") or {}
-            info = admin_map.get(cid, {"exists": False, "activated": False})
+            info = admin_map.get(cid, {"exists": False, "activated": False, "last_login_at": None})
             d["onboarding"] = {
                 "admin_invited": bool(ai) or info["exists"],
                 "admin_activated": info.get("activated", False),
+                "admin_last_login": info.get("last_login_at"),
+                "domains_allowed": domains_count.get(cid, 0),
                 "sites_count": sites_count.get(cid, 0),
                 "vendors_mapped": len(vendors_by_company.get(cid, set())),
+                "first_order": cid in companies_with_orders,
             }
             out.append(d)
         return out

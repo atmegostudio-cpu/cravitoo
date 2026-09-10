@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Building2, Plus, Mail, ArrowRight, Trash2, X, CheckCircle2, Edit3, Circle, AlertTriangle, Store, MapPin } from 'lucide-react';
+import { Building2, Plus, Mail, ArrowRight, Trash2, X, CheckCircle2, Edit3, Circle, AlertTriangle, Store, MapPin, Globe, ShoppingBag } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -246,11 +246,22 @@ const CorporateClients = () => {
                       <ul className="space-y-1.5 text-xs">
                         <ChecklistItem done={c.onboarding.admin_invited} icon={Mail}
                           label={c.onboarding.admin_activated ? 'Admin invited & active' : (c.onboarding.admin_invited ? 'Admin invited (awaiting password set)' : 'Admin not invited yet')} />
+                        <ChecklistItem done={c.onboarding.domains_allowed > 0} icon={Globe}
+                          label={`Domains allowed${c.onboarding.domains_allowed ? ` (${c.onboarding.domains_allowed})` : ''}`} />
                         <ChecklistItem done={c.onboarding.sites_count > 0} icon={MapPin}
                           label={`Sites added${c.onboarding.sites_count ? ` (${c.onboarding.sites_count})` : ''}`} />
                         <ChecklistItem done={c.onboarding.vendors_mapped > 0} icon={Store}
                           label={`Vendors mapped${c.onboarding.vendors_mapped ? ` (${c.onboarding.vendors_mapped})` : ''}`} />
+                        <ChecklistItem done={c.onboarding.first_order} icon={ShoppingBag}
+                          label="First order placed" />
                       </ul>
+                      {c.onboarding.admin_invited && (
+                        <p data-testid={`admin-last-login-${c.id}`} className="mt-2 text-[11px] text-text-muted">
+                          {c.onboarding.admin_last_login
+                            ? `Admin last signed in ${new Date(c.onboarding.admin_last_login).toLocaleString()}`
+                            : '⚠ Admin invited but has not signed in yet'}
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-border-light">

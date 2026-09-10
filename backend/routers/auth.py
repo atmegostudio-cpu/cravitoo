@@ -231,6 +231,8 @@ def make_router(
         if user.get("is_active") is False:
             raise HTTPException(status_code=403, detail="Account deactivated")
 
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login_at": datetime.now(timezone.utc)}})
+
         user_id = str(user["_id"])
         access_token = create_access_token(user_id, email_lower, user["role"])
         refresh_token = create_refresh_token(user_id)

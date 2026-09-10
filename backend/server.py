@@ -2289,6 +2289,7 @@ async def complete_magic_link(token: str, body: _CompleteMagicBody, request: Req
             "password_hash": new_hash,
             "password_updated_at": now,
             "password_changed_at": now,
+            "last_login_at": now,
             "failed_attempts": 0,
         }},
     )
