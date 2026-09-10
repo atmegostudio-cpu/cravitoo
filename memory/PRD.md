@@ -1,5 +1,13 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — BUGFIX: "Domains allowed" checklist ignored site-linked domains (FIXED ✅, needs deploy)
+
+**Reported**: A corporate client's onboarding "Domains allowed" step showed INCOMPLETE even though an allowed domain (e.g. @cravitoo.com) existed mapped to that client — because the domain was linked via its DEFAULT SITE (COMPANY column "—", no direct `company_id`).
+**Root cause**: `corporate_clients.py` `list_clients` counted `domains_allowed` only where `allowed_domains.company_id == company`. A domain linked only via `site_id` (site under the company) was never counted. (Employee auto-mapping was already fine — `auth.py _resolve_employee_links` resolves `company_id = company_id or site.company_id`.)
+**Fix**: `domains_allowed` now counts a domain if `domain.company_id == company` OR the domain's `site_id` belongs to a site whose `company_id == company` (reuses the `site_company` map). One-file change, no regression to the direct-company_id path.
+**Verified**: curl (AUDIT_CorpA domains_allowed 0→1 after linking a domain via its site with no company_id) + testing_agent **iteration_66 = 100%** (UI: AUDIT_CorpA "Domains allowed (1)" ticked, ring 100%; AUDIT_CorpB still correctly unticked; direct-company_id path intact). Repro data cleaned up.
+**Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — Master Vendor Admin: multi-outlet Vendor Operator (COMPLETED ✅ P1, needs deploy)
 
 **Requested (deferred P1)**: one operator login that manages multiple vendor outlets from a single dashboard and switches between them effortlessly.

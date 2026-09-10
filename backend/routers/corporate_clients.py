@@ -208,11 +208,14 @@ def make_router(db, safe_objectid, get_current_user):
             if cid:
                 vendors_by_company.setdefault(cid, set()).add(str(m.get("vendor_id")))
 
-        # Domains allowed per company + companies that already have >=1 order.
-        domains = await db.allowed_domains.find({}, {"company_id": 1}).to_list(5000)
+        # Domains allowed per company (match by company_id OR via the domain's
+        # default site → that site's company) + companies that already have >=1 order.
+        domains = await db.allowed_domains.find({}, {"company_id": 1, "site_id": 1}).to_list(5000)
         domains_count: Dict[str, int] = {}
         for d in domains:
             cid = d.get("company_id")
+            if not cid and d.get("site_id"):
+                cid = site_company.get(str(d.get("site_id")))
             if cid:
                 domains_count[cid] = domains_count.get(cid, 0) + 1
         companies_with_orders = set(str(x) for x in await db.orders.distinct("company_id") if x)

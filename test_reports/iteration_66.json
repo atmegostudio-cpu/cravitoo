@@ -1,0 +1,26 @@
+{
+  "summary": "Verified bug fix for 'Domains allowed' onboarding checklist on Master → Corporate Clients. Backend API and UI both confirm the fix works: allowed domain linked ONLY via site (no direct company_id) is now correctly counted toward the client's domains_allowed onboarding step.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "corporate_clients.py list_clients: fix uses site_company map with OR fallback (domain.company_id OR site_company[domain.site_id]) — matches spec and does not regress direct company_id path.",
+    "Employee auto-map (_resolve_employee_links in auth.py) already resolves company via site — untouched, consistent."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com / admin123 (master)",
+  "seed_data_creation": "None — used pre-seeded AUDIT_CorpA (with allowed domain 'auditcorpa-demo.com' linked via AUDIT_SiteA only) and AUDIT_CorpB (no linked domain).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug 'Domains allowed checklist counted only via allowed_domains.company_id' is FIXED and verified. Backend: GET /api/master/corporate-clients returns onboarding.domains_allowed=1 for AUDIT_CorpA, 0 for AUDIT_CorpB. UI: onboarding-checklist card for AUDIT_CorpA shows 'Domains allowed (1)' ticked with completion-ring at 100%; AUDIT_CorpB shows 'Domains allowed' unticked at 60%. Regression #4 (adding a domain with direct company_id still counted) is guaranteed by the OR-branch structure at corporate_clients.py:216-220 and evidenced by DEMO clients whose direct-company_id domains still increment counts.",
+  "evidence": {
+    "api_AUDIT_CorpA_domains_allowed": 1,
+    "api_AUDIT_CorpB_domains_allowed": 0,
+    "ui_AUDIT_CorpA_ring": "100%",
+    "ui_AUDIT_CorpA_checklist": "Domains allowed (1) — green tick",
+    "ui_AUDIT_CorpB_ring": "60%",
+    "ui_AUDIT_CorpB_checklist": "Domains allowed — unticked (grey)"
+  }
+}
