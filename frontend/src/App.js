@@ -34,6 +34,7 @@ import CorporateBulkPreOrder from './pages/admin/BulkPreOrder';
 import CorporateAdminEmployees from './pages/admin/Employees';
 
 import SuperAdminDashboard from './pages/superadmin/Dashboard';
+import SubAdminDashboard from './pages/subadmin/Dashboard';
 
 import MasterDashboard from './pages/master/Dashboard';
 import MasterSites from './pages/master/Sites';
@@ -83,10 +84,11 @@ const ROLES_SITE = ['site_admin'];
 const ROLES_MASTER_CORPORATE = ['master_admin', 'corporate_admin'];
 const ROLES_MASTER_SUPER = ['master_admin', 'super_admin'];
 const ROLES_SITE_MASTER_SUPER = ['site_admin', 'master_admin', 'super_admin'];
-const ROLES_ONBOARDING_STAFF = ['master_admin', 'city_admin', 'site_admin'];
+const ROLES_ONBOARDING_STAFF = ['master_admin', 'city_admin', 'site_admin', 'sub_admin'];
 const ROLES_ADMIN_ALL = ['master_admin', 'super_admin', 'site_admin', 'city_admin'];
 const ROLES_SALES_REPORT = ['master_admin', 'corporate_admin', 'site_admin'];
-const ROLES_ANY = ['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin'];
+const ROLES_SALES_VIEW = ['master_admin', 'corporate_admin', 'site_admin', 'sub_admin'];
+const ROLES_ANY = ['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin', 'sub_admin'];
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -108,6 +110,8 @@ function AppRoutes() {
         return '/site-admin/dashboard';
       case 'city_admin':
         return '/onboarding';
+      case 'sub_admin':
+        return '/sub-admin/dashboard';
       default:
         return '/';
     }
@@ -254,6 +258,13 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+      {/* Sub-Admin Routes (custom permissions) */}
+      <Route path="/sub-admin/dashboard" element={
+        <ProtectedRoute allowedRoles={['sub_admin']}>
+          <SubAdminDashboard />
+        </ProtectedRoute>
+      } />
+
       {/* Master Admin Routes */}
       <Route path="/master" element={<Navigate to="/master/dashboard" replace />} />
       <Route path="/master/dashboard" element={
@@ -317,9 +328,9 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Sales Report (role-scoped: master / corporate / site admin) */}
+      {/* Sales Report (role-scoped: master / corporate / site admin / sub-admin) */}
       <Route path="/reports/sales" element={
-        <ProtectedRoute allowedRoles={ROLES_SALES_REPORT}>
+        <ProtectedRoute allowedRoles={ROLES_SALES_VIEW}>
           <SalesReport />
         </ProtectedRoute>
       } />

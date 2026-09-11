@@ -58,6 +58,18 @@ def make_router(db, safe_objectid, get_current_user):
             cid = user.get("company_id")
             sites = await db.sites.find({"company_id": cid}, {"_id": 1}).to_list(1000)
             return [str(s["_id"]) for s in sites]
+        if role == "sub_admin":
+            if "sales:view" not in (user.get("permissions") or []):
+                raise HTTPException(status_code=403, detail="Not allowed")
+            scope = user.get("scope") or {}
+            sset = set(scope.get("site_ids") or [])
+            if scope.get("client_ids"):
+                for sd in await db.sites.find({"company_id": {"$in": scope["client_ids"]}}, {"_id": 1}).to_list(5000):
+                    sset.add(str(sd["_id"]))
+            if scope.get("city_ids"):
+                for sd in await db.sites.find({"city_id": {"$in": scope["city_ids"]}}, {"_id": 1}).to_list(5000):
+                    sset.add(str(sd["_id"]))
+            return list(sset)
         raise HTTPException(status_code=403, detail="Not allowed")
 
     async def _candidate_sites(user):

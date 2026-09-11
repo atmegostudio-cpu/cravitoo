@@ -1,5 +1,20 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Sub-Admin RBAC: custom permissions + multi-scope (Phase 1, COMPLETED ✅, needs deploy)
+
+**Requested**: Master Admin should create Sub-Admins with customised, limited access — pick exactly which FEATURES + which Clients/Cities/Sites/Vendors each can touch, with no access beyond what's assigned (deny-by-default). Examples: one sub-admin only onboards vendors, another only views sales for specific sites.
+**Assessment**: existing system only had fixed hierarchy-scoped roles (super_admin→sites, vendor_operator→outlets); NO feature-level permissions. Built a real RBAC layer.
+**User choices**: all four scope types combined; **phased Phase 1** = the two named examples (`vendors:onboard`, `sales:view`); magic-link invite login.
+**Implemented**:
+- New role `sub_admin` on the user doc with `permissions[]` + `scope{client_ids,city_ids,site_ids,vendor_ids}`. Deny-by-default: a sub_admin isn't in any existing role tuple, so every non-granted endpoint already 403s.
+- Backend `models.py`: `SubAdminCreate/Update/Scope` + `SUB_ADMIN_PERMISSIONS` catalog. `routers/sites.py`: `GET /admin/permission-catalog`, `POST/GET/PATCH/DELETE /admin/sub-admins`, `POST /admin/sub-admins/{id}/resend` (magic-link via existing `vendor_magic_links` + `render_corporate_admin_invite_email`; role-agnostic `/auth/magic/{token}/complete`).
+- Enforcement wired for the two Phase-1 modules only: `admin_sales.py` `_allowed_site_ids` sub_admin branch (requires `sales:view`, resolves scope→site set); `onboarding.py` helpers `_onb_can/_scope_sites/_site_in_scope` applied across list/detail/create/master-decision/dashboard (requires `vendors:onboard`, scoped to their sites).
+- Frontend: `master/Admins.js` new "Sub-Admin (custom permissions)" role — permission checklist + 4 scope checkbox groups + copy-link modal + Sub-Admins list section (perm chips + scope summary + resend/delete); scrollable modal w/ sticky footer. New `pages/subadmin/Dashboard.js` (`/sub-admin/dashboard`, permission-driven tool cards + scope line). `Navbar.js` `sub_admin` case (Home + granted modules only). `App.js` route + default route + `ROLES_SALES_VIEW`/`ROLES_ONBOARDING_STAFF` include sub_admin. `MagicLinkConsumer.js` sub_admin redirect.
+- Testids: `sub-admin-dashboard`, `sub-admin-scope`, `sub-admin-card-{perm}`, `sub-perm-sales-view`/`sub-perm-vendors-onboard`, `sub-scope-{client_ids|city_ids|site_ids|vendor_ids}-{id}`, `sub-admins-section`, `sub-admin-card-{id}`, `sub-admin-resend/delete-{id}`.
+**Verified**: main-agent curl E2E (create scoped sub-admin → magic-link set-password → role sub_admin w/ correct perms+scope → sales-report 200, onboarding 200 → 403 on /admin/admins & /master/corporate-clients) + **testing_agent iteration_68 = 100% backend (16/16) + 100% frontend**, incl. negative permission cases + regression (existing admin roles intact). No fixed sub-admin credential (magic link). Test data cleaned up.
+**Action needed**: Save to GitHub → Deploy. **Phase-2 backlog**: expand permission catalog (per-module view/manage for Sites, Clients, Feedback, Menu Requests, fine-grained actions), scope-filter Feedback inbox for sub_admin, vendor-level sales scoping.
+
+
 ## Jun 2026 — Collection SLA + banner "since" (COMPLETED ✅, needs deploy)
 - Backend stamps `ready_at` on the ready transition (mirrors `collected_at`); orders GET projects+ISO-normalises both. Vendor card shows "Collected N min after ready" (ready→collected wait) so slow counters stand out.
 - `POST /auth/employee-mode` now stores `employee_mode_since`; banner shows "· since HH:MM".

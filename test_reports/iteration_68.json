@@ -1,0 +1,35 @@
+{
+  "summary": "Independently re-verified the new Sub-Admin (custom permissions + scope) system end-to-end. Backend: 16/16 pytest cases pass — permission catalog, create with/without perms, magic-link set-password, /auth/me returns role=sub_admin with perms+scope, PATCH/resend/DELETE, deny-by-default on /admin/admins /master/corporate-clients /admin/sub-admins, and negative-permission cases (sales-only sub-admin gets 403 on /onboarding/vendors; vendors-only sub-admin gets 403 on /admin/sales-report). Regression: corporate_admin still hits /admin/sales-report (200) and master still lists /admin/admins (200). Frontend: Master → Admins UI shows the new role option, hides password field (renders disabled placeholder 'Set via email magic-link'), shows Permissions + 4 Scope groups. Creating with no perms shows the inline 'Select at least one permission' banner. Creating with perms returns operator-invite-modal with the magic URL (readonly input value). Sub-admin card appears in sub-admins-section. Magic-link → set-password lands on /sub-admin/dashboard which shows greeting, assigned scope, both tool cards (vendors-onboard + sales-view). Navbar shows exactly: Home, Vendor Onboarding, Sales (no other admin links). Backend gate re-checked from the sub-admin's own browser: /admin/admins → 403, /admin/sales-report → 200, /onboarding/vendors → 200. All test sub-admins cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "master/Admins.js create-form testids", "issues": ["Actual permission testids use dash form 'sub-perm-sales-view' / 'sub-perm-vendors-onboard' (not the colon form 'sub-perm-sales:view' quoted in the review). Not a bug — just documenting the naming mismatch vs the request text so future testing agents use the correct selectors. Scope testids follow 'sub-scope-{client_ids|city_ids|site_ids|vendor_ids}-{id}'."]},
+      {"screen": "New Admin modal (Sub-Admin)", "issues": ["Modal is quite tall (Role + Name + Email + Password + Permissions + 4 Scope groups) and the Create/Cancel buttons often sit below the viewport at 1080px — Playwright reports 'Element is outside of the viewport' unless dispatched via JS. Consider giving the modal body max-h + overflow-y-auto and keeping the footer sticky so Create is always reachable without page-level scroll."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sub_admin.py",
+    "/app/test_reports/pytest/sub_admin.xml"
+  ],
+  "action_items": [
+    "(Non-blocking UX) Make the New-Admin modal body scrollable with a sticky footer so the Create button is always visible for Sub-Admin (tall form). Tested via JS-dispatched click; manual users on 1080p screens must scroll to submit."
+  ],
+  "critical_code_review_comments": [
+    "Deny-by-default works cleanly because sub_admin is not in any existing role tuple — permission check is gated inside admin_sales.py (_allowed_site_ids sub_admin branch requires 'sales:view') and onboarding.py (_onb_can / _scope_sites). Confirmed positive + negative paths.",
+    "Magic-link reuses vendor_magic_links collection with purpose='onboarding'. complete_magic_link is role-agnostic and correctly returns role=sub_admin.",
+    "sites.py is now 1547 lines — well past the 700-line guideline. Consider extracting the sub-admin block (permission-catalog, POST/GET/PATCH/DELETE /admin/sub-admins, resend) into its own routers/sub_admins.py for maintainability.",
+    "Password input in the Sub-Admin form is disabled with placeholder 'Set via email magic-link' rather than hidden. Functionally correct (disabled=true, no value sent) but the review spec said 'hides the password field'. Minor UX polish only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sub_admin.py (new — 16 pytest cases)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Master admin@cravitoo.com / admin123; sub-admins created on demand, password set via magic link to 'Pass1234'.",
+  "seed_data_creation": "None persistent. Test file creates + deletes sub-admins in each fixture. Cleaned one leftover UI-created sub-admin post-run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend endpoints live at /api/admin/{permission-catalog, sub-admins, sub-admins/{id}, sub-admins/{id}/resend}. Frontend testids: sub-admins-section, sub-admin-card-{id}, sub-perm-sales-view, sub-perm-vendors-onboard, sub-scope-{client_ids|city_ids|site_ids|vendor_ids}-{id}, submit-admin-btn, operator-invite-modal, operator-invite-link (INPUT — read value attr), sub-admin-dashboard, sub-admin-scope, sub-admin-card-vendors-onboard, sub-admin-card-sales-view, sub-admin-no-access. Login response key is 'access_token' (not 'token'). Modal Create button sits below 1080px viewport — click via JS with page.evaluate.",
+  "rca of the issue": "N/A — no bugs found. All happy-path and deny-by-default flows verified from both the API layer and the sub-admin's own browser session."
+}

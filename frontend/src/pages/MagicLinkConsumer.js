@@ -72,6 +72,7 @@ export default function MagicLinkConsumer() {
         const dest = data?.role === 'vendor' ? '/vendor/dashboard'
                    : data?.role === 'master_admin' ? '/master/dashboard'
                    : data?.role === 'corporate_admin' ? '/admin/dashboard'
+                   : data?.role === 'sub_admin' ? '/sub-admin/dashboard'
                    : '/';
         // Hard redirect (not client-side navigate) so AuthProvider re-mounts
         // and re-reads the freshly-set auth cookies — otherwise the stale

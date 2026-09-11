@@ -26,6 +26,9 @@ from models import (
     MenuItemSiteUpdate,
     SiteAdminCreate,
     SiteCreate,
+    SubAdminCreate,
+    SubAdminUpdate,
+    SUB_ADMIN_PERMISSIONS,
     SuperAdminCreate,
     VendorOperatorCreate,
     VendorSiteMappingCreate,
@@ -1202,6 +1205,131 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             delivered = bool(r2[0]) if isinstance(r2, tuple) else bool(r2)
         except Exception as e:
             logger.warning(f"Vendor operator resend failed: {e}")
+        return {"success": True, "magic_url": magic_url, "email_delivered": delivered}
+
+    # ===================== SUB-ADMINS (custom permissions + scope) ==========
+    def _subadmin_link_base(request: Request) -> str:
+        base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if not base:
+            base = (request.headers.get("origin") or "").rstrip("/") or str(request.base_url).rstrip("/")
+        return base
+
+    def _sanitize_perms(perms):
+        valid = {p["key"] for p in SUB_ADMIN_PERMISSIONS}
+        return [p for p in (perms or []) if p in valid]
+
+    async def _email_subadmin_invite(email_lower: str, name: str, magic_url: str) -> bool:
+        try:
+            import email_service as _es
+            html, text = _es.render_corporate_admin_invite_email(
+                name=name or "there", company_name="Cravitoo admin access", magic_url=magic_url)
+            r2 = _es.send_email(email_lower, "Your Cravitoo admin access — set your password", html, text)
+            return bool(r2[0]) if isinstance(r2, tuple) else bool(r2)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Sub-admin invite email failed for {email_lower}: {e}")
+            return False
+
+    @r.get("/admin/permission-catalog")
+    async def permission_catalog(user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        return {"permissions": SUB_ADMIN_PERMISSIONS}
+
+    @r.post("/admin/sub-admins")
+    async def create_sub_admin(data: SubAdminCreate, request: Request, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin can create sub-admins")
+        email_lower = data.email.strip().lower()
+        perms = _sanitize_perms(data.permissions)
+        if not perms:
+            raise HTTPException(status_code=400, detail="Select at least one permission")
+        scope = data.scope.model_dump() if data.scope else {"client_ids": [], "city_ids": [], "site_ids": [], "vendor_ids": []}
+        existing = await db.users.find_one({"email": email_lower})
+        if existing and existing.get("role") in ("master_admin", "super_admin", "site_admin", "corporate_admin", "vendor"):
+            raise HTTPException(status_code=400, detail=f"{email_lower} already belongs to a {existing.get('role')} account")
+        fields = {"name": data.name, "role": "sub_admin", "permissions": perms, "scope": scope, "is_active": True}
+        if existing:
+            await db.users.update_one({"_id": existing["_id"]}, {"$set": fields})
+            uid = str(existing["_id"])
+        else:
+            placeholder = hash_password(secrets.token_urlsafe(24))
+            res = await db.users.insert_one({
+                "email": email_lower, "password_hash": placeholder, "failed_attempts": 0,
+                "created_at": datetime.now(timezone.utc), "created_via": "sub_admin", **fields,
+            })
+            uid = str(res.inserted_id)
+        token = secrets.token_urlsafe(32)
+        await db.vendor_magic_links.insert_one({
+            "token": token, "vendor_user_id": uid, "email": email_lower,
+            "purpose": "onboarding", "expires_at": None, "used_at": None,
+            "created_by_admin": user.get("id"), "created_at": datetime.now(timezone.utc),
+        })
+        magic_url = f"{_subadmin_link_base(request)}/auth/magic/{token}"
+        delivered = await _email_subadmin_invite(email_lower, data.name, magic_url)
+        return {"success": True, "id": uid, "email": email_lower, "magic_url": magic_url, "email_delivered": delivered}
+
+    @r.get("/admin/sub-admins")
+    async def list_sub_admins(user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        subs = await db.users.find({"role": "sub_admin"}).sort("created_at", -1).to_list(500)
+        out = []
+        for s in subs:
+            ll = s.get("last_login_at")
+            out.append({
+                "id": str(s["_id"]), "email": s.get("email"), "name": s.get("name"),
+                "permissions": s.get("permissions") or [], "scope": s.get("scope") or {},
+                "is_active": s.get("is_active", True),
+                "activated": bool(s.get("password_updated_at")),
+                "last_login_at": ll.isoformat() if hasattr(ll, "isoformat") else ll,
+            })
+        return out
+
+    @r.patch("/admin/sub-admins/{sub_id}")
+    async def update_sub_admin(sub_id: str, data: SubAdminUpdate, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        s = await db.users.find_one({"_id": safe_objectid(sub_id, "User"), "role": "sub_admin"})
+        if not s:
+            raise HTTPException(status_code=404, detail="Sub-admin not found")
+        updates: Dict[str, Any] = {}
+        if data.name is not None:
+            updates["name"] = data.name
+        if data.permissions is not None:
+            updates["permissions"] = _sanitize_perms(data.permissions)
+        if data.scope is not None:
+            updates["scope"] = data.scope.model_dump()
+        if data.is_active is not None:
+            updates["is_active"] = data.is_active
+        if updates:
+            await db.users.update_one({"_id": s["_id"]}, {"$set": updates})
+        return {"success": True}
+
+    @r.delete("/admin/sub-admins/{sub_id}")
+    async def delete_sub_admin(sub_id: str, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        s = await db.users.find_one({"_id": safe_objectid(sub_id, "User"), "role": "sub_admin"})
+        if not s:
+            raise HTTPException(status_code=404, detail="Sub-admin not found")
+        await db.users.delete_one({"_id": s["_id"]})
+        return {"message": "Sub-admin deleted"}
+
+    @r.post("/admin/sub-admins/{sub_id}/resend")
+    async def resend_sub_admin(sub_id: str, request: Request, user: dict = Depends(get_current_user)):
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        s = await db.users.find_one({"_id": safe_objectid(sub_id, "User"), "role": "sub_admin"})
+        if not s:
+            raise HTTPException(status_code=404, detail="Sub-admin not found")
+        token = secrets.token_urlsafe(32)
+        await db.vendor_magic_links.insert_one({
+            "token": token, "vendor_user_id": str(s["_id"]), "email": s.get("email"),
+            "purpose": "onboarding", "expires_at": None, "used_at": None,
+            "created_by_admin": user.get("id"), "created_at": datetime.now(timezone.utc),
+        })
+        magic_url = f"{_subadmin_link_base(request)}/auth/magic/{token}"
+        delivered = await _email_subadmin_invite(s.get("email"), s.get("name"), magic_url)
         return {"success": True, "magic_url": magic_url, "email_delivered": delivered}
 
     @r.post("/admin/users/{user_id}/resend-invite")

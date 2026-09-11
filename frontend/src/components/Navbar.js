@@ -95,6 +95,13 @@ const Navbar = () => {
         return [
           { path: '/super-admin/dashboard', label: 'Dashboard', icon: Home },
         ];
+      case 'sub_admin': {
+        const perms = user?.permissions || [];
+        const links = [{ path: '/sub-admin/dashboard', label: 'Home', icon: Home }];
+        if (perms.includes('vendors:onboard')) links.push({ path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList });
+        if (perms.includes('sales:view')) links.push({ path: '/reports/sales', label: 'Sales', icon: BarChart3 });
+        return links;
+      }
       case 'master_admin':
         return [
           { path: '/master/dashboard', label: 'Dashboard', icon: Crown },

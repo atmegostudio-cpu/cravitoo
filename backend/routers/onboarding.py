@@ -116,6 +116,39 @@ def _is_master(user: dict) -> bool:
     return user.get("role") == "master_admin"
 
 
+def _onb_can(user: dict) -> bool:
+    """Who may access vendor-onboarding: the classic admin roles, plus a
+    sub_admin explicitly granted the 'vendors:onboard' permission."""
+    if user.get("role") in ("master_admin", "city_admin", "site_admin"):
+        return True
+    return user.get("role") == "sub_admin" and "vendors:onboard" in (user.get("permissions") or [])
+
+
+async def _scope_sites(db, user: dict) -> set:
+    """Effective site_id set a sub_admin may act on (explicit sites + sites of
+    scoped clients + sites of scoped cities)."""
+    scope = user.get("scope") or {}
+    sites = set(scope.get("site_ids") or [])
+    if scope.get("client_ids"):
+        for s in await db.sites.find({"company_id": {"$in": scope["client_ids"]}}, {"_id": 1}).to_list(5000):
+            sites.add(str(s["_id"]))
+    if scope.get("city_ids"):
+        for s in await db.sites.find({"city_id": {"$in": scope["city_ids"]}}, {"_id": 1}).to_list(5000):
+            sites.add(str(s["_id"]))
+    return sites
+
+
+async def _site_in_scope(db, user: dict, site_id) -> bool:
+    role = user.get("role")
+    if role in ("master_admin", "city_admin"):
+        return True
+    if role == "site_admin":
+        return user.get("site_id") == site_id
+    if role == "sub_admin":
+        return site_id in (await _scope_sites(db, user))
+    return False
+
+
 # Onboarding rows are editable up to (but not including) master approval.
 _MENU_EDITABLE_STATUSES = {
     "draft", "documents_pending", "under_site_review",
@@ -138,12 +171,12 @@ def _parse_meal_periods(raw) -> list[str]:
 
 async def _load_editable_onboarding(db, safe_objectid, onb_id: str, user: dict):
     """Fetch onboarding row and enforce edit-permissions. Raises HTTPException on any violation."""
-    if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+    if not _onb_can(user):
         raise HTTPException(status_code=403, detail="Access denied")
     o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
     if not o:
         raise HTTPException(status_code=404, detail="Onboarding not found")
-    if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+    if not await _site_in_scope(db, user, o.get("site_id")):
         raise HTTPException(status_code=403, detail="Not your site")
     if o.get("status") not in _MENU_EDITABLE_STATUSES:
         raise HTTPException(
@@ -164,7 +197,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
     ):
         """Master/Site/City admin uploads an Excel sheet to bulk-create onboarding records.
         Columns: vendor_name, company_name, contact_person, mobile_number, email, business_address, cuisine_type"""
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
         if not (file.filename or "").lower().endswith((".xlsx", ".xls")):
             raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
@@ -539,11 +572,12 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
 
     @r.post("/onboarding/vendors")
     async def create_vendor_onboarding(data: VendorOnboardingBasic, user: dict = Depends(get_current_user)):
-        if user["role"] not in ("site_admin", "master_admin", "city_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Only site_admin, city_admin, or master_admin can onboard vendors")
-        # Site admin can only onboard for their own site
-        if user["role"] == "site_admin" and user.get("site_id") != data.site_id:
-            raise HTTPException(status_code=403, detail="You can only onboard vendors for your own site")
+        # Scope check: site must be within the caller's scope (site_admin single
+        # site, sub_admin their assigned sites; master/city pass here).
+        if not await _site_in_scope(db, user, data.site_id):
+            raise HTTPException(status_code=403, detail="This site is not in your scope")
         site = await db.sites.find_one({"_id": safe_objectid(data.site_id, "Site")})
         if not site:
             raise HTTPException(status_code=404, detail="Site not found")
@@ -584,6 +618,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             filt["city_id"] = user.get("city_id")
         elif user["role"] == "site_admin":
             filt["site_id"] = user.get("site_id")
+        elif user["role"] == "sub_admin" and "vendors:onboard" in (user.get("permissions") or []):
+            filt["site_id"] = {"$in": list(await _scope_sites(db, user))}
         else:
             raise HTTPException(status_code=403, detail="Access denied")
         if status and status in ONBOARDING_STATUSES:
@@ -597,11 +633,11 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
         # Role-based access
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         if user["role"] == "city_admin" and o.get("city_id") != user.get("city_id"):
             raise HTTPException(status_code=403, detail="Not your city")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
         return onboarding_to_dict(o)
 
@@ -610,9 +646,9 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
         if o.get("status") in ("approved", "active", "rejected"):
             raise HTTPException(status_code=400, detail=f"Cannot edit onboarding with status '{o.get('status')}'")
@@ -629,9 +665,9 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
         if not updates:
@@ -657,9 +693,9 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
 
         # File size limit 10 MB for compliance docs (can be larger PDFs)
@@ -712,9 +748,9 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         if o.get("status") in ("approved", "active"):
             raise HTTPException(status_code=400, detail="Cannot delete docs after approval")
@@ -738,7 +774,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
         if user["role"] == "site_admin":
             if o.get("site_id") != user.get("site_id"):
@@ -789,7 +825,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             raise HTTPException(status_code=404, detail="Onboarding not found")
         if user["role"] not in ("site_admin", "city_admin", "master_admin"):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         if o.get("status") not in ("documents_pending", "under_site_review", "changes_requested"):
             raise HTTPException(status_code=400, detail=f"Cannot submit from status '{o.get('status')}'")
@@ -811,7 +847,7 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             raise HTTPException(status_code=404, detail="Onboarding not found")
         if user["role"] not in ("site_admin", "city_admin", "master_admin"):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         if data.decision not in ("approve", "reject", "request_changes"):
             raise HTTPException(status_code=400, detail="decision must be approve|reject|request_changes")
@@ -842,11 +878,13 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
     @r.post("/onboarding/vendors/{onb_id}/master-decision")
     async def master_decision(onb_id: str, data: OnboardingDecision, request: Request, user: dict = Depends(get_current_user)):
         """Master admin final approval/rejection."""
-        if not _is_master(user):
-            raise HTTPException(status_code=403, detail="Only master admin")
+        if not _onb_can(user):
+            raise HTTPException(status_code=403, detail="Access denied")
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
+        if not await _site_in_scope(db, user, o.get("site_id")):
+            raise HTTPException(status_code=403, detail="This onboarding is not in your scope")
         if o.get("status") != "under_master_review":
             raise HTTPException(status_code=400, detail=f"Cannot finalize — current status is '{o.get('status')}', must be 'under_master_review'")
         if data.decision not in ("approve", "reject"):
@@ -1056,9 +1094,9 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if user["role"] not in ("master_admin", "city_admin", "site_admin"):
+        if not _onb_can(user):
             raise HTTPException(status_code=403, detail="Access denied")
-        if user["role"] == "site_admin" and o.get("site_id") != user.get("site_id"):
+        if not await _site_in_scope(db, user, o.get("site_id")):
             raise HTTPException(status_code=403, detail="Not your site")
         cursor = db.audit_log.find({"entity_type": "vendor_onboarding", "entity_id": onb_id}).sort("created_at", 1)
         log = []
@@ -1082,6 +1120,8 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
             filt["city_id"] = user.get("city_id")
         elif user["role"] == "site_admin":
             filt["site_id"] = user.get("site_id")
+        elif user["role"] == "sub_admin" and "vendors:onboard" in (user.get("permissions") or []):
+            filt["site_id"] = {"$in": list(await _scope_sites(db, user))}
         else:
             raise HTTPException(status_code=403, detail="Access denied")
         pipe = [

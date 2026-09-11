@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store } from 'lucide-react';
+import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store, SlidersHorizontal, ListChecks, Layers } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -11,6 +11,7 @@ const ROLE_META = {
   super_admin: { label: 'Super Admin', icon: ShieldCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
   site_admin: { label: 'Site Admin', icon: MapPin, color: 'text-blue-600', bg: 'bg-blue-50' },
   vendor_operator: { label: 'Vendor Operator', icon: Store, color: 'text-primary', bg: 'bg-primary/10' },
+  sub_admin: { label: 'Sub-Admin', icon: SlidersHorizontal, color: 'text-emerald-700', bg: 'bg-emerald-50' },
 };
 
 const MasterAdmins = () => {
@@ -19,25 +20,37 @@ const MasterAdmins = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState('site_admin');
-  const [form, setForm] = useState({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [] });
+  const [form, setForm] = useState({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
   const [operators, setOperators] = useState([]);
   const [allVendors, setAllVendors] = useState([]);
   const [operatorInvite, setOperatorInvite] = useState(null);
+  const [catalog, setCatalog] = useState([]);
+  const [subAdmins, setSubAdmins] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [cities, setCities] = useState([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
     try {
-      const [a, s, ops, vs] = await Promise.all([
+      const [a, s, ops, vs, cat, subs, cl, ci] = await Promise.all([
         axios.get(`${API}/admin/admins`, { withCredentials: true }),
         axios.get(`${API}/sites`, { withCredentials: true }),
         axios.get(`${API}/admin/vendor-operators`, { withCredentials: true }),
         axios.get(`${API}/admin/all-vendors`, { withCredentials: true }),
+        axios.get(`${API}/admin/permission-catalog`, { withCredentials: true }),
+        axios.get(`${API}/admin/sub-admins`, { withCredentials: true }),
+        axios.get(`${API}/master/corporate-clients`, { withCredentials: true }),
+        axios.get(`${API}/cities`, { withCredentials: true }),
       ]);
       setAdmins(a.data);
       setSites(s.data);
       setOperators(ops.data);
       setAllVendors(vs.data);
+      setCatalog(cat.data.permissions || []);
+      setSubAdmins(subs.data);
+      setClients(cl.data || []);
+      setCities(ci.data || []);
     } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   };
@@ -61,9 +74,13 @@ const MasterAdmins = () => {
         if (!form.vendor_ids.length) throw new Error('Select at least one outlet');
         const { data } = await axios.post(`${API}/admin/vendor-operators`, { email: form.email, name: form.name, vendor_ids: form.vendor_ids }, { withCredentials: true });
         setOperatorInvite({ email: data.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+      } else if (role === 'sub_admin') {
+        if (!form.permissions.length) throw new Error('Select at least one permission');
+        const { data } = await axios.post(`${API}/admin/sub-admins`, { email: form.email, name: form.name, permissions: form.permissions, scope: form.scope }, { withCredentials: true });
+        setOperatorInvite({ email: data.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
       }
       setShowForm(false);
-      setForm({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [] });
+      setForm({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
       await load();
     } catch (e) {
       const detail = e?.response?.data?.detail;
@@ -86,6 +103,19 @@ const MasterAdmins = () => {
     try {
       const { data } = await axios.post(`${API}/admin/vendor-operators/${op.id}/resend`, {}, { withCredentials: true });
       setOperatorInvite({ email: op.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const deleteSubAdmin = async (sa) => {
+    if (!window.confirm(`Delete sub-admin ${sa.email}?`)) return;
+    try { await axios.delete(`${API}/admin/sub-admins/${sa.id}`, { withCredentials: true }); await load(); }
+    catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+  };
+
+  const resendSubAdmin = async (sa) => {
+    try {
+      const { data } = await axios.post(`${API}/admin/sub-admins/${sa.id}/resend`, {}, { withCredentials: true });
+      setOperatorInvite({ email: sa.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
   };
 
@@ -223,6 +253,50 @@ const MasterAdmins = () => {
               </div>
             </div>
           )}
+
+          {subAdmins.length > 0 && (
+            <div className="mt-10" data-testid="sub-admins-section">
+              <h2 className="font-heading text-2xl font-semibold text-text-primary mb-4 flex items-center gap-2"><SlidersHorizontal className="h-5 w-5 text-emerald-700" /> Sub-Admins <span className="text-sm font-normal text-text-muted">· custom permissions + scope</span></h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {subAdmins.map((sa) => (
+                  <div key={sa.id} data-testid={`sub-admin-card-${sa.id}`} className="bg-card border border-border-light rounded-2xl p-5">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <p className="font-medium text-text-primary">{sa.name}</p>
+                        <p className="text-xs text-text-muted">{sa.email}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button data-testid={`sub-admin-resend-${sa.id}`} onClick={() => resendSubAdmin(sa)} title="Resend set-password link" className="text-primary hover:bg-primary/10 p-2 rounded-lg"><Mail className="h-4 w-4" /></button>
+                        <button data-testid={`sub-admin-delete-${sa.id}`} onClick={() => deleteSubAdmin(sa)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {(sa.permissions || []).map((p) => {
+                        const meta = catalog.find((c) => c.key === p);
+                        return <span key={p} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2 py-0.5">{meta?.label || p}</span>;
+                      })}
+                      {(sa.permissions || []).length === 0 && <span className="text-xs text-text-muted">No permissions</span>}
+                    </div>
+                    <p className="mt-3 text-[11px] text-text-muted flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5" />
+                      {(() => {
+                        const sc = sa.scope || {};
+                        const parts = [];
+                        if (sc.client_ids?.length) parts.push(`${sc.client_ids.length} client(s)`);
+                        if (sc.city_ids?.length) parts.push(`${sc.city_ids.length} city(ies)`);
+                        if (sc.site_ids?.length) parts.push(`${sc.site_ids.length} site(s)`);
+                        if (sc.vendor_ids?.length) parts.push(`${sc.vendor_ids.length} vendor(s)`);
+                        return parts.length ? parts.join(' · ') : 'No scope assigned';
+                      })()}
+                    </p>
+                    <p className="mt-1 text-[11px] text-text-muted">
+                      {sa.last_login_at ? `Last signed in ${new Date(sa.last_login_at).toLocaleString()}` : (sa.activated ? 'Password set · not signed in yet' : '⚠ Invited · has not set password yet')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -242,12 +316,12 @@ const MasterAdmins = () => {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-card rounded-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-border-light">
               <h2 className="font-heading text-2xl font-medium">New Admin</h2>
               <button onClick={() => setShowForm(false)}><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={submit} className="p-6 space-y-4">
+            <form onSubmit={submit} className="p-6 space-y-4 overflow-y-auto">
               {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded">{error}</p>}
               <div>
                 <label className="text-sm font-medium text-text-primary">Role</label>
@@ -255,6 +329,7 @@ const MasterAdmins = () => {
                   <option value="site_admin">Site Admin</option>
                   <option value="super_admin">Super Admin</option>
                   <option value="vendor_operator">Vendor Operator (multi-outlet)</option>
+                  <option value="sub_admin">Sub-Admin (custom permissions)</option>
                   <option value="master_admin">Master Admin (must be @cravitoo.com)</option>
                 </select>
               </div>
@@ -268,7 +343,7 @@ const MasterAdmins = () => {
               </div>
               <div>
                 <label className="text-sm font-medium text-text-primary">Password</label>
-                <input data-testid="new-admin-password" type="password" required={role !== 'vendor_operator'} disabled={role === 'vendor_operator'} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={role === 'vendor_operator' ? 'Set via email magic-link' : ''} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg disabled:bg-background disabled:text-text-muted" />
+                <input data-testid="new-admin-password" type="password" required={!['vendor_operator', 'sub_admin'].includes(role)} disabled={['vendor_operator', 'sub_admin'].includes(role)} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={['vendor_operator', 'sub_admin'].includes(role) ? 'Set via email magic-link' : ''} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg disabled:bg-background disabled:text-text-muted" />
               </div>
               {role === 'site_admin' && (
                 <div>
@@ -313,7 +388,53 @@ const MasterAdmins = () => {
                   <p className="mt-1 text-xs text-text-muted">They set their password via an emailed magic link (like other invites).</p>
                 </div>
               )}
-              <div className="flex gap-3 pt-2">
+              {role === 'sub_admin' && (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-text-primary flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-emerald-700" /> Permissions</label>
+                    <div className="mt-2 space-y-1 border border-border-light rounded-lg p-2">
+                      {catalog.map((p) => (
+                        <label key={p.key} className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" data-testid={`sub-perm-${p.key.replace(':', '-')}`} checked={form.permissions.includes(p.key)} onChange={(e) => {
+                            const next = e.target.checked ? [...form.permissions, p.key] : form.permissions.filter((x) => x !== p.key);
+                            setForm({ ...form, permissions: next });
+                          }} />
+                          <span><span className="font-medium">{p.label}</span> <span className="text-text-muted text-xs">· {p.module}</span></span>
+                        </label>
+                      ))}
+                      {catalog.length === 0 && <p className="text-xs text-text-muted">No permissions available.</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-text-primary flex items-center gap-1.5"><SlidersHorizontal className="h-4 w-4 text-emerald-700" /> Scope <span className="text-xs font-normal text-text-muted">· defines exactly what they can touch</span></label>
+                    {[
+                      { key: 'client_ids', label: 'Clients', items: clients },
+                      { key: 'city_ids', label: 'Cities', items: cities },
+                      { key: 'site_ids', label: 'Sites', items: sites },
+                      { key: 'vendor_ids', label: 'Vendors', items: allVendors },
+                    ].map((grp) => (
+                      <div key={grp.key} className="mt-2">
+                        <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">{grp.label}</p>
+                        <div className="space-y-1 max-h-28 overflow-y-auto border border-border-light rounded-lg p-2">
+                          {grp.items.map((it) => (
+                            <label key={it.id} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" data-testid={`sub-scope-${grp.key}-${it.id}`} checked={form.scope[grp.key].includes(it.id)} onChange={(e) => {
+                                const cur = form.scope[grp.key];
+                                const next = e.target.checked ? [...cur, it.id] : cur.filter((x) => x !== it.id);
+                                setForm({ ...form, scope: { ...form.scope, [grp.key]: next } });
+                              }} />
+                              {it.name}
+                            </label>
+                          ))}
+                          {grp.items.length === 0 && <p className="text-xs text-text-muted">None available.</p>}
+                        </div>
+                      </div>
+                    ))}
+                    <p className="mt-1 text-xs text-text-muted">Sales & onboarding access is limited to the sites resolved from this scope. They set their password via an emailed magic link.</p>
+                  </div>
+                </>
+              )}
+              <div className="flex gap-3 pt-3 sticky bottom-0 bg-card -mx-6 px-6 pb-1 border-t border-border-light mt-2">
                 <button type="button" onClick={() => setShowForm(false)} className="flex-1 px-4 py-2.5 border border-border-light rounded-xl font-medium">Cancel</button>
                 <button data-testid="submit-admin-btn" type="submit" disabled={submitting} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50">{submitting ? 'Creating...' : 'Create'}</button>
               </div>

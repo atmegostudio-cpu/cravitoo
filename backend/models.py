@@ -364,6 +364,36 @@ class VendorOperatorCreate(BaseModel):
     vendor_ids: List[str]
 
 
+# ============== SUB-ADMIN (custom permissions + multi-scope) ==============
+
+# Phase 1 permission catalog (module-level). Extend as more modules are wired.
+SUB_ADMIN_PERMISSIONS = [
+    {"key": "vendors:onboard", "label": "Onboard & approve vendors", "module": "Vendor Onboarding"},
+    {"key": "sales:view", "label": "View sales reports", "module": "Sales Reports"},
+]
+
+
+class SubAdminScope(BaseModel):
+    client_ids: List[str] = []
+    city_ids: List[str] = []
+    site_ids: List[str] = []
+    vendor_ids: List[str] = []
+
+
+class SubAdminCreate(BaseModel):
+    email: EmailStr
+    name: str
+    permissions: List[str] = []
+    scope: SubAdminScope = Field(default_factory=SubAdminScope)
+
+
+class SubAdminUpdate(BaseModel):
+    name: Optional[str] = None
+    permissions: Optional[List[str]] = None
+    scope: Optional[SubAdminScope] = None
+    is_active: Optional[bool] = None
+
+
 # ============== REVIEWS / PREFERENCES / SUBSCRIPTIONS ==============
 
 class ReviewCreate(BaseModel):
