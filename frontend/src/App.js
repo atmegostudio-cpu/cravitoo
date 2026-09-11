@@ -85,8 +85,8 @@ const ROLES_MASTER_CORPORATE = ['master_admin', 'corporate_admin'];
 const ROLES_MASTER_SUPER = ['master_admin', 'super_admin'];
 const ROLES_SITE_MASTER_SUPER = ['site_admin', 'master_admin', 'super_admin'];
 const ROLES_ONBOARDING_STAFF = ['master_admin', 'city_admin', 'site_admin', 'sub_admin'];
-const ROLES_ADMIN_ALL = ['master_admin', 'super_admin', 'site_admin', 'city_admin'];
-const ROLES_SALES_REPORT = ['master_admin', 'corporate_admin', 'site_admin'];
+const ROLES_ADMIN_ALL = ['master_admin', 'super_admin', 'site_admin', 'city_admin', 'sub_admin'];
+const ROLES_SALES_REPORT = ['master_admin', 'corporate_admin', 'site_admin', 'sub_admin'];
 const ROLES_SALES_VIEW = ['master_admin', 'corporate_admin', 'site_admin', 'sub_admin'];
 const ROLES_ANY = ['employee', 'vendor', 'corporate_admin', 'super_admin', 'master_admin', 'site_admin', 'city_admin', 'sub_admin'];
 

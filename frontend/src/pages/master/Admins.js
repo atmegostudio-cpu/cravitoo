@@ -28,12 +28,13 @@ const MasterAdmins = () => {
   const [subAdmins, setSubAdmins] = useState([]);
   const [clients, setClients] = useState([]);
   const [cities, setCities] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
     try {
-      const [a, s, ops, vs, cat, subs, cl, ci] = await Promise.all([
+      const [a, s, ops, vs, cat, subs, cl, ci, act] = await Promise.all([
         axios.get(`${API}/admin/admins`, { withCredentials: true }),
         axios.get(`${API}/sites`, { withCredentials: true }),
         axios.get(`${API}/admin/vendor-operators`, { withCredentials: true }),
@@ -42,6 +43,7 @@ const MasterAdmins = () => {
         axios.get(`${API}/admin/sub-admins`, { withCredentials: true }),
         axios.get(`${API}/master/corporate-clients`, { withCredentials: true }),
         axios.get(`${API}/cities`, { withCredentials: true }),
+        axios.get(`${API}/admin/sub-admin-activity?limit=50`, { withCredentials: true }),
       ]);
       setAdmins(a.data);
       setSites(s.data);
@@ -51,6 +53,7 @@ const MasterAdmins = () => {
       setSubAdmins(subs.data);
       setClients(cl.data || []);
       setCities(ci.data || []);
+      setActivity(act.data || []);
     } catch (e) { logger.error(e); }
     finally { setLoading(false); }
   };
@@ -292,6 +295,28 @@ const MasterAdmins = () => {
                     <p className="mt-1 text-[11px] text-text-muted">
                       {sa.last_login_at ? `Last signed in ${new Date(sa.last_login_at).toLocaleString()}` : (sa.activated ? 'Password set · not signed in yet' : '⚠ Invited · has not set password yet')}
                     </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {activity.length > 0 && (
+            <div className="mt-10" data-testid="sub-admin-activity-section">
+              <h2 className="font-heading text-2xl font-semibold text-text-primary mb-4 flex items-center gap-2"><ListChecks className="h-5 w-5 text-emerald-700" /> Sub-Admin Activity <span className="text-sm font-normal text-text-muted">· who did what & when</span></h2>
+              <div className="bg-card border border-border-light rounded-2xl divide-y divide-border-light/60 overflow-hidden">
+                {activity.map((ev) => (
+                  <div key={ev.id} data-testid={`activity-row-${ev.id}`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="text-text-primary truncate">
+                        <span className="font-medium">{ev.user_email}</span>{' '}
+                        <span className="text-text-secondary">{(ev.action || '').replace(/_/g, ' ')}</span>{' '}
+                        <span className="text-text-muted">· {ev.entity_type}</span>
+                      </p>
+                      {ev.details && Object.keys(ev.details).length > 0 && (
+                        <p className="text-xs text-text-muted truncate">{JSON.stringify(ev.details)}</p>
+                      )}
+                    </div>
+                    <span className="text-xs text-text-muted whitespace-nowrap">{ev.created_at ? new Date(ev.created_at).toLocaleString() : ''}</span>
                   </div>
                 ))}
               </div>

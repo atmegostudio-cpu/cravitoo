@@ -2381,7 +2381,9 @@ async def forgot_password(body: _ForgotPasswordBody, request: Request):
             "created_by_admin": None,
             "created_at": datetime.now(timezone.utc),
         })
-        public_base = os.environ.get("PUBLIC_APP_URL", "https://app.cravitoo.com").rstrip("/")
+        public_base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
+        if not public_base:
+            public_base = (request.headers.get("origin") or "").rstrip("/") or str(request.base_url).rstrip("/")
         reset_url = f"{public_base}/auth/magic/{token}"
         try:
             import email_service as _es

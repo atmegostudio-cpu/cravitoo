@@ -1,5 +1,19 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Sub-Admin RBAC Phase 2: catalog expansion + activity log + resend link (COMPLETED ✅, needs deploy)
+
+**Requested** (roadmap): (1) expand the sub-admin permission catalog to **Sites, Clients, Feedback, Menu Requests** with **view-vs-manage** toggles — **all final approvals stay with the Master Admin**; (2) **Sub-Admin Activity Log** — a trail of what each sub-admin did & when; (3) **Resend Magic Link** — vendors self-serve a fresh set-up link from the login screen.
+**Implemented**:
+- New shared `backend/rbac.py` (`has_permission`, `sub_scope_sites`, `sub_scope_companies`). Catalog now 9 perms: `vendors:onboard`, `sales:view`, `sites:view/manage`, `clients:view/manage`, `feedback:view/manage`, `menu_requests:view`.
+- Enforcement (deny-by-default, scoped): `feedback.py` (inbox+analytics scoped by `feedback:view`; resolve by `feedback:manage` + audit), `menu_change_requests.py` (list/detail by `menu_requests:view`, scoped to vendors on their sites; **decision stays master**), `corporate_clients.py` (list filtered + PATCH scoped by `clients:view/manage`; **lifecycle/approve stays master** + audit), `sites.py` (`GET /sites` scoped by `sites:view`; `PATCH /sites/{id}` by `sites:manage` + audit).
+- **Approvals→Master rule**: reverted Phase-1's sub-admin final onboarding approve — `onboarding.py` `master_decision` is master-only again (sub-admins still list/create/edit/submit within scope).
+- **Activity Log**: `GET /admin/sub-admin-activity` (master-only, `?sub_admin_id=&limit=`) over `audit_log` where `user_role=sub_admin`; sub-admin manage actions write audit rows (resolved_feedback, updated_client, updated_site + onboarding create/submit). UI: "Sub-Admin Activity" section on Master → Admins (`sub-admin-activity-section`, `activity-row-{id}`).
+- **Task 3**: `POST /auth/forgot-password` now host-aware (PUBLIC_APP_URL → origin → base_url); login page already links "Vendor and never set a password? Get your set-up link" → /forgot-password → working magic set-password.
+- Frontend: `Navbar.js` sub_admin adds Feedback + Menu Requests links (permission-gated); `subadmin/Dashboard.js` cards for feedback/menu_requests; `App.js` routes open to sub_admin; `Admins.js` 9-perm checklist auto-renders + activity section. **Bugfix (iter69→70)**: `AuthContext.login()/loginWithOtp()` now hydrate the full user from `/auth/me` so a fresh sub-admin login shows correct nav/scope/cards without a reload (also fixes vendor-operator resolved fields on login).
+**Verified**: main-agent curl E2E (9-perm catalog; granted 200 + scoped; deny-by-default 403; clients PATCH in-scope 200/out-of-scope 403; activity records) + **testing_agent iteration_69 = backend 100% (17/17)** + **iteration_70 = frontend 100%** (fresh-login UX fixed, admin-login regression clean). Test data cleaned up.
+**Action needed**: Save to GitHub → Deploy.
+**Phase-3 backlog**: Office Picker at signup (multi-site companies — NEXT); dedicated sub-admin read pages for Sites/Clients; fine-grained action perms; hide non-granted action buttons inside FeedbackInbox/MenuRequests for sub-admins.
+
 ## Jun 2026 — Sub-Admin RBAC: custom permissions + multi-scope (Phase 1, COMPLETED ✅, needs deploy)
 
 **Requested**: Master Admin should create Sub-Admins with customised, limited access — pick exactly which FEATURES + which Clients/Cities/Sites/Vendors each can touch, with no access beyond what's assigned (deny-by-default). Examples: one sub-admin only onboards vendors, another only views sales for specific sites.

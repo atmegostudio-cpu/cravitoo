@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { useAuth } from '../../context/AuthContext';
-import { ClipboardList, BarChart3, ShieldCheck, ArrowRight, Layers } from 'lucide-react';
+import { ClipboardList, BarChart3, ShieldCheck, ArrowRight, Layers, MessageSquare, FileText } from 'lucide-react';
 
 const PERM_CARDS = [
   {
@@ -20,6 +20,22 @@ const PERM_CARDS = [
     to: '/reports/sales',
     icon: BarChart3,
     accent: 'from-emerald-500/15 to-emerald-500/5 text-emerald-700',
+  },
+  {
+    key: 'feedback:view',
+    title: 'Feedback Inbox',
+    desc: 'See employee feedback and issues for your assigned scope.',
+    to: '/admin/feedback',
+    icon: MessageSquare,
+    accent: 'from-rose-500/15 to-rose-500/5 text-rose-700',
+  },
+  {
+    key: 'menu_requests:view',
+    title: 'Menu Requests',
+    desc: 'Review vendor menu-change requests (Master gives final approval).',
+    to: '/admin/menu-requests',
+    icon: FileText,
+    accent: 'from-sky-500/15 to-sky-500/5 text-sky-700',
   },
 ];
 

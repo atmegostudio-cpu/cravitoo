@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
+import rbac
 
 ISSUE_CATEGORIES = {"service", "hygiene", "delay", "billing", "other"}
 
@@ -76,7 +77,7 @@ def make_router(db, safe_objectid, get_current_user):
         res = await db.feedback.insert_one(doc)
         return {"success": True, "id": str(res.inserted_id), "priority": doc["priority"]}
 
-    def _scope(user):
+    async def _scoped_query(user):
         role = user.get("role")
         if role == "vendor":
             return {"vendor_id": user.get("vendor_id")}
@@ -86,11 +87,20 @@ def make_router(db, safe_objectid, get_current_user):
             return {"company_id": user.get("company_id")}
         if role == "master_admin":
             return {}
+        if role == "sub_admin" and "feedback:view" in (user.get("permissions") or []):
+            comps = list(await rbac.sub_scope_companies(db, user))
+            sites = list(await rbac.sub_scope_sites(db, user))
+            ors = []
+            if comps:
+                ors.append({"company_id": {"$in": comps}})
+            if sites:
+                ors.append({"site_id": {"$in": sites}})
+            return {"$or": ors} if ors else {"_id": None}
         raise HTTPException(status_code=403, detail="Not allowed")
 
     @r.get("/feedback/analytics")
     async def feedback_analytics(user: dict = Depends(get_current_user)):
-        q = _scope(user)
+        q = await _scoped_query(user)
         docs = await db.feedback.find(q).to_list(5000)
         ratings = [d["rating"] for d in docs if d.get("rating")]
         by_cat, by_day = {}, {}
@@ -147,6 +157,8 @@ def make_router(db, safe_objectid, get_current_user):
             q = {"company_id": user.get("company_id")}
         elif role == "master_admin":
             q = {}
+        elif role == "sub_admin" and "feedback:view" in (user.get("permissions") or []):
+            q = await _scoped_query(user)
         else:
             raise HTTPException(status_code=403, detail="Not allowed")
         docs = await db.feedback.find(q).sort("created_at", -1).to_list(1000)
@@ -155,9 +167,27 @@ def make_router(db, safe_objectid, get_current_user):
 
     @r.patch("/feedback/{fid}/resolve")
     async def resolve_feedback(fid: str, user: dict = Depends(get_current_user)):
-        if user.get("role") not in ("vendor", "site_admin", "corporate_admin", "master_admin"):
+        role = user.get("role")
+        if role == "sub_admin":
+            if "feedback:manage" not in (user.get("permissions") or []):
+                raise HTTPException(status_code=403, detail="Not allowed")
+        elif role not in ("vendor", "site_admin", "corporate_admin", "master_admin"):
             raise HTTPException(status_code=403, detail="Not allowed")
-        await db.feedback.update_one({"_id": safe_objectid(fid, "Feedback")}, {"$set": {"status": "resolved"}})
+        fb = await db.feedback.find_one({"_id": safe_objectid(fid, "Feedback")})
+        if not fb:
+            raise HTTPException(status_code=404, detail="Not found")
+        if role == "sub_admin":
+            comps = await rbac.sub_scope_companies(db, user)
+            sites = await rbac.sub_scope_sites(db, user)
+            if fb.get("company_id") not in comps and fb.get("site_id") not in sites:
+                raise HTTPException(status_code=403, detail="This feedback is not in your scope")
+        await db.feedback.update_one({"_id": fb["_id"]}, {"$set": {"status": "resolved"}})
+        if role == "sub_admin":
+            await db.audit_log.insert_one({
+                "user_id": user.get("id"), "user_email": user.get("email"), "user_role": "sub_admin",
+                "entity_type": "feedback", "entity_id": fid, "action": "resolved_feedback",
+                "details": {}, "created_at": datetime.now(timezone.utc),
+            })
         return {"success": True}
 
     return r

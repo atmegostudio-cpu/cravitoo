@@ -36,6 +36,8 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+import rbac  # noqa: E402  shared sub_admin RBAC helpers
+
 MENU_TEMPLATE_HEADERS = ["name", "description", "category", "price",
                          "is_vegetarian", "image_url", "meal_periods", "counter"]
 
@@ -273,6 +275,13 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             if not ids:
                 return []
             query["_id"] = {"$in": ids}
+        elif user.get("role") == "sub_admin":
+            if "sites:view" not in (user.get("permissions") or []):
+                return []
+            sset = await rbac.sub_scope_sites(db, user)
+            if not sset:
+                return []
+            query["_id"] = {"$in": [safe_objectid(s, "Site") for s in sset]}
         elif user.get("role") == "site_admin":
             sid = user.get("site_id")
             if not sid:
@@ -324,7 +333,10 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
 
     @r.patch("/sites/{site_id}")
     async def update_site(site_id: str, updates: Dict[str, Any], user: dict = Depends(get_current_user)):
-        if not can_access_site(user, site_id):
+        _sub_ok = False
+        if user.get("role") == "sub_admin" and "sites:manage" in (user.get("permissions") or []):
+            _sub_ok = site_id in (await rbac.sub_scope_sites(db, user))
+        if not (_sub_ok or can_access_site(user, site_id)):
             raise HTTPException(status_code=403, detail="Access denied")
         allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone",
                    "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
@@ -358,6 +370,12 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         if not cleaned:
             raise HTTPException(status_code=400, detail="No valid fields to update")
         await db.sites.update_one({"_id": safe_objectid(site_id, "Site")}, {"$set": cleaned})
+        if user.get("role") == "sub_admin":
+            await db.audit_log.insert_one({
+                "user_id": user.get("id"), "user_email": user.get("email"), "user_role": "sub_admin",
+                "entity_type": "site", "entity_id": site_id, "action": "updated_site",
+                "details": {"fields": list(cleaned.keys())}, "created_at": datetime.now(timezone.utc),
+            })
         return {"message": "Site updated"}
 
     @r.delete("/sites/{site_id}")
@@ -1388,6 +1406,32 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
         return {"message": "Admin deleted"}
 
     # Reports
+    @r.get("/admin/sub-admin-activity")
+    async def sub_admin_activity(sub_admin_id: Optional[str] = None, limit: int = 100, user: dict = Depends(get_current_user)):
+        """Master-only: the audit trail of everything sub-admins did (created,
+        edited, resolved) with who + when."""
+        if not is_master_admin(user):
+            raise HTTPException(status_code=403, detail="Only master admin")
+        q: Dict[str, Any] = {"user_role": "sub_admin"}
+        if sub_admin_id:
+            q["user_id"] = sub_admin_id
+        limit = max(1, min(int(limit or 100), 500))
+        rows = await db.audit_log.find(q).sort("created_at", -1).to_list(limit)
+        out = []
+        for a in rows:
+            ca = a.get("created_at")
+            out.append({
+                "id": str(a.get("_id")),
+                "user_email": a.get("user_email"),
+                "user_id": a.get("user_id"),
+                "entity_type": a.get("entity_type"),
+                "entity_id": a.get("entity_id"),
+                "action": a.get("action"),
+                "details": a.get("details") or {},
+                "created_at": ca.isoformat() if hasattr(ca, "isoformat") else ca,
+            })
+        return out
+
     @r.get("/reports/master-dashboard")
     async def master_dashboard(user: dict = Depends(get_current_user)):
         if not is_master_admin(user):

@@ -83,6 +83,7 @@ def _doc_to_dict(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def make_router(db, safe_objectid, get_current_user):
+    import rbac  # shared sub_admin RBAC helpers
     r = APIRouter()
 
     def _resolve_public_base(request: Request) -> str:
@@ -172,7 +173,7 @@ def make_router(db, safe_objectid, get_current_user):
 
     @r.get("/master/corporate-clients")
     async def list_clients(user: dict = Depends(get_current_user)):
-        if not _is_master(user):
+        if not (_is_master(user) or (user.get("role") == "sub_admin" and "clients:view" in (user.get("permissions") or []))):
             raise HTTPException(status_code=403, detail="Only Master Admin can view corporate clients")
         clients = await db.companies.find().sort("created_at", -1).to_list(500)
 
@@ -236,6 +237,9 @@ def make_router(db, safe_objectid, get_current_user):
                 "first_order": cid in companies_with_orders,
             }
             out.append(d)
+        if user.get("role") == "sub_admin":
+            comps = await rbac.sub_scope_companies(db, user)
+            out = [c for c in out if c["id"] in comps]
         return out
 
     @r.post("/master/corporate-clients")
@@ -260,8 +264,12 @@ def make_router(db, safe_objectid, get_current_user):
 
     @r.patch("/master/corporate-clients/{client_id}")
     async def update_client(client_id: str, data: CorporateClientUpdate, user: dict = Depends(get_current_user)):
-        if not _is_master(user):
+        if not (_is_master(user) or (user.get("role") == "sub_admin" and "clients:manage" in (user.get("permissions") or []))):
             raise HTTPException(status_code=403, detail="Only Master Admin can edit corporate clients")
+        if user.get("role") == "sub_admin":
+            comps = await rbac.sub_scope_companies(db, user)
+            if client_id not in comps:
+                raise HTTPException(status_code=403, detail="This client is not in your scope")
         update = {k: v for k, v in data.model_dump().items() if v is not None}
         if not update:
             raise HTTPException(status_code=400, detail="No fields to update")
@@ -272,6 +280,12 @@ def make_router(db, safe_objectid, get_current_user):
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Corporate client not found")
         client = await db.companies.find_one({"_id": safe_objectid(client_id, "Company")})
+        if user.get("role") == "sub_admin":
+            await db.audit_log.insert_one({
+                "user_id": user.get("id"), "user_email": user.get("email"), "user_role": "sub_admin",
+                "entity_type": "company", "entity_id": client_id, "action": "updated_client",
+                "details": {"fields": list(update.keys())}, "created_at": datetime.now(timezone.utc),
+            })
         return _doc_to_dict(client)
 
     @r.post("/master/corporate-clients/{client_id}/lifecycle")

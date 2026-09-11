@@ -1,0 +1,20 @@
+{
+  "summary": "Targeted retest of iteration_69 fix (AuthContext hydrateUser after login/OTP). Sub-admin uxcheck_sub@corpa.com logs in via email/password, is redirected to /sub-admin/dashboard, and IMMEDIATELY (no reload) sees correct nav (Home, Sales, Feedback, Menu Requests), Assigned scope line '1 client(s)' via data-testid=sub-admin-scope, and 3 tool cards (Sales Reports, Feedback Inbox, Menu Requests). data-testid=sub-admin-no-access is NOT present. All three permitted nav links (Sales -> /reports/sales, Feedback -> /admin/feedback, Menu Requests -> /admin/menu-requests, Home) load without any empty-permission state. Master regression: admin@cravitoo.com/admin123 lands on /master/dashboard with full nav (Dashboard, Cities, Sites, Vendors, Clients, Customer Types, Feedback, Reservations, Billing, Sales, Onboarding, Menu Requests, Domains, Announce, Admins, Reset). OTP UI regression: 'Login with Email Code' button renders and clicking it shows the Send Code form with no JS errors. Only console errors observed were expected 401s from /auth/me polls on the pre-login page.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "test_credentials": "uxcheck_sub@corpa.com / Pass1234 (sub_admin); admin@cravitoo.com / admin123 (master)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration_69 bug (login not hydrating sub_admin permissions/scope) is fully fixed. hydrateUser() in AuthContext successfully calls /auth/me after both password and OTP login and populates user.permissions + user.scope, so nav + /sub-admin/dashboard render correctly on first render — no manual reload required. Master admin login and OTP UI still work.",
+  "rca of the issue": "Prior bug: login/OTP responses did not include sub_admin permissions/scope, so the frontend user object was incomplete until a manual reload triggered checkAuth->/auth/me. Fix: AuthContext.login() and loginWithOtp() now invoke hydrateUser() which fetches /api/auth/me and setUser() with the complete payload (falls back to login response on failure). Verified: fresh login populates user immediately; downstream Navbar and Sub-admin Dashboard render permissions and scope correctly."
+}

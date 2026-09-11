@@ -51,14 +51,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const hydrateUser = async (fallback) => {
+    // The login/OTP/register responses don't include role-derived fields like
+    // sub_admin `permissions`/`scope` or a vendor operator's resolved vendor_id.
+    // /auth/me returns the fully-resolved user, so hydrate from it.
+    try {
+      const { data } = await axios.get(`${API}/auth/me`, { withCredentials: true, skipAuthRedirect: true });
+      setUser(data);
+      return data;
+    } catch (_) {
+      setUser(fallback);
+      return fallback;
+    }
+  };
+
   const login = async (email, password) => {
     const { data } = await axios.post(
       `${API}/auth/login`,
       { email, password },
       { withCredentials: true }
     );
-    setUser(data);
-    return data;
+    return await hydrateUser(data);
   };
 
   const loginWithOtp = async (email, code) => {
@@ -67,8 +80,7 @@ export const AuthProvider = ({ children }) => {
       { email, code },
       { withCredentials: true }
     );
-    setUser(data);
-    return data;
+    return await hydrateUser(data);
   };
 
   const requestOtp = async (email, channel = 'email') => {

@@ -878,13 +878,11 @@ def make_router(db, safe_objectid, get_current_user, audit_log, UPLOAD_DIR: Path
     @r.post("/onboarding/vendors/{onb_id}/master-decision")
     async def master_decision(onb_id: str, data: OnboardingDecision, request: Request, user: dict = Depends(get_current_user)):
         """Master admin final approval/rejection."""
-        if not _onb_can(user):
-            raise HTTPException(status_code=403, detail="Access denied")
+        if not _is_master(user):
+            raise HTTPException(status_code=403, detail="Only master admin can give final approval")
         o = await db.vendor_onboarding.find_one({"_id": safe_objectid(onb_id, "Onboarding")})
         if not o:
             raise HTTPException(status_code=404, detail="Onboarding not found")
-        if not await _site_in_scope(db, user, o.get("site_id")):
-            raise HTTPException(status_code=403, detail="This onboarding is not in your scope")
         if o.get("status") != "under_master_review":
             raise HTTPException(status_code=400, detail=f"Cannot finalize — current status is '{o.get('status')}', must be 'under_master_review'")
         if data.decision not in ("approve", "reject"):

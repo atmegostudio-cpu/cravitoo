@@ -368,8 +368,15 @@ class VendorOperatorCreate(BaseModel):
 
 # Phase 1 permission catalog (module-level). Extend as more modules are wired.
 SUB_ADMIN_PERMISSIONS = [
-    {"key": "vendors:onboard", "label": "Onboard & approve vendors", "module": "Vendor Onboarding"},
+    {"key": "vendors:onboard", "label": "Onboard & prepare vendors (final approval stays with Master)", "module": "Vendor Onboarding"},
     {"key": "sales:view", "label": "View sales reports", "module": "Sales Reports"},
+    {"key": "sites:view", "label": "View sites", "module": "Sites"},
+    {"key": "sites:manage", "label": "Edit site details", "module": "Sites"},
+    {"key": "clients:view", "label": "View corporate clients", "module": "Clients"},
+    {"key": "clients:manage", "label": "Edit client details (approval stays with Master)", "module": "Clients"},
+    {"key": "feedback:view", "label": "View feedback inbox", "module": "Feedback"},
+    {"key": "feedback:manage", "label": "Resolve feedback", "module": "Feedback"},
+    {"key": "menu_requests:view", "label": "View menu change requests (approval stays with Master)", "module": "Menu Requests"},
 ]
 
 

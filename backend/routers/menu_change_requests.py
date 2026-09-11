@@ -59,6 +59,7 @@ def _request_can_auto_route_to_site_admin(request_type: str, has_price_change: b
 
 
 def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD_DIR: Optional[Path] = None):
+    import rbac  # shared sub_admin RBAC helpers
     r = APIRouter()
 
     @r.post("/menu-change-requests/{request_id}/upload-photo")
@@ -242,6 +243,13 @@ def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD
             query["can_site_approve"] = True
         elif role in ("master_admin", "super_admin"):
             pass
+        elif role == "sub_admin" and "menu_requests:view" in (user.get("permissions") or []):
+            sset = await rbac.sub_scope_sites(db, user)
+            if not sset:
+                return []
+            mappings = await db.vendor_site_mappings.find({"site_id": {"$in": list(sset)}}).to_list(2000)
+            vendor_ids = [m["vendor_id"] for m in mappings]
+            query["vendor_id"] = {"$in": vendor_ids}
         else:
             raise HTTPException(status_code=403, detail="Not authorised")
 
@@ -286,6 +294,8 @@ def make_router(db, safe_objectid, get_current_user, create_notification, UPLOAD
             raise HTTPException(status_code=403, detail="Not authorised")
         if role == "site_admin" and not doc.get("can_site_approve"):
             raise HTTPException(status_code=403, detail="This request requires Master Admin approval")
+        if role == "sub_admin" and "menu_requests:view" not in (user.get("permissions") or []):
+            raise HTTPException(status_code=403, detail="Not authorised")
 
         def _iso(v):
             return v.isoformat() if isinstance(v, datetime) else v

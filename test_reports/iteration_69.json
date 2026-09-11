@@ -1,0 +1,37 @@
+{
+  "summary": "Independently re-verified Phase-2 sub-admin expansion end-to-end. Backend: 17/17 pytest cases pass in test_sub_admin_phase2.py — 9-perm permission catalog; feedback:view (list + analytics 200, resolve 403 without :manage); feedback denied without perm (403); menu_requests:view lists 200 and sub_admin cannot POST /decision (403 — Master-only); clients:view scoped list (only in-scope client); clients:manage PATCH in-scope 200 / out-of-scope 403 / lifecycle stays master-only 403; clients denied without perm 403; sites:view scoped list; sites:manage PATCH in-scope 200 / out-of-scope 403; onboarding master-decision blocked for sub_admin even with vendors:onboard (approvals-stay-master regression PASSES); deny-by-default 403 on /admin/admins and /admin/sub-admin-activity; activity log (GET /admin/sub-admin-activity) is master-only, records updated_client for sub-admin PATCH, and supports ?sub_admin_id filter; forgot-password uniform 200 for known/unknown/empty. Frontend: login page has forgot-password-link + vendor-get-setup-link → /forgot-password. Master → Admins page renders sub-admin-activity-section with 25 activity-row-* entries. New-Admin modal with role=Sub-Admin renders all 9 sub-perm-* checkboxes (exact testids sub-perm-vendors-onboard, sales-view, sites-view, sites-manage, clients-view, clients-manage, feedback-view, feedback-manage, menu_requests-view) + scope groups. Sub-Admin login → after PAGE RELOAD the navbar correctly adds Feedback + Menu Requests, scope shows '1 client(s)', and /admin/feedback loads scoped inbox. HOWEVER a real bug was found — see below.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Sub-Admin login (fresh sign-in)",
+        "issue": "AuthContext.login() sets user = login-response JSON, but /api/auth/login does NOT return `permissions` or `scope` for sub_admin (only /api/auth/me does). Result: immediately after login, Navbar shows only 'Home' (no Feedback / Menu Requests / Sales / Onboarding links) and /sub-admin/dashboard renders 'No permissions have been assigned to you yet' + 'No specific scope assigned'. Only after a manual page reload (which triggers /auth/me) do the correct nav links + scope + tool cards appear. This breaks the entire Phase-2 sub-admin UX on first login for any sub-admin created via the magic-link flow.",
+        "affected_selectors": ["nav", "[data-testid=sub-admin-scope]", "[data-testid=sub-admin-no-access]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sub_admin_phase2.py",
+    "/app/test_reports/pytest/sub_admin_phase2.xml"
+  ],
+  "action_items": [
+    "Fix AuthContext.login() (frontend) OR /api/auth/login response (backend) so that for sub_admin, `permissions` and `scope` are populated in user state immediately after login. Cleanest fix: include permissions + scope in the login/OTP-verify response payload for role=sub_admin (same fields already returned by /auth/me), OR have AuthContext.login()/loginWithOtp() chain a `axios.get(/auth/me)` and setUser(that) instead of setUser(login response). Without this, every fresh sub-admin sign-in shows an empty nav + 'no permissions' dashboard until the user reloads the page."
+  ],
+  "critical_code_review_comments": [
+    "Login/OTP-verify response is a plain user dict; /auth/me is a fuller user dict. This inconsistency is the root cause of the sub-admin nav bug. Recommend a single _user_response_dict(user) helper used by both endpoints so they never drift again.",
+    "routers/sites.py is now 1591 lines (was 1547 in Phase-1). The sub-admin block + activity log inside sites.py is unrelated to sites — please extract to routers/sub_admins.py per the previous iteration's recommendation.",
+    "GET /admin/sub-admin-activity returns raw audit_log rows; consider joining with users.name so the UI doesn't have to look up 'who' for every row (Master → Admins page currently only shows the email prefix)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sub_admin_phase2.py (new — 17 pytest cases for Task 1/2/3)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "80% (all layouts + master screens work; sub-admin fresh-login nav/dashboard broken until reload)"},
+  "test_credentials": "Master admin@cravitoo.com / admin123; sub-admins created on demand with permissions=[...] and scope={client_ids:[first corp client]} — password set via magic link to 'Pass1234'.",
+  "seed_data_creation": "None persistent — every sub-admin created in tests is deleted in fixture teardown. Post-run scan of /admin/sub-admins for TEST_/test_ prefixes and manually cleaned the one UI-testing sub-admin (TEST_navsub_e40502).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend Phase-2 endpoints all live and correctly RBAC-gated. Deny-by-default is tight (approvals stay Master, out-of-scope PATCH returns 403). New tests at /app/backend/tests/test_sub_admin_phase2.py — 17 cases, all green. The one real defect is on the FRONTEND: login-response payload missing perms/scope for sub_admin, so AuthContext doesn't populate Navbar/Dashboard until a reload calls /auth/me. Reproduce: create a sub-admin with feedback:view + menu_requests:view + client scope, complete magic link, login via /login → nav shows only 'Home' → reload → nav now correctly shows Home + Feedback + Menu Requests. All 9 perm testids use dashes (sub-perm-menu_requests-view keeps the underscore in the key, then a dash before 'view').",
+  "rca of the issue": "AuthContext.login() (frontend/src/context/AuthContext.js line 54-62) does `setUser(data)` where `data` is the direct response of POST /api/auth/login. That response object contains id/email/name/role/company_id/vendor_id/site_id/assigned_sites/access_token/refresh_token — but NOT permissions or scope. Navbar 'sub_admin' branch reads `user?.permissions` (line 99 of Navbar.js) which is undefined → perms=[] → only Home link. Sub-Admin Dashboard.js reads `user?.permissions` and `user?.scope` similarly → shows 'No permissions'/'No specific scope'. Mitigation: either extend the login response with permissions+scope for role=sub_admin, OR make AuthContext.login/loginWithOtp await axios.get(/auth/me) after login and setUser(that fuller object). Recommend the login-response fix (single source of truth, matches /auth/me shape)."
+}
