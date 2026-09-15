@@ -1,0 +1,22 @@
+{
+  "summary": "Verified the 5:30 IST timezone drift fix end-to-end. Backend: 5/5 pytest cases pass — /api/vendor/all-outlets-orders returns created_at/ready_at/collected_at as tz-aware '+00:00' ISO; /api/vendor/reports/sales-orders paginated rows tz-aware; CSV export header is 'Date & Time (UTC)' and rows are tz-aware ISO. Cross-panel match confirmed at API level (same order same instant across /api/orders and /api/vendor/all-outlets-orders, drift < 2s). Frontend: with browser context forced to Asia/Kolkata (to simulate real IST user), all 5 sampled cards on /vendor/all-orders show IST times exactly matching UTC+5:30 conversion of the backend value (drift = 0 minutes). Same order CRV-AUDA01 renders identical time '07:12:07 pm' on both /vendor/all-orders and /vendor/orders — no 5:30 drift. Collected/Ready badges render with correct testids. Outlet chips, counts, auto-refresh footer, top-bar outlet switch and per-outlet counter all still work.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_tz_iso.py",
+    "/app/test_reports/pytest/tz_iso_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vendor_reports.py _iso_utc helper mirrors orders.py normalisation cleanly — good. Consider extracting into a shared util (e.g. app/backend/utils/datetime_utils.py) so future routers can't reintroduce this class of bug.",
+    "AllOrders.js uses `toLocaleString('en-IN', {...})` without an explicit timeZone: 'Asia/Kolkata'. That means the display follows the *user's device* timezone, not necessarily IST. If a user in a different timezone (or a mis-set device clock) views the page they'll see their local time, not IST. If IST is contractually required, pass `timeZone: 'Asia/Kolkata'`. Not a regression — matches Vendor/Employee Orders pages — but worth flagging."
+  ],
+  "updated_files": ["/app/backend/tests/test_tz_iso.py"],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "tz_operator@cravitoo.com / Pass1234 (multi-outlet operator, 4 outlets, kept intact)",
+  "seed_data_creation": "None — used existing seed orders across AUDIT_Vendor1/2, DEMO Green Bowl, DEMO Spice Hub.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Timezone drift fix is confirmed. When Playwright-testing anything IST-related, force `Asia/Kolkata` via CDP Emulation.setTimezoneOverride — Playwright default is UTC and will make correct '+00:00' backends look wrong on the UI. Backend regression tests live at /app/backend/tests/test_tz_iso.py.",
+  "rca_of_the_issue": "Bug: /api/vendor/all-outlets-orders and vendor sales report endpoints returned Motor-fetched naive datetimes as ISO strings without a tz suffix. Browsers parse a tz-less ISO ('2026-09-09T13:42:07.888') as *local* time (IST), which then rendered as the actual UTC value 5:30 too early. Reference correct impl in /api/orders normalises via .replace(tzinfo=utc).astimezone(utc).isoformat(). Fix: added _iso_utc() helper in vendor_reports.py and applied to created_at (+ new ready_at/collected_at) in all_outlets_orders, and to created_at in paginated sales-orders + CSV export. Verified: backend now emits '+00:00' suffix; IST-configured browser renders correct local time; cross-panel drift eliminated."
+}

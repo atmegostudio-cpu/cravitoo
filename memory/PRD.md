@@ -1,5 +1,13 @@
 # Cravitoo - Product Requirements Document
 
+## Sep 2026 — Bug fix: All Outlets → Live Orders timezone drift (COMPLETED ✅, needs deploy)
+
+**Reported**: On Dashboard → All Outlets → Live Orders (multi-outlet operator), order time was 5:30 behind (device 13:23 vs card 07:53) — IST/UTC offset.
+**Root cause**: `vendor_reports.py` returned `created_at` as a **timezone-naive** ISO string (Motor returns naive datetimes), so the browser parsed a UTC value as local time. `/api/orders` already normalised (hence the cross-panel mismatch).
+**Fix** (3 bugs): added `_iso_utc()` helper in `vendor_reports.py`; applied to `all_outlets_orders` (Bug 1) + added `ready_at`/`collected_at` to projection & output (Bug 3); applied to paginated sales report row + CSV export (Bug 2). Frontend `vendor/AllOrders.js` now formats with `toLocaleString('en-IN', …)` and shows Collected/Ready badges (testids `all-order-time/collected/ready-{id}`).
+**Verified**: testing_agent **iteration_71 = 100% backend + 100% frontend** — feed/report/CSV return `+00:00`; same order matches across Vendor Orders vs All-Outlets (0 drift, browser forced to Asia/Kolkata); regression clean. Standing test account: `tz_operator@cravitoo.com / Pass1234`.
+**Action needed**: Save to GitHub → Deploy.
+
 ## Jun 2026 — Sub-Admin RBAC Phase 2: catalog expansion + activity log + resend link (COMPLETED ✅, needs deploy)
 
 **Requested** (roadmap): (1) expand the sub-admin permission catalog to **Sites, Clients, Feedback, Menu Requests** with **view-vs-manage** toggles — **all final approvals stay with the Master Admin**; (2) **Sub-Admin Activity Log** — a trail of what each sub-admin did & when; (3) **Resend Magic Link** — vendors self-serve a fresh set-up link from the login screen.

@@ -17,6 +17,19 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+def _iso_utc(dt):
+    """Normalise a (possibly naive, Motor-returned) datetime to a UTC-aware ISO
+    string ('+00:00') so the browser converts it to correct local time. Returns
+    the value unchanged if it isn't a datetime."""
+    if dt is None:
+        return None
+    if hasattr(dt, "tzinfo"):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    return dt
+
+
 class _CounterAssignBody(BaseModel):
     counter: Optional[str] = None      # None / empty → clears the tag
 
@@ -142,11 +155,11 @@ def make_router(db, safe_objectid, get_current_user):
         docs = await db.orders.find(
             {"vendor_id": {"$in": assigned}},
             {"vendor_id": 1, "employee_name": 1, "items": 1, "total_amount": 1, "status": 1,
-             "payment_status": 1, "counter": 1, "collection_code": 1, "created_at": 1, "delivery_type": 1},
+             "payment_status": 1, "counter": 1, "collection_code": 1, "created_at": 1, "delivery_type": 1,
+             "ready_at": 1, "collected_at": 1},
         ).sort("created_at", -1).to_list(200)
         out = []
         for d in docs:
-            ca = d.get("created_at")
             out.append({
                 "id": str(d["_id"]), "vendor_id": d.get("vendor_id"),
                 "outlet": names.get(d.get("vendor_id"), d.get("vendor_id")),
@@ -154,7 +167,9 @@ def make_router(db, safe_objectid, get_current_user):
                 "total_amount": d.get("total_amount"), "status": d.get("status"),
                 "payment_status": d.get("payment_status"), "counter": d.get("counter"),
                 "collection_code": d.get("collection_code"),
-                "created_at": ca.isoformat() if hasattr(ca, "isoformat") else ca,
+                "created_at": _iso_utc(d.get("created_at")),
+                "ready_at": _iso_utc(d.get("ready_at")),
+                "collected_at": _iso_utc(d.get("collected_at")),
             })
         return {"orders": out, "outlets": [{"id": vid, "name": names[vid]} for vid in assigned]}
 
@@ -268,7 +283,7 @@ def make_router(db, safe_objectid, get_current_user):
                 "payment_method": rr.get("payment_method"),
                 "payment_status": rr.get("payment_status"),
                 "status": rr.get("status"),
-                "created_at": rr.get("created_at").isoformat() if rr.get("created_at") else None,
+                "created_at": _iso_utc(rr.get("created_at")),
                 "site_id": rr.get("site_id"),
             } for rr in rows],
         }
@@ -304,7 +319,7 @@ def make_router(db, safe_objectid, get_current_user):
             for rr in rows:
                 items_str = ", ".join(f"{it.get('name','?')} ×{it.get('quantity',0)}" for it in rr.get("items", []))
                 w.writerow([
-                    rr.get("created_at").isoformat() if rr.get("created_at") else "",
+                    _iso_utc(rr.get("created_at")) or "",
                     rr.get("collection_code") or str(rr.get("_id", "")),
                     rr.get("counter") or "-",
                     items_str,
