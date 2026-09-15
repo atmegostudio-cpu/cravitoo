@@ -156,8 +156,19 @@ def make_router(db, safe_objectid, get_current_user):
             {"vendor_id": {"$in": assigned}},
             {"vendor_id": 1, "employee_name": 1, "items": 1, "total_amount": 1, "status": 1,
              "payment_status": 1, "counter": 1, "collection_code": 1, "created_at": 1, "delivery_type": 1,
-             "ready_at": 1, "collected_at": 1},
+             "ready_at": 1, "collected_at": 1, "site_id": 1},
         ).sort("created_at", -1).to_list(200)
+        tz_ids = []
+        for d in docs:
+            if d.get("site_id"):
+                try:
+                    tz_ids.append(safe_objectid(d["site_id"], "Site"))
+                except Exception:
+                    pass
+        site_tz = {}
+        if tz_ids:
+            async for sd in db.sites.find({"_id": {"$in": tz_ids}}, {"timezone": 1}):
+                site_tz[str(sd["_id"])] = sd.get("timezone") or "Asia/Kolkata"
         out = []
         for d in docs:
             out.append({
@@ -170,6 +181,7 @@ def make_router(db, safe_objectid, get_current_user):
                 "created_at": _iso_utc(d.get("created_at")),
                 "ready_at": _iso_utc(d.get("ready_at")),
                 "collected_at": _iso_utc(d.get("collected_at")),
+                "site_timezone": site_tz.get(str(d.get("site_id")), "Asia/Kolkata"),
             })
         return {"orders": out, "outlets": [{"id": vid, "name": names[vid]} for vid in assigned]}
 

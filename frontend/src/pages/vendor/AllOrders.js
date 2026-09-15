@@ -124,17 +124,17 @@ const VendorAllOrders = () => {
                   </p>
                   {o.created_at && (
                     <p className="text-[11px] text-text-muted mt-2" data-testid={`all-order-time-${o.id}`}>
-                      {new Date(o.created_at).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      {new Date(o.created_at).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: o.site_timezone || 'Asia/Kolkata' })}
                     </p>
                   )}
                   {o.collected_at && (
                     <p className="text-[11px] text-emerald-600 mt-0.5" data-testid={`all-order-collected-${o.id}`}>
-                      Collected {new Date(o.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      Collected {new Date(o.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: o.site_timezone || 'Asia/Kolkata' })}
                     </p>
                   )}
                   {!o.collected_at && o.ready_at && (
                     <p className="text-[11px] text-amber-600 mt-0.5" data-testid={`all-order-ready-${o.id}`}>
-                      Ready {new Date(o.ready_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      Ready {new Date(o.ready_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: o.site_timezone || 'Asia/Kolkata' })}
                     </p>
                   )}
                 </div>

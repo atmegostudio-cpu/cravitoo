@@ -623,8 +623,22 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
                     pass
             async for u in db.users.find({"_id": {"$in": oids}}, {"name": 1, "email": 1}):
                 name_map[str(u["_id"])] = u.get("name") or u.get("email")
+        # Resolve each order's site timezone (default IST) so the client renders
+        # times in the site's local zone (supports multi-region clients).
+        _tz_ids = []
+        for _o in orders:
+            if _o.get("site_id"):
+                try:
+                    _tz_ids.append(safe_objectid(_o["site_id"], "Site"))
+                except Exception:
+                    pass
+        _site_tz = {}
+        if _tz_ids:
+            async for _sd in db.sites.find({"_id": {"$in": _tz_ids}}, {"timezone": 1}):
+                _site_tz[str(_sd["_id"])] = _sd.get("timezone") or "Asia/Kolkata"
         for order in orders:
             order["id"] = str(order.pop("_id"))
+            order["site_timezone"] = _site_tz.get(str(order.get("site_id")), "Asia/Kolkata")
             if not order.get("employee_name"):
                 order["employee_name"] = name_map.get(order.get("user_id")) or "Walk-in / Kiosk"
             # Normalise created_at to a UTC-aware ISO string ('+00:00') so the client

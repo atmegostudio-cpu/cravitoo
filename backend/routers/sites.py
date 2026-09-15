@@ -307,6 +307,9 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             # Default for legacy sites that don't have lifecycle_status set yet
             if not s.get("lifecycle_status"):
                 s["lifecycle_status"] = "live"
+            # Default timezone for legacy sites so API consumers always get a value
+            if not s.get("timezone"):
+                s["timezone"] = "Asia/Kolkata"
             if isinstance(s.get("created_at"), datetime):
                 s["created_at"] = s["created_at"].isoformat()
             if isinstance(s.get("activated_at"), datetime):
@@ -338,7 +341,7 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
             _sub_ok = site_id in (await rbac.sub_scope_sites(db, user))
         if not (_sub_ok or can_access_site(user, site_id)):
             raise HTTPException(status_code=403, detail="Access denied")
-        allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone",
+        allowed = {"name", "address", "city", "city_id", "contact_email", "contact_phone", "timezone",
                    "allow_pre_order", "allow_cash_carry", "allow_company_paid", "allow_employee_paid"}
         # `status`, per-site `meal_prices` and the client link (`company_id`)
         # can only be changed by master_admin

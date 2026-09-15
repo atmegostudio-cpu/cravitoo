@@ -1,0 +1,37 @@
+{
+  "summary": "Feature A (Sub-Admin Preview) and Feature B (per-site timezone + per-order tz rendering) both verified end-to-end. Backend pytest 5/6 pass — only failure is a benign data assertion that legacy sites in the DB lack an explicit 'timezone' field (frontend still defaults to Asia/Kolkata per spec). Frontend: (A) Eye button opens sub-admin-preview-modal with preview-nav (Home + Vendor Onboarding + Sales + Feedback + Menu Requests), preview-permissions (4 labels), scope block, preview-effective-sites (2) — ZERO POST/PUT/PATCH/DELETE fired while modal was open (read-only confirmed); preview-close-btn closes it cleanly. (B) New-Site modal has site-timezone-input defaulting Asia/Kolkata; per-card site-timezone-select-{id} PATCHes /api/sites/{id} and persists across reload (round-tripped NY→Europe/London→NY successfully). (B) Per-order tz rendering: same UTC instant 2026-09-09T13:42:07Z renders as '09:42:07 am' for CRV-AUDA01 (NY) and '07:12:07 pm' for CRV-AUDB01 (IST) on BOTH /vendor/all-orders AND /vendor/orders — proves order.site_timezone is honored across panels. No 5:30 IST drift regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/sites", "issue": "Legacy sites (5 of 11) returned without a 'timezone' field in the JSON. Frontend falls back to Asia/Kolkata so display is correct, but for API consumers/tests it would be safer to serialize a default 'Asia/Kolkata' when the field is absent (single-line coalesce in the site serializer)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_tz_feature.py",
+    "/app/test_reports/pytest/tz_feature_results.xml"
+  ],
+  "action_items": [
+    "Optional: default missing site.timezone to 'Asia/Kolkata' in the /api/sites list serializer for API-consumer robustness (frontend already defaults, so this is cosmetic)."
+  ],
+  "critical_code_review_comments": [
+    "Preview modal is genuinely read-only — zero write calls observed. Good separation from an 'impersonate' feature.",
+    "Per-order site_timezone attach in orders.py uses a bulk sites->tz map (good, no N+1). Same pattern in vendor_reports.all_outlets_orders. Consider hoisting into a shared helper (utils/site_tz.py) — currently duplicated between two routers.",
+    "AllOrders.js / Orders.js now pass explicit timeZone option to toLocaleString(). The earlier iter-71 comment (no explicit timezone) is addressed for these three panels.",
+    "Sites GET does not backfill a default 'timezone' for docs written before the field existed; either backfill script or coalesce in serializer would clean up ambiguity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tz_feature.py"
+  ],
+  "success_rate": {"backend": "83% (5/6 tests; the 1 failure is a strict-schema check, not a functional bug)", "frontend": "100%"},
+  "test_credentials": "admin@cravitoo.com / admin123 ; tz_operator@cravitoo.com / Pass1234. Existing sub-admin 'Riya' (demo_subadmin@corpa.com) reused for Feature A — no new sub-admin created.",
+  "seed_data_creation": "None. Existing Riya sub-admin and existing NY-tz site were reused. NY site tz was momentarily flipped to Europe/London during PATCH test and RESTORED to America/New_York before finishing.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Feature A + B fully green. If touching Sites schema, note that legacy sites in DB have no timezone field and rely on frontend fallback. Backend regression file lives at /app/backend/tests/test_tz_feature.py — reuse for any future site.timezone changes. Sub-admin 'Riya (Sub-Admin)' is the existing test sub-admin for Preview UI.",
+  "rca_of_the_issue": "N/A — no bugs found. Both features work as spec'd."
+}

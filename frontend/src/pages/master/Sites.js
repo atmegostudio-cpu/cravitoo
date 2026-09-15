@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2, Wrench, Link2, AlertTriangle } from 'lucide-react';
+import { Building2, Plus, MapPin, Phone, Mail, ChevronRight, X, Trash2, Wrench, Link2, AlertTriangle, Globe } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -29,8 +29,15 @@ const LifecycleBadge = ({ status }) => {
 
 const EMPTY_FORM = {
   name: '', company_id: '', city_id: '', address: '', city: '', contact_email: '', contact_phone: '',
+  timezone: 'Asia/Kolkata',
   allow_pre_order: true, allow_cash_carry: true, allow_company_paid: false, allow_employee_paid: true,
 };
+
+const TIMEZONES = [
+  'Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo',
+  'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Chicago',
+  'America/Los_Angeles', 'Australia/Sydney', 'UTC',
+];
 
 const MasterSites = () => {
   const [sites, setSites] = useState([]);
@@ -129,6 +136,15 @@ const MasterSites = () => {
     setAssignSite(site);
     setAssignForm({ company_id: site.company_id || '', city_id: site.city_id || '' });
     setAssignError('');
+  };
+
+  const changeTimezone = async (site, tz) => {
+    try {
+      await axios.patch(`${API}/sites/${site.id}`, { timezone: tz }, { withCredentials: true });
+      setSites((prev) => prev.map((s) => (s.id === site.id ? { ...s, timezone: tz } : s)));
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to update timezone');
+    }
   };
 
   const saveAssign = async (e) => {
@@ -276,6 +292,18 @@ const MasterSites = () => {
                 >
                   <Link2 className="h-3.5 w-3.5" /> {unlinked ? 'Assign client & city' : 'Change client / city'}
                 </button>
+                <div className="mt-2 flex items-center gap-2" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                  <Globe className="h-3.5 w-3.5 text-text-muted flex-shrink-0" />
+                  <select
+                    data-testid={`site-timezone-select-${site.id}`}
+                    value={site.timezone || 'Asia/Kolkata'}
+                    onChange={(e) => changeTimezone(site, e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 border border-border-light rounded-lg bg-white focus:outline-none focus:border-primary"
+                    title="Order times at this site are shown in this timezone"
+                  >
+                    {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                  </select>
+                </div>
               </div>
             );})}
           </div>
@@ -330,6 +358,13 @@ const MasterSites = () => {
               <div>
                 <label className="text-sm font-medium text-text-primary">Address</label>
                 <input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-primary" placeholder="123 Business Park" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-text-primary flex items-center gap-1.5"><Globe className="h-4 w-4 text-text-muted" /> Timezone</label>
+                <select data-testid="site-timezone-input" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-primary bg-white">
+                  {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-text-muted">Order times at this site display in this zone (default IST).</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-text-primary mb-2">Ordering modes allowed</p>

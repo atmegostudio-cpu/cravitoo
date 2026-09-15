@@ -1,5 +1,14 @@
 # Cravitoo - Product Requirements Document
 
+## Sep 2026 — Sub-Admin Preview + Per-site Timezone (COMPLETED ✅, needs deploy)
+
+**Requested**: (A) a "preview as this sub-admin" button so the Master sees a sub-admin's exact view before inviting; (B) per-site timezone so multi-region clients see order times in their site's local zone, not just IST.
+**Implemented**:
+- **Feature A (safe, read-only — no impersonation)**: Eye button on each Sub-Admin card (`Admins.js`) opens `sub-admin-preview-modal` showing the nav they'd see (`preview-nav`), granted permission labels (`preview-permissions`), scope names, and computed `preview-effective-sites` (union of scope clients/cities/sites). Zero writes while open.
+- **Feature B**: `SiteCreate.timezone` (default `Asia/Kolkata`); `update_site` allows `timezone`; `GET /api/sites` now coalesces a default tz for legacy sites. Each order feed attaches per-order `site_timezone` — `orders.py get_orders` (bulk site→tz map) and `vendor_reports.py all_outlets_orders` (added site_id to projection). Frontend renders order times with `timeZone: order.site_timezone || 'Asia/Kolkata'` across Employee/Vendor/All-Outlets. `Sites.js`: New-Site timezone dropdown (`site-timezone-input`) + per-card quick-select (`site-timezone-select-{id}`) that PATCHes and persists.
+- **Verified**: testing_agent **iteration_72 = frontend 100% + backend 5/6** (the 6th was the legacy-tz-serialization note, now fixed & confirmed — all sites return a timezone). Same UTC instant renders NY vs IST correctly and consistently across panels; preview modal confirmed read-only. Test data reverted (site back to IST).
+**Action needed**: Save to GitHub → Deploy.
+
 ## Sep 2026 — Bug fix: All Outlets → Live Orders timezone drift (COMPLETED ✅, needs deploy)
 
 **Reported**: On Dashboard → All Outlets → Live Orders (multi-outlet operator), order time was 5:30 behind (device 13:23 vs card 07:53) — IST/UTC offset.

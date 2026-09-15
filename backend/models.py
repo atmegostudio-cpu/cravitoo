@@ -237,6 +237,8 @@ class SiteCreate(BaseModel):
     city: str  # Free-text city name (legacy)
     contact_email: EmailStr
     contact_phone: str
+    # IANA timezone for displaying order times in the site's local zone (default IST)
+    timezone: str = "Asia/Kolkata"
     # Ordering controls
     allow_pre_order: bool = True
     allow_cash_carry: bool = True

@@ -176,10 +176,10 @@ const VendorOrders = () => {
                           {order.collection_code}
                         </p>
                       )}
-                      <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString()}</p>
+                      <p className="text-text-secondary text-xs sm:text-sm">{new Date(order.created_at).toLocaleString('en-IN', { timeZone: order.site_timezone || 'Asia/Kolkata' })}</p>
                       {order.status === 'collected' && order.collected_at && (
                         <p data-testid={`vendor-collected-at-${order.id}`} className="text-xs text-emerald-600 font-medium mt-0.5">
-                          Picked up at {new Date(order.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          Picked up at {new Date(order.collected_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: order.site_timezone || 'Asia/Kolkata' })}
                         </p>
                       )}
                       {order.status === 'collected' && order.ready_at && order.collected_at && (

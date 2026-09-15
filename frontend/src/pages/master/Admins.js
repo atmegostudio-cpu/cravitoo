@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store, SlidersHorizontal, ListChecks, Layers } from 'lucide-react';
+import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store, SlidersHorizontal, ListChecks, Layers, Eye } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -29,6 +29,7 @@ const MasterAdmins = () => {
   const [clients, setClients] = useState([]);
   const [cities, setCities] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [previewSub, setPreviewSub] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -269,6 +270,7 @@ const MasterAdmins = () => {
                         <p className="text-xs text-text-muted">{sa.email}</p>
                       </div>
                       <div className="flex items-center gap-1">
+                        <button data-testid={`sub-admin-preview-${sa.id}`} onClick={() => setPreviewSub(sa)} title="Preview what this sub-admin sees" className="text-text-secondary hover:bg-background p-2 rounded-lg"><Eye className="h-4 w-4" /></button>
                         <button data-testid={`sub-admin-resend-${sa.id}`} onClick={() => resendSubAdmin(sa)} title="Resend set-password link" className="text-primary hover:bg-primary/10 p-2 rounded-lg"><Mail className="h-4 w-4" /></button>
                         <button data-testid={`sub-admin-delete-${sa.id}`} onClick={() => deleteSubAdmin(sa)} className="text-red-600 hover:bg-red-50 p-2 rounded-lg"><Trash2 className="h-4 w-4" /></button>
                       </div>
@@ -324,6 +326,65 @@ const MasterAdmins = () => {
           )}
         </div>
       </div>
+
+      {previewSub && (() => {
+        const perms = previewSub.permissions || [];
+        const sc = previewSub.scope || {};
+        const navMap = [
+          ['vendors:onboard', 'Vendor Onboarding'],
+          ['sales:view', 'Sales'],
+          ['feedback:view', 'Feedback'],
+          ['menu_requests:view', 'Menu Requests'],
+        ];
+        const navLabels = ['Home', ...navMap.filter(([k]) => perms.includes(k)).map(([, l]) => l)];
+        const nameList = (ids, list) => (ids || []).map((id) => list.find((x) => x.id === id)?.name || id);
+        const effSites = sites.filter((s) =>
+          (sc.site_ids || []).includes(s.id) ||
+          (sc.client_ids || []).includes(s.company_id) ||
+          (sc.city_ids || []).includes(s.city_id)
+        );
+        const permLabel = (k) => catalog.find((c) => c.key === k)?.label || k;
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPreviewSub(null)}>
+            <div data-testid="sub-admin-preview-modal" className="bg-card rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-6 border-b border-border-light">
+                <h2 className="font-heading text-xl font-medium flex items-center gap-2"><Eye className="h-5 w-5 text-emerald-700" /> Preview: {previewSub.name}</h2>
+                <button data-testid="preview-close-btn" onClick={() => setPreviewSub(null)}><X className="h-5 w-5" /></button>
+              </div>
+              <div className="p-6 space-y-5 text-sm">
+                <p className="text-text-muted -mt-2">Read-only preview of exactly what <span className="font-medium text-text-primary">{previewSub.email}</span> will see — no changes are made.</p>
+                <div>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Navigation they'll see</p>
+                  <div className="flex flex-wrap gap-1.5" data-testid="preview-nav">
+                    {navLabels.map((l) => <span key={l} className="px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">{l}</span>)}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">What they can do</p>
+                  {perms.length ? (
+                    <ul className="space-y-1" data-testid="preview-permissions">
+                      {perms.map((k) => <li key={k} className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> {permLabel(k)}</li>)}
+                    </ul>
+                  ) : <p className="text-text-muted" data-testid="preview-no-perms">No permissions — they will see an empty dashboard.</p>}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Scope</p>
+                  <div className="space-y-1 text-xs">
+                    <p><span className="text-text-muted">Clients:</span> {nameList(sc.client_ids, clients).join(', ') || '—'}</p>
+                    <p><span className="text-text-muted">Cities:</span> {nameList(sc.city_ids, cities).join(', ') || '—'}</p>
+                    <p><span className="text-text-muted">Sites:</span> {nameList(sc.site_ids, sites).join(', ') || '—'}</p>
+                    <p><span className="text-text-muted">Vendors:</span> {nameList(sc.vendor_ids, allVendors).join(', ') || '—'}</p>
+                  </div>
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg" data-testid="preview-effective-sites">
+                    <p className="text-xs font-medium text-emerald-800">Effective sites they can access ({effSites.length})</p>
+                    <p className="text-xs text-emerald-700 mt-1">{effSites.map((s) => s.name).join(', ') || 'None — assign a client, city or site to grant access'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {operatorInvite && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" data-testid="operator-invite-modal">
