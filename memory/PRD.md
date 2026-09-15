@@ -10,6 +10,9 @@
 - **Verified**: testing_agent **iteration_73 = 100% backend (9/9) + 100% frontend** — combined totals match curl (Sept: 2 orders/₹330; 2026: 10/₹2720), 3-sheet xlsx valid, 403 scope enforced, per-site tz correct. Test data reverted; tz_operator@cravitoo.com / Pass1234 kept.
 **Action needed**: Save to GitHub → Deploy.
 
+## Sep 2026 — Total Sales: Payment-Mode Breakdown (COMPLETED ✅, needs deploy)
+Added paid/pending/failed split + by-payment-method (UPI/card/cash/razorpay) to the multi-outlet Total Sales report: `_combined_report_data` returns `per_payment_status` + `per_payment_method`; Excel export gains a 'By Payment' sheet; UI shows status cards (pay-status-{status}) + a By-Payment-Method table (per-payment-table). Verified testing_agent iteration_74 = frontend 100% (paid ₹2600/9, pending ₹120/1, razorpay ₹2390; xlsx 4 sheets).
+
 ## Sep 2026 — Sub-Admin Preview + Per-site Timezone (COMPLETED ✅, needs deploy)
 
 **Requested**: (A) a "preview as this sub-admin" button so the Master sees a sub-admin's exact view before inviting; (B) per-site timezone so multi-region clients see order times in their site's local zone, not just IST.
