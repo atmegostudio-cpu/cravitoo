@@ -6,6 +6,13 @@ import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const inr = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const cap = (s) => (s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—');
+const STATUS_CHIP = {
+  paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  failed: 'bg-red-50 text-red-700 border-red-200',
+  cancelled: 'bg-gray-50 text-gray-600 border-gray-200',
+};
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -172,6 +179,44 @@ const AllOutletsReport = () => {
                       {(data?.per_counter || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-text-muted">No counter data in this period.</td></tr>}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Payment breakdown */}
+              <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="payment-breakdown">
+                <div className="bg-card border border-border-light rounded-2xl p-5">
+                  <h2 className="font-heading text-lg font-semibold text-text-primary mb-3">Paid vs Pending</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {(data?.per_payment_status || []).map((p) => (
+                      <div key={p.status} data-testid={`pay-status-${p.status}`} className={`flex-1 min-w-[130px] rounded-xl border px-4 py-3 ${STATUS_CHIP[p.status] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                        <p className="text-xs font-medium uppercase tracking-wide">{cap(p.status)}</p>
+                        <p className="text-xl font-semibold mt-1">{inr(p.total_amount)}</p>
+                        <p className="text-[11px] opacity-80">{p.orders} order{p.orders === 1 ? '' : 's'}</p>
+                      </div>
+                    ))}
+                    {(data?.per_payment_status || []).length === 0 && <p className="text-text-muted text-sm">No data.</p>}
+                  </div>
+                </div>
+                <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
+                  <div className="px-5 py-3 border-b border-border-light"><h2 className="font-heading text-lg font-semibold text-text-primary">By Payment Method</h2></div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm" data-testid="per-payment-table">
+                      <thead className="bg-background text-text-muted text-xs uppercase">
+                        <tr><th className="text-left px-5 py-2.5">Method</th><th className="text-right px-5 py-2.5">Orders</th><th className="text-right px-5 py-2.5">Total</th><th className="text-right px-5 py-2.5">Paid</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-light/60">
+                        {(data?.per_payment_method || []).map((p, i) => (
+                          <tr key={`${p.method}-${i}`} data-testid={`per-payment-row-${i}`}>
+                            <td className="px-5 py-2.5 font-medium text-text-primary">{cap(p.method)}</td>
+                            <td className="px-5 py-2.5 text-right">{p.orders}</td>
+                            <td className="px-5 py-2.5 text-right font-semibold">{inr(p.total_amount)}</td>
+                            <td className="px-5 py-2.5 text-right text-emerald-700">{inr(p.paid_amount)}</td>
+                          </tr>
+                        ))}
+                        {(data?.per_payment_method || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-text-muted">No payment data in this period.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </>

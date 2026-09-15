@@ -237,6 +237,8 @@ def make_router(db, safe_objectid, get_current_user):
         srow = s[0] if s else {}
         pv = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": "$vendor_id", "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}, "paid": {"$sum": paid_c}}}, {"$sort": {"total": -1}}]).to_list(200)
         pc = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": {"v": "$vendor_id", "c": {"$ifNull": ["$counter", "—"]}}, "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}}}, {"$sort": {"total": -1}}]).to_list(500)
+        pm = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": {"$ifNull": ["$payment_method", "—"]}, "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}, "paid": {"$sum": paid_c}}}, {"$sort": {"total": -1}}]).to_list(50)
+        ps = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": {"$ifNull": ["$payment_status", "—"]}, "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}}}, {"$sort": {"total": -1}}]).to_list(20)
         total_orders = srow.get("orders", 0)
         total_amount = round(srow.get("total", 0) or 0, 2)
         return {
@@ -251,6 +253,8 @@ def make_router(db, safe_objectid, get_current_user):
             },
             "per_vendor": [{"vendor_id": r["_id"], "outlet": names.get(r["_id"], r["_id"]), "orders": r["orders"], "total_amount": round(r["total"] or 0, 2), "paid_amount": round(r["paid"] or 0, 2)} for r in pv],
             "per_counter": [{"vendor_id": r["_id"]["v"], "outlet": names.get(r["_id"]["v"], r["_id"]["v"]), "counter": r["_id"]["c"], "orders": r["orders"], "total_amount": round(r["total"] or 0, 2)} for r in pc],
+            "per_payment_method": [{"method": r["_id"], "orders": r["orders"], "total_amount": round(r["total"] or 0, 2), "paid_amount": round(r["paid"] or 0, 2)} for r in pm],
+            "per_payment_status": [{"status": r["_id"], "orders": r["orders"], "total_amount": round(r["total"] or 0, 2)} for r in ps],
         }
 
     @r.get("/vendor/all-outlets-report")
@@ -286,6 +290,14 @@ def make_router(db, safe_objectid, get_current_user):
         wc.append(["Outlet", "Counter", "Orders", "Total Sales (INR)"])
         for c in data["per_counter"]:
             wc.append([c["outlet"], c["counter"], c["orders"], c["total_amount"]])
+        wp = wb.create_sheet("By Payment")
+        wp.append(["Payment Status", "Orders", "Total (INR)"])
+        for p in data.get("per_payment_status", []):
+            wp.append([p["status"], p["orders"], p["total_amount"]])
+        wp.append([])
+        wp.append(["Payment Method", "Orders", "Total (INR)", "Paid (INR)"])
+        for p in data.get("per_payment_method", []):
+            wp.append([p["method"], p["orders"], p["total_amount"], p["paid_amount"]])
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
