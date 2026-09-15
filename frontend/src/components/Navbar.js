@@ -74,6 +74,7 @@ const Navbar = () => {
           { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
           { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
           ...((user?.assigned_vendors?.length > 1) ? [{ path: '/vendor/all-orders', label: 'All Outlets', icon: Store }] : []),
+          ...((user?.assigned_vendors?.length > 1) ? [{ path: '/vendor/all-outlets-sales', label: 'Total Sales', icon: BarChart3 }] : []),
           { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
           { path: '/vendor/feedback', label: 'Feedback', icon: MessageSquare },
           { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },

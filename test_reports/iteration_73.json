@@ -1,0 +1,25 @@
+{
+  "summary": "All three items verified end-to-end. Backend pytest 9/9 pass. Item 1 (Total Sales): /vendor/all-outlets-sales renders with Navbar 'Total Sales' link (only for operators with 2+ outlets), 4 summary cards, per-vendor-table (3 rows for range 2026), per-counter-table (3 rows), month/date-range toggle reloads data, and Excel download produces a valid 3-sheet .xlsx (Summary/By Vendor/By Counter) whose totals match the on-screen numbers. Sept 2026 month: 2 orders / ₹330 / ₹210 paid / ₹120 pending / ₹165 avg — exactly matches main agent's curl. Range 2026: 10 orders / ₹2720 / ₹2600 paid — matches. Item 2 (per-site tz in Sales Report): GET /vendor/reports/sales-orders now includes site_timezone on every row and Reports.js line 278 uses dtLocal(iso, o.site_timezone). CSV export header is 'Date & Time (site local)'. UI table renders correct IST for IST sites (2026-09-09T13:42:07Z → 7:12 pm). Cross-tz rendering was already verified in iter_72 with same code path. Item 3 (Client Auto-Timezone): Sites.js CITY_TZ + guessTimezone are wired to the New Site city-select onChange; selecting an Indian city (DEMO Mumbai) correctly keeps default Asia/Kolkata. Seeded DB has no literal 'Dubai'/'London' city, so runtime lookup returned null → default IST retained (per spec, this is expected best-effort behavior). Item 4 (403 scope): non-vendor role (admin) → 403 on both /all-outlets-report and its export; plain single-outlet vendor (audit_vendor1) → 403; unauthenticated → 401/403. Regression: existing /vendor/reports table + CSV still work; outlet switcher unchanged; single-outlet vendors do NOT see 'Total Sales' nav link. No data modified — no site tz was changed during this run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_all_outlets_report.py",
+    "/app/test_reports/pytest/all_outlets_report.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vendor_reports.py grew to 534 lines; the /all-outlets-report + export helpers (_tz_for_sites, _local_str, _report_range, _combined_report_data) are fine, but consider moving shared timezone helpers to utils/site_tz.py — same code exists in orders.py and vendor_reports.all_outlets_orders.",
+    "openpyxl xlsx export builds a workbook fully in memory — for very large ranges (>10K orders) this could be slow; not an issue at current data volumes but worth noting.",
+    "guessTimezone map covers ~15 English city names lowercased. Consider extending or backend-driven lookup if international sites become common; current fallback (Asia/Kolkata) is safe.",
+    "AllOutletsReport.js query builder uses new Date(fromDate + 'T00:00:00').toISOString() which converts LOCAL browser time to UTC — for browsers not on IST this can shift the range by hours. Consider sending YYYY-MM-DD strings and letting backend interpret in the operator's default zone.",
+    "Reports.js dtLocal defaults to 'Asia/Kolkata' when site_timezone is missing — matches the /api/sites minor gap called out in iter_72 (some legacy sites lack the field)."
+  ],
+  "updated_files": ["/app/backend/tests/test_all_outlets_report.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100%"},
+  "test_credentials": "tz_operator@cravitoo.com / Pass1234 (operator, 4 outlets); admin@cravitoo.com / admin123; audit_vendor1@corpa.com / Audit#1234 (plain vendor, 403 target).",
+  "seed_data_creation": "None. No sites were modified — the item-2 non-IST cross-tz behavior was already verified in iter_72 with the same dtLocal code path; the current iteration verifies backend now supplies site_timezone per row and CSV header changed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Outlets Sales feature is green. Regression suite at /app/backend/tests/test_all_outlets_report.py covers: month/range JSON, xlsx 3-sheet export with value parity, 403 for admin/plain-vendor/unauth, sales-orders site_timezone field, and CSV 'site local' header. Reuse for any future changes. Note: guessTimezone map has ~15 cities; the seeded DB currently has no 'Dubai'/'London' city literally named that way, so item-3 auto-fill can only be observed by adding such a city via Cities admin.",
+  "rca_of_the_issue": "N/A — no bugs found. All 3 items match spec."
+}

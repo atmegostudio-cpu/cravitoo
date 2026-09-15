@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Sep 2026 — Multi-Vendor Total Sales report + report timezone + city auto-tz (COMPLETED ✅, needs deploy)
+
+**Requested**: (1) a combined **Total Sales** report in the multi-outlet operator panel — all vendors/counters in one place, vendor-wise + counter-wise breakdowns, date/month filters, Excel download; (2) show Sales Report times in each site's local timezone (table + CSV); (3) auto-suggest a site's timezone from its city.
+**Implemented**:
+- **Total Sales (item 1)**: `GET /vendor/all-outlets-report?month=|from=&to=` → summary + `per_vendor` + `per_counter` (operator-only, 403 otherwise); `GET /vendor/all-outlets-report/export` → real `.xlsx` (openpyxl) with Summary / By Vendor / By Counter sheets. New page `vendor/AllOutletsReport.js` (route `/vendor/all-outlets-sales`, testids all-outlets-report-page, report-summary, per-vendor-table, per-counter-table, report-mode/month/from/to, download-xlsx-btn). Nav 'Total Sales' link shown only when `assigned_vendors.length>1`.
+- **Report timezone (item 2)**: `sales-orders` rows now carry `site_timezone`; CSV header 'Date & Time (site local)' with per-site `_local_str` (zoneinfo) conversion; `Reports.js dtLocal(iso, tz)` renders per site.
+- **City auto-tz (item 3)**: `Sites.js` CITY_TZ map + `guessTimezone` auto-fills the New-Site timezone from the selected city (override allowed; unknown/Indian cities default IST).
+- **Verified**: testing_agent **iteration_73 = 100% backend (9/9) + 100% frontend** — combined totals match curl (Sept: 2 orders/₹330; 2026: 10/₹2720), 3-sheet xlsx valid, 403 scope enforced, per-site tz correct. Test data reverted; tz_operator@cravitoo.com / Pass1234 kept.
+**Action needed**: Save to GitHub → Deploy.
+
 ## Sep 2026 — Sub-Admin Preview + Per-site Timezone (COMPLETED ✅, needs deploy)
 
 **Requested**: (A) a "preview as this sub-admin" button so the Master sees a sub-admin's exact view before inviting; (B) per-site timezone so multi-region clients see order times in their site's local zone, not just IST.

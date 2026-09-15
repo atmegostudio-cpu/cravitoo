@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
@@ -185,6 +186,116 @@ def make_router(db, safe_objectid, get_current_user):
             })
         return {"orders": out, "outlets": [{"id": vid, "name": names[vid]} for vid in assigned]}
 
+    async def _tz_for_sites(site_ids):
+        m = {}
+        oids = []
+        for s in set(site_ids):
+            if not s:
+                continue
+            try:
+                oids.append(safe_objectid(s, "Site"))
+            except Exception:
+                pass
+        if oids:
+            async for sd in db.sites.find({"_id": {"$in": oids}}, {"timezone": 1}):
+                m[str(sd["_id"])] = sd.get("timezone") or "Asia/Kolkata"
+        return m
+
+    def _local_str(ca, tzname):
+        if not hasattr(ca, "astimezone"):
+            return _iso_utc(ca) or ""
+        if ca.tzinfo is None:
+            ca = ca.replace(tzinfo=timezone.utc)
+        try:
+            return ca.astimezone(ZoneInfo(tzname or "Asia/Kolkata")).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return ca.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    def _report_range(month, from_, to):
+        if month:
+            try:
+                y, mm = (int(x) for x in month.split("-"))
+                start = datetime(y, mm, 1, tzinfo=timezone.utc)
+                end = datetime(y + (mm // 12), (mm % 12) + 1, 1, tzinfo=timezone.utc) - timedelta(seconds=1)
+                return start, end
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Invalid month: {month}")
+        return _parse_date_range(from_, to)
+
+    async def _combined_report_data(user, start, end):
+        assigned = user.get("assigned_vendors") or []
+        if not assigned:
+            raise HTTPException(status_code=403, detail="Not a multi-outlet operator")
+        names = {}
+        for vid in assigned:
+            v = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+            names[vid] = (v.get("name") if v else vid)
+        q = {"vendor_id": {"$in": assigned}, "created_at": {"$gte": start, "$lte": end}}
+        paid_c = {"$cond": [{"$eq": ["$payment_status", "paid"]}, "$total_amount", 0]}
+        pend_c = {"$cond": [{"$eq": ["$payment_status", "pending"]}, "$total_amount", 0]}
+        s = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": None, "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}, "paid": {"$sum": paid_c}, "pending": {"$sum": pend_c}}}]).to_list(1)
+        srow = s[0] if s else {}
+        pv = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": "$vendor_id", "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}, "paid": {"$sum": paid_c}}}, {"$sort": {"total": -1}}]).to_list(200)
+        pc = await db.orders.aggregate([{"$match": q}, {"$group": {"_id": {"v": "$vendor_id", "c": {"$ifNull": ["$counter", "—"]}}, "orders": {"$sum": 1}, "total": {"$sum": "$total_amount"}}}, {"$sort": {"total": -1}}]).to_list(500)
+        total_orders = srow.get("orders", 0)
+        total_amount = round(srow.get("total", 0) or 0, 2)
+        return {
+            "range": {"from": start.isoformat(), "to": end.isoformat()},
+            "outlets": [{"id": vid, "name": names[vid]} for vid in assigned],
+            "summary": {
+                "total_orders": total_orders,
+                "total_amount": total_amount,
+                "paid_amount": round(srow.get("paid", 0) or 0, 2),
+                "pending_amount": round(srow.get("pending", 0) or 0, 2),
+                "avg_order_value": round(total_amount / total_orders, 2) if total_orders else 0,
+            },
+            "per_vendor": [{"vendor_id": r["_id"], "outlet": names.get(r["_id"], r["_id"]), "orders": r["orders"], "total_amount": round(r["total"] or 0, 2), "paid_amount": round(r["paid"] or 0, 2)} for r in pv],
+            "per_counter": [{"vendor_id": r["_id"]["v"], "outlet": names.get(r["_id"]["v"], r["_id"]["v"]), "counter": r["_id"]["c"], "orders": r["orders"], "total_amount": round(r["total"] or 0, 2)} for r in pc],
+        }
+
+    @r.get("/vendor/all-outlets-report")
+    async def all_outlets_report(month: Optional[str] = None, from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = None, user: dict = Depends(get_current_user)):
+        """Combined sales across ALL of a multi-outlet operator's outlets, with
+        vendor-wise and counter-wise breakdowns. Filter by month or from/to."""
+        start, end = _report_range(month, from_, to)
+        return await _combined_report_data(user, start, end)
+
+    @r.get("/vendor/all-outlets-report/export")
+    async def all_outlets_report_export(month: Optional[str] = None, from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = None, user: dict = Depends(get_current_user)):
+        start, end = _report_range(month, from_, to)
+        data = await _combined_report_data(user, start, end)
+        import io
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Summary"
+        sm = data["summary"]
+        ws.append(["Cravitoo — Total Sales (All Outlets)"])
+        ws.append(["Period", f"{start.date()} to {end.date()}"])
+        ws.append([])
+        ws.append(["Total Orders", sm["total_orders"]])
+        ws.append(["Total Sales (INR)", sm["total_amount"]])
+        ws.append(["Paid (INR)", sm["paid_amount"]])
+        ws.append(["Pending (INR)", sm["pending_amount"]])
+        ws.append(["Avg Order Value (INR)", sm["avg_order_value"]])
+        wv = wb.create_sheet("By Vendor")
+        wv.append(["Outlet", "Orders", "Total Sales (INR)", "Paid (INR)"])
+        for v in data["per_vendor"]:
+            wv.append([v["outlet"], v["orders"], v["total_amount"], v["paid_amount"]])
+        wc = wb.create_sheet("By Counter")
+        wc.append(["Outlet", "Counter", "Orders", "Total Sales (INR)"])
+        for c in data["per_counter"]:
+            wc.append([c["outlet"], c["counter"], c["orders"], c["total_amount"]])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"cravitoo_all_outlets_sales_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}.xlsx"
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
     @r.patch("/vendor/menu-items/{item_id}/counter")
     async def set_menu_item_counter(item_id: str, body: _CounterAssignBody, user: dict = Depends(get_current_user)):
         vendor_id = _require_vendor(user)
@@ -281,6 +392,7 @@ def make_router(db, safe_objectid, get_current_user):
         page = max(1, page)
         total = await db.orders.count_documents(q)
         rows = await db.orders.find(q).sort("created_at", -1).skip((page - 1) * size).limit(size).to_list(size)
+        tzmap = await _tz_for_sites([rr.get("site_id") for rr in rows])
         return {
             "total": total,
             "page": page,
@@ -297,6 +409,7 @@ def make_router(db, safe_objectid, get_current_user):
                 "status": rr.get("status"),
                 "created_at": _iso_utc(rr.get("created_at")),
                 "site_id": rr.get("site_id"),
+                "site_timezone": tzmap.get(str(rr.get("site_id")), "Asia/Kolkata"),
             } for rr in rows],
         }
 
@@ -316,6 +429,7 @@ def make_router(db, safe_objectid, get_current_user):
         start, end = _parse_date_range(from_, to)
         q = _build_orders_query(vendor_id, start, end, site_id, counter, payment_status)
         rows = await db.orders.find(q).sort("created_at", -1).limit(10000).to_list(10000)
+        tzmap = await _tz_for_sites([rr.get("site_id") for rr in rows])
         vendor = await db.vendors.find_one({"_id": safe_objectid(vendor_id, "Vendor")})
         vendor_name = (vendor.get("name") if vendor else "Vendor")
         filename_base = f"cravitoo_sales_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}"
@@ -326,12 +440,12 @@ def make_router(db, safe_objectid, get_current_user):
             import io, csv
             buf = io.StringIO()
             w = csv.writer(buf)
-            w.writerow(["Date & Time (UTC)", "Order ID", "Counter", "Items", "Total Qty",
+            w.writerow(["Date & Time (site local)", "Order ID", "Counter", "Items", "Total Qty",
                         "Amount (INR)", "Payment Method", "Payment Status", "Fulfilment Status"])
             for rr in rows:
                 items_str = ", ".join(f"{it.get('name','?')} ×{it.get('quantity',0)}" for it in rr.get("items", []))
                 w.writerow([
-                    _iso_utc(rr.get("created_at")) or "",
+                    _local_str(rr.get("created_at"), tzmap.get(str(rr.get("site_id")), "Asia/Kolkata")),
                     rr.get("collection_code") or str(rr.get("_id", "")),
                     rr.get("counter") or "-",
                     items_str,

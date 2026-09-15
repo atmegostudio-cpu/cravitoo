@@ -7,7 +7,7 @@ import logger from '../../lib/logger';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const fmt = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-const dtLocal = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const dtLocal = (iso, tz) => iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: tz || 'Asia/Kolkata' }) : '—';
 
 const rangePresets = [
   { label: 'Today',       days: 0 },
@@ -275,7 +275,7 @@ export default function VendorReports() {
                 {!loading && orders.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-text-muted">No orders in this range.</td></tr>}
                 {!loading && orders.map(o => (
                   <tr key={o.id} data-testid={`order-row-${o.collection_code || o.id}`} className="border-t border-border-light/50 hover:bg-background/40">
-                    <td className="px-4 py-2.5 text-text-secondary">{dtLocal(o.created_at)}</td>
+                    <td className="px-4 py-2.5 text-text-secondary">{dtLocal(o.created_at, o.site_timezone)}</td>
                     <td className="font-mono text-xs">{o.collection_code || o.id.slice(-8)}</td>
                     <td className="text-text-secondary">{o.counter}</td>
                     <td className="text-text-secondary max-w-xs truncate">{(o.items || []).map(i => `${i.name} ×${i.quantity}`).join(', ')}</td>

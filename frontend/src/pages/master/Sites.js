@@ -39,6 +39,20 @@ const TIMEZONES = [
   'America/Los_Angeles', 'Australia/Sydney', 'UTC',
 ];
 
+// Auto-suggest a site timezone from its city name (best-effort; defaults to IST)
+const CITY_TZ = {
+  dubai: 'Asia/Dubai', 'abu dhabi': 'Asia/Dubai', singapore: 'Asia/Singapore',
+  london: 'Europe/London', manchester: 'Europe/London', berlin: 'Europe/Berlin',
+  paris: 'Europe/Berlin', 'new york': 'America/New_York', 'new jersey': 'America/New_York',
+  chicago: 'America/Chicago', 'san francisco': 'America/Los_Angeles', 'los angeles': 'America/Los_Angeles',
+  seattle: 'America/Los_Angeles', tokyo: 'Asia/Tokyo', sydney: 'Australia/Sydney',
+};
+const guessTimezone = (cityName) => {
+  if (!cityName) return null;
+  const key = String(cityName).trim().toLowerCase();
+  return CITY_TZ[key] || null;
+};
+
 const MasterSites = () => {
   const [sites, setSites] = useState([]);
   const [clients, setClients] = useState([]);
@@ -336,7 +350,7 @@ const MasterSites = () => {
                 </div>
                 <div>
                   <label className="text-sm font-medium text-text-primary">City</label>
-                  <select data-testid="site-city-select" required value={form.city_id} onChange={(e) => setForm({ ...form, city_id: e.target.value })} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-primary bg-white">
+                  <select data-testid="site-city-select" required value={form.city_id} onChange={(e) => { const tz = guessTimezone(cityName(e.target.value)); setForm({ ...form, city_id: e.target.value, ...(tz ? { timezone: tz } : {}) }); }} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-primary bg-white">
                     <option value="">Select city…</option>
                     {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
