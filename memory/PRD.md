@@ -1,5 +1,17 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Refund from Settlement (issue/retry + watch pending clear) (COMPLETED ✅, needs deploy)
+
+**Requested**: From the Settlement view, let a finance/admin user issue or retry a refund straight from the row and watch refund-pending clear.
+**Implemented**:
+- **Backend** `routers/orders.py` `refund_order` (POST /orders/{id}/refund) hardened & corrected: authorizes **vendor + master_admin + Accounts/Finance (sub_admin w/ `sales:view_all`)**; allows **RETRY** of `refund_pending`/`refund_failed` (only blocks already `refunded`/`refunded_mock`); **offline/cash → immediate `refunded`** (no gateway call — the earlier code wrongly hit Razorpay for cash); razorpay → mock `refunded_mock` or real gateway (now falls back to `order.razorpay_payment_id`); gateway error → **`refund_failed` (200, retryable)** instead of 500.
+- **Backend** `routers/admin_sales.py` new `GET /admin/refunds/pending` — lists paid+cancelled orders not yet successfully refunded (refund_status none/pending/failed), scoped exactly like the sales report (same filter params). Returns `{count, items:[{order_id,date,site,vendor,employee,amount,gateway,refund_status}]}`.
+- **Frontend** `SalesReport.js`: `load()` now does 3 parallel fetches (sales + settlement + refunds/pending); new **"Pending refunds"** DataTable inside the settlement section (`refund-pending-panel` / `refund-pending-table`, rows `refund-order-{id}`) with a per-row action `refund-action-{id}` ("Issue refund" / "Retry"). `issueRefund()` POSTs then reloads so the row clears and the settlement Refunds buckets recompute live. Buttons shown only when `canRefund` (master_admin or sub_admin w/ sales:view_all).
+**Verified**: testing_agent **iteration_80 = backend 100% (7/7) + frontend 100%** (`tests/test_refund_actions.py`): offline `refund_pending` ₹140 → retry → `refunded`, row clears, settlement pending 1→0 / refunded +₹140; offline `none` ₹100 → Issue refund → cleared (by finance user); razorpay fake id → `refund_failed` (200, stays retryable, no crash); finance authorized; **corporate_admin denied (403 + no buttons)**; regression clean; 0px overflow. Seed data cleaned up.
+**Note**: env is live Razorpay (`RAZORPAY_MOCK_MODE=false`), so razorpay refunds only complete against real captured payments; offline/cash refunds complete instantly.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Jun 2026 — Settlement View (per-gateway + refunds/cancellations reconciliation) (COMPLETED ✅, needs deploy)
 
 **Requested**: Give accounting a per-gateway (Razorpay) settlement + refunds/cancellations breakdown for reconciliation.
