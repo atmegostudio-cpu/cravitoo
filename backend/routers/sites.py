@@ -1237,7 +1237,12 @@ def make_router(db, safe_objectid, get_current_user, hash_password, current_meal
 
     def _sanitize_perms(perms):
         valid = {p["key"] for p in SUB_ADMIN_PERMISSIONS}
-        return [p for p in (perms or []) if p in valid]
+        clean = [p for p in (perms or []) if p in valid]
+        # Accounts-only contract: sales:view_all (company-wide finance) is
+        # exclusive — it can never be combined with any other permission.
+        if "sales:view_all" in clean:
+            return ["sales:view_all"]
+        return clean
 
     async def _email_subadmin_invite(email_lower: str, name: str, magic_url: str) -> bool:
         try:

@@ -1,5 +1,19 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Accounts / Finance role (sales-only, no admin panel) (COMPLETED ✅, needs deploy)
+
+**Requested**: A restricted role for the accounting team — access ONLY sales & accounting data (day/site/vendor-wise sales, payments, Excel), with NO access to the main Admin Panel. User choices: support company-wide AND limited scope; a one-click "Accounts / Finance" preset in Master → Admins with an "All sites" option + finance-focused dashboard; also add an on-screen payment breakdown (paid vs pending + by method) to the Sales Report.
+**Assessment**: Built on the existing `sub_admin` RBAC (deny-by-default) rather than a brand-new role — lowest risk, reuses the magic-link invite flow.
+**Implemented**:
+- **New permission `sales:view_all`** (`models.py` SUB_ADMIN_PERMISSIONS) = company-wide finance. `admin_sales.py::_allowed_site_ids` returns `None` (all sites, like master) when a sub_admin has it; otherwise scoped `sales:view`. Everything else stays 403 (no admin panel).
+- **Server-side accounts-only guard** (`sites.py::_sanitize_perms`): if `sales:view_all` is present it is forced to be the ONLY permission (can't be mixed with clients/vendors/etc.) — verified via curl (mixed input → only `sales:view_all` persisted). Applies to both create + update.
+- **Payment reconciliation**: `_gather` now returns `per_payment_status` (paid/pending/…) + `per_payment_method` (with paid_amount); xlsx export gains a **"By Payment"** sheet. Sales Report UI shows a new section (`sales-payment-breakdown`): paid/pending chips (`sales-pay-status-{status}`) + By-Payment-Method DataTable (`sales-per-payment-table`). Benefits all report viewers.
+- **Master → Admins** (`Admins.js`): new **"Accounts / Finance (sales-only)"** role option — disabled password (magic link), **"Access all sites (company-wide)"** toggle (`accounts-all-sites`, default on → `sales:view_all`; off → scope checkboxes `accounts-scope-*` + `sales:view`). Preview modal + Sub-Admins list render it. New role meta (teal, Wallet icon).
+- **Finance dashboard**: `subadmin/Dashboard.js` "Sales & Accounting" card (`sub-admin-card-sales-view_all`) + scope line "All sites · company-wide (finance)". `Navbar.js` shows the Sales link for `sales:view` OR `sales:view_all`.
+**Verified**: testing_agent **iteration_78 = backend 100% (4/4) + frontend 100%** (`tests/test_accounts_finance_role.py`): create → magic-link set-password → role sub_admin w/ `['sales:view_all']`; RBAC deny (403 on /admin/admins, /admin/sub-admins; UI redirects away from /master/*); all-sites sales-report 200 with payment breakdown (paid ₹210/1, pending ₹120/1); xlsx w/ By Payment sheet; limited-scope variant creates; master report also carries the new fields; 0px overflow desktop+mobile. Test users cleaned up.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Jun 2026 — Reports Polish: unified header/filter/table styling (Pass 2) (COMPLETED ✅, needs deploy)
 
 **Requested**: Apply the same consistent header, filter bar and table styling to the Sales Report and vendor report pages so every report screen feels identical (UI-only, no data-logic change).
