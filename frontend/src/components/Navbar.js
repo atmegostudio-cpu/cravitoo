@@ -48,21 +48,28 @@ const getNavItems = (user) => {
       return [
         { path: '/employee/dashboard', label: 'Home', icon: Home },
         { path: '/employee/menu', label: 'Menu', icon: UtensilsCrossed },
-        { path: '/employee/reservations', label: 'Pre-order', icon: CalendarCheck },
         { path: '/employee/orders', label: 'Orders', icon: ShoppingBag },
-        { path: '/employee/bulk-order', label: 'Team Order', icon: Users },
-        { path: '/employee/events', label: 'Events', icon: CalendarDays },
-        { path: '/employee/loyalty', label: 'Rewards', icon: Award },
-        { path: '/employee/feedback', label: 'Feedback', icon: MessageSquare },
+        {
+          group: 'More', icon: LayoutGrid, links: [
+            { path: '/employee/reservations', label: 'Pre-order', icon: CalendarCheck },
+            { path: '/employee/bulk-order', label: 'Team Order', icon: Users },
+            { path: '/employee/events', label: 'Events', icon: CalendarDays },
+            { path: '/employee/loyalty', label: 'Rewards', icon: Award },
+            { path: '/employee/feedback', label: 'Feedback', icon: MessageSquare },
+          ],
+        },
       ];
     case 'vendor': {
       const isOperator = (user?.assigned_vendors?.length || 0) > 1;
       return [
         { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
         { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
-        ...(isOperator ? [{ path: '/vendor/all-orders', label: 'All Outlets', icon: Store }] : []),
-        ...(isOperator ? [{ path: '/vendor/all-outlets-sales', label: 'Total Sales', icon: BarChart3 }] : []),
-        { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
+        ...(isOperator ? [{
+          group: 'Outlets', icon: Store, links: [
+            { path: '/vendor/all-orders', label: 'All Outlets', icon: Store },
+            { path: '/vendor/all-outlets-sales', label: 'Total Sales', icon: BarChart3 },
+          ],
+        }] : []),
         {
           group: 'Menu', icon: UtensilsCrossed, links: [
             { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
@@ -72,6 +79,7 @@ const getNavItems = (user) => {
         },
         {
           group: 'More', icon: LayoutGrid, links: [
+            { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
             { path: '/vendor/feedback', label: 'Feedback', icon: MessageSquare },
             { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },
             { path: '/vendor/verify-pickup', label: 'Pickup', icon: QrCode },
@@ -238,7 +246,7 @@ const Navbar = () => {
         <div className="flex items-center gap-4 sm:gap-6 min-w-0">
           <button
             onClick={() => setMobileOpen(true)}
-            className="md:hidden p-2 -ml-2 rounded-lg text-text-secondary hover:bg-background"
+            className="lg:hidden p-2 -ml-2 rounded-lg text-text-secondary hover:bg-background"
             aria-label="Open menu"
             data-testid="mobile-menu-toggle"
           >
@@ -248,7 +256,7 @@ const Navbar = () => {
             <img src={LOGO_URL} alt="Cravitoo" className="h-9 sm:h-10 w-auto object-contain" />
           </Link>
 
-          <div className="hidden md:flex items-center gap-0.5">
+          <div className="hidden lg:flex items-center gap-0.5 min-w-0">
             {items.map((item) => {
               if (item.group) {
                 return <NavDropdown key={item.group} group={item.group} icon={item.icon} links={item.links} />;
@@ -272,15 +280,15 @@ const Navbar = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-shrink-0">
           {user?.role === 'employee' && (
-            <Link to="/employee/preferences" data-testid="nav-preferences" className="hidden lg:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200">
+            <Link to="/employee/preferences" data-testid="nav-preferences" className="hidden xl:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200" title="Preferences">
               <Heart className="h-4 w-4" />
               <span className="text-xs">Preferences</span>
             </Link>
           )}
           {user?.role === 'employee' && (
-            <Link to="/employee/subscriptions" data-testid="nav-subscriptions" className="hidden lg:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200">
+            <Link to="/employee/subscriptions" data-testid="nav-subscriptions" className="hidden xl:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200" title="Meal Plans">
               <Calendar className="h-4 w-4" />
               <span className="text-xs">Plans</span>
             </Link>
@@ -308,7 +316,7 @@ const Navbar = () => {
           <Link
             to="/settings/security"
             data-testid="nav-change-password"
-            className="hidden lg:flex items-center space-x-1 text-text-secondary hover:text-primary px-2 py-2 rounded-lg transition-all duration-200"
+            className="hidden xl:flex items-center space-x-1 text-text-secondary hover:text-primary px-2 py-2 rounded-lg transition-all duration-200"
             title="Change Password"
             aria-label="Change Password"
           >
@@ -318,7 +326,7 @@ const Navbar = () => {
           <Link
             to="/settings/data"
             data-testid="nav-data-privacy"
-            className="hidden lg:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200"
+            className="hidden xl:flex items-center space-x-1 text-text-secondary hover:text-text-primary px-2 py-2 rounded-lg transition-all duration-200"
             title="Data & Privacy"
           >
             <Shield className="h-4 w-4" />
@@ -356,7 +364,7 @@ const Navbar = () => {
 
       {/* Mobile slide-in drawer */}
       {mobileOpen && createPortal(
-        <div className="md:hidden fixed inset-0 z-[60]" data-testid="mobile-menu-drawer">
+        <div className="lg:hidden fixed inset-0 z-[60]" data-testid="mobile-menu-drawer">
           <button
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}
