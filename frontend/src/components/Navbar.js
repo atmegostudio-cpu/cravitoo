@@ -30,7 +30,7 @@ const OutletSwitcher = () => {
         data-testid="outlet-switcher-select"
         value={data.active_vendor_id || ''}
         onChange={(e) => change(e.target.value)}
-        className="text-sm font-medium bg-background border border-border-light rounded-lg px-2 py-1.5 max-w-[150px] focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="text-sm font-medium bg-background border border-border-light rounded-lg px-2 py-1.5 max-w-[128px] focus:outline-none focus:ring-2 focus:ring-primary/40"
       >
         {data.outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
       </select>
@@ -185,7 +185,7 @@ const NavDropdown = ({ group, icon: Icon, links }) => {
         onClick={() => setOpen((v) => !v)}
         data-testid={`nav-group-${slug(group)}`}
         aria-expanded={open}
-        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all duration-200 ${
+        className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg transition-all duration-200 ${
           active || open ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-background'
         }`}
       >
@@ -239,6 +239,12 @@ const Navbar = () => {
   };
 
   const items = getNavItems(user);
+  // Vendor has a heavier right cluster (outlet switcher + alerts pill), so its
+  // horizontal nav needs more room — show it only from xl; others from lg.
+  const isVendor = user?.role === 'vendor';
+  const desktopNavClass = isVendor ? 'hidden xl:flex' : 'hidden lg:flex';
+  const hamburgerClass = isVendor ? 'xl:hidden' : 'lg:hidden';
+  const drawerHideClass = isVendor ? 'xl:hidden' : 'lg:hidden';
 
   return (
     <nav className="sticky top-0 z-50 glass border-b border-border-light px-4 sm:px-6 py-3 sm:py-4">
@@ -246,7 +252,7 @@ const Navbar = () => {
         <div className="flex items-center gap-4 sm:gap-6 min-w-0">
           <button
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden p-2 -ml-2 rounded-lg text-text-secondary hover:bg-background"
+            className={`${hamburgerClass} p-2 -ml-2 rounded-lg text-text-secondary hover:bg-background`}
             aria-label="Open menu"
             data-testid="mobile-menu-toggle"
           >
@@ -256,7 +262,7 @@ const Navbar = () => {
             <img src={LOGO_URL} alt="Cravitoo" className="h-9 sm:h-10 w-auto object-contain" />
           </Link>
 
-          <div className="hidden lg:flex items-center gap-0.5 min-w-0">
+          <div className={`${desktopNavClass} items-center gap-0.5 min-w-0`}>
             {items.map((item) => {
               if (item.group) {
                 return <NavDropdown key={item.group} group={item.group} icon={item.icon} links={item.links} />;
@@ -268,7 +274,7 @@ const Navbar = () => {
                   key={item.path}
                   to={item.path}
                   data-testid={`nav-${slug(item.label)}`}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 ${
                     isActive ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary hover:bg-background'
                   }`}
                 >
@@ -364,7 +370,7 @@ const Navbar = () => {
 
       {/* Mobile slide-in drawer */}
       {mobileOpen && createPortal(
-        <div className="lg:hidden fixed inset-0 z-[60]" data-testid="mobile-menu-drawer">
+        <div className={`${drawerHideClass} fixed inset-0 z-[60]`} data-testid="mobile-menu-drawer">
           <button
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}

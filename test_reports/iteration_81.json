@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only navbar overlap regression tests across Vendor/Employee/Admin at 1920, 1280, 900, 390 widths. Vendor Dashboard: no overlap at 1920 (13px gap between nav-group-more right=948 and outlet-switcher left=961) but REAL overlap at 1280 where nav-group-more (right=653) intersects outlet-switcher (left=616, y-overlap present) — visually confirmed in screenshot. Employee Dashboard fully fixed (no overlaps at 1920 or 1280). Admin regression unaffected. Dropdowns (outlets/menu/more) open correctly, outlet-switcher preserves value, mobile hamburger appears <lg and drawer works, no horizontal overflow at any tested viewport. Note: reported overlap between 'outlet-switcher' and 'outlet-switcher-select' is a nested-elements false positive (select is child of switcher container).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Navbar (Vendor Dashboard)",
+        "issue": "At desktop width 1280x800, the left top-level nav cluster still overlaps the right controls: nav-group-more bounding box (x=553..653, y=19..59) intersects outlet-switcher (x=616..788, y=21..61). Screenshot confirms the 'More' caret is visually covered by the outlet-switcher dropdown arrow. The fix (raising breakpoint md->lg + flex-shrink-0) is insufficient at 1280 because the vendor has 2 static links (Dashboard, Orders) + 3 groups (Outlets, Menu, More) + right cluster (bell, outlet switcher ~172px, alerts button, TZ Operator label ~120px, logout) — cumulative width exceeds 1280 available px at the desktop breakpoint. At 1920 there is a comfortable 13px gap so it looks fine.",
+        "selector": "[data-testid=\"nav-group-more\"] vs [data-testid=\"outlet-switcher\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Vendor navbar still overlaps at 1280px (lg breakpoint = 1024px in Tailwind default). Options: (a) raise vendor-specific breakpoint from lg to xl for the desktop nav, OR (b) reduce right-cluster width at lg (hide the 'Enable alerts' pill and user-role subtitle until xl, or move 'TZ Operator / Vendor' text behind an avatar-only trigger), OR (c) shorten the outlet-switcher (icon-only trigger with dropdown at lg), OR (d) merge Outlets+Menu+More into fewer groups for vendor operators. Verify no overlap at both 1280 and 1366 after fix.",
+    "Employee dashboard is fine — no change needed."
+  ],
+  "critical_code_review_comments": [
+    "Navbar.js: The desktop nav breakpoint is lg (1024px) but vendor with 5 top items + heavy right cluster (bell + outlet switcher + alerts pill + role label + logout) requires ~1300+ px. Consider using xl or a min-width media query on vendor-specific nav.",
+    "Right controls cluster width (~640px on vendor at 1280) leaves only ~640px for left cluster which needs ~570px — margin too small; single label change can regress it."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "80%"},
+  "test_credentials": "Vendor: tz_operator@cravitoo.com/Pass1234; Employee: audit_emp_a@corpa.com/Audit#1234; Admin: admin@cravitoo.com/admin123 — all working.",
+  "seed_data_creation": "",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Overlap detection script measured all [data-testid] rects inside <nav>. Ignore ('outlet-switcher','outlet-switcher-select') pair — the select is nested inside the switcher container so their rects always intersect (not a real overlap). Real overlap to watch: (nav-group-more, outlet-switcher) on vendor at 1280. Employee & admin passed all viewports.",
+  "rca of the issue": "Vendor navbar left cluster width (Dashboard 122 + Orders 94 + Outlets 116 + Menu 104 + More 100 + gaps ~10 ≈ 570px starting at x≈109) plus right cluster (~640px anchored to right edge) requires >1210px for zero overlap. At 1280 available inner width, they overlap by ~37px. Fix by raising breakpoint to xl for vendor or trimming right cluster (icon-only outlet switcher / hide role subtitle until xl)."
+}
