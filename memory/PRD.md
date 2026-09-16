@@ -1,5 +1,15 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Settlement View (per-gateway + refunds/cancellations reconciliation) (COMPLETED ✅, needs deploy)
+
+**Requested**: Give accounting a per-gateway (Razorpay) settlement + refunds/cancellations breakdown for reconciliation.
+**Implemented (UI + one new endpoint; no changes to order/payment logic)**:
+- **Backend** `admin_sales.py`: new `_gather_settlement()` (queries orders **including** cancelled/refunded — unlike `_gather` which excludes them) + route `GET /api/admin/settlement-report` (json + `format=xlsx`). Same filter params & access control as sales-report (reuses `_allowed_site_ids`: master & `sales:view_all` → all sites; corporate/site scoped; sub_admin without sales perms → 403). Gateway bucket = `razorpay` if `payment_method=='razorpay'` or `payment_mode=='RAZORPAY'`, else `offline`. Returns `{gross_amount, refunded_amount, net_amount, per_gateway[], refunds{refunded|refund_pending|refund_failed}, cancellations{total, paid_cancelled, unpaid_cancelled, by_actor[]}}`. xlsx has **"Settlement"** + **"Refunds & Cancellations"** sheets.
+- **Frontend** `SalesReport.js`: `load()` fetches settlement in parallel; new "Settlement & Reconciliation" section (testid `sales-settlement`) below the payment breakdown — 3 StatCards (`settle-gross`/`settle-refunded`/`settle-net`), a "By Gateway" DataTable (`settle-per-gateway`, rows `settle-gateway-{razorpay|offline}` with Gross/Refunded/Net), a Refunds & Cancellations panel (`settle-refunds-cancellations`, `settle-refund-*`, `settle-cancel-total`, by-actor chips), and a "Settlement Excel" button (`sales-download-settlement-btn`). Visible to everyone who can see the report (incl. the Accounts/Finance role).
+**Verified**: testing_agent **iteration_79 = backend 100% (3/3, 1 non-regression skip) + frontend 100%** (`tests/test_settlement_report.py`): exact math confirmed on seeded 2026-09 data (gross ₹660 / refunded ₹150 / net ₹510; razorpay 2 orders 450→300 net, offline 210; refunds.refunded 1/₹150; cancellations 2 total, paid 1/₹150, unpaid 1/₹0, by_actor master_admin+customer); xlsx sheets present; finance (`sales:view_all`) gets same all-sites data + Excel; RBAC deny still holds; 0px overflow desktop+mobile. Seed `_settle_test` orders deleted after test.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Jun 2026 — Accounts / Finance role (sales-only, no admin panel) (COMPLETED ✅, needs deploy)
 
 **Requested**: A restricted role for the accounting team — access ONLY sales & accounting data (day/site/vendor-wise sales, payments, Excel), with NO access to the main Admin Panel. User choices: support company-wide AND limited scope; a one-click "Accounts / Finance" preset in Master → Admins with an "All sites" option + finance-focused dashboard; also add an on-screen payment breakdown (paid vs pending + by method) to the Sales Report.
