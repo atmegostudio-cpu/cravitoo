@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check } from 'lucide-react';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
+import { FilterBar, DateModeChips, DataTable, filterInputClass } from '../../components/ui/report-kit';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -88,42 +91,6 @@ const MultiSelect = ({ label, icon: Icon, options = [], selected = [], onChange,
     </div>
   );
 };
-
-const SummaryTable = ({ title, icon: Icon, rows, cols, emptyText, testid, headerExtra }) => (
-  <div className="bg-card border border-border-light rounded-2xl overflow-hidden" data-testid={testid}>
-    <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
-      <Icon className="h-5 w-5 text-primary" />
-      <h2 className="font-heading text-lg font-semibold text-text-primary">{title}</h2>
-      {headerExtra ? <div className="ml-auto">{headerExtra}</div> : null}
-    </div>
-    {rows.length === 0 ? (
-      <div className="p-8 text-center text-text-muted text-sm">{emptyText}</div>
-    ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-background text-xs text-text-muted uppercase tracking-wider">
-            <tr>
-              {cols.map((c) => (
-                <th key={c.key} className={`px-5 py-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-light">
-            {rows.map((row, i) => (
-              <tr key={i} data-testid={`${testid}-row-${i}`} className="hover:bg-background/50">
-                {cols.map((c) => (
-                  <td key={c.key} className={`px-5 py-3 ${c.align === 'right' ? 'text-right font-mono font-semibold' : 'text-text-primary'} ${c.strong ? 'font-medium' : 'text-text-secondary'}`}>
-                    {c.render ? c.render(row) : row[c.key]}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )}
-  </div>
-);
 
 const SalesReport = () => {
   const [mode, setMode] = useState('range'); // 'range' | 'date' | 'month'
@@ -242,17 +209,14 @@ const SalesReport = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-          <div className="mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary flex items-center gap-3">
-              <BarChart3 className="h-9 w-9 text-primary" /> Sales Report
-            </h1>
-            <p className="text-text-secondary mt-2 max-w-3xl">
-              Drill down by <strong>Client → City → Site → Vendor</strong> (compare multiple at once), scoped to your role. Filter by a single day, a date range, or a month, then download the full breakdown as Excel.
-            </p>
-          </div>
+          <PageHeader
+            title="Sales Report"
+            subtitle="Drill down by Client → City → Site → Vendor (compare multiple at once), scoped to your role. Filter by day, range, or month, then export the full breakdown."
+            icon={BarChart3}
+          />
 
           {/* Filters */}
-          <div className="bg-card border border-border-light rounded-2xl p-5 mb-6" data-testid="sales-filter-panel">
+          <FilterBar testid="sales-filter-panel">
             {/* Cascading multi-selects */}
             <div className="flex items-start gap-3 flex-wrap mb-4">
               <MultiSelect label="Client" icon={Briefcase} testid="sales-filter-client"
@@ -269,22 +233,16 @@ const SalesReport = () => {
 
             {/* Date mode chips */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
-              {[
-                { k: 'range', label: 'Date range' },
-                { k: 'date', label: 'Single day' },
-                { k: 'month', label: 'Month' },
-              ].map((t) => (
-                <button
-                  key={t.k}
-                  data-testid={`sales-mode-${t.k}`}
-                  onClick={() => setMode(t.k)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    mode === t.k ? 'bg-primary text-white' : 'bg-background text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
+              <DateModeChips
+                mode={mode}
+                onChange={setMode}
+                testidPrefix="sales-mode"
+                modes={[
+                  { k: 'range', label: 'Date range' },
+                  { k: 'date', label: 'Single day' },
+                  { k: 'month', label: 'Month' },
+                ]}
+              />
               {anyFilter ? (
                 <button
                   data-testid="sales-clear-filters"
@@ -336,7 +294,7 @@ const SalesReport = () => {
                 Download Excel
               </button>
             </div>
-          </div>
+          </FilterBar>
 
           {error && <div data-testid="sales-error" className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
 
@@ -346,19 +304,13 @@ const SalesReport = () => {
             <>
               {/* Summary cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div className="bg-card border border-border-light rounded-2xl p-5" data-testid="sales-grand-total">
-                  <div className="flex items-center gap-2 text-text-muted text-sm mb-1"><TrendingUp className="h-4 w-4" /> Total Sales</div>
-                  <div className="text-3xl font-semibold text-text-primary">{inr(data.grand_total)}</div>
-                </div>
-                <div className="bg-card border border-border-light rounded-2xl p-5" data-testid="sales-order-count">
-                  <div className="flex items-center gap-2 text-text-muted text-sm mb-1"><ShoppingBag className="h-4 w-4" /> Orders</div>
-                  <div className="text-3xl font-semibold text-text-primary">{data.order_count}</div>
-                </div>
+                <StatCard testid="sales-grand-total" label="Total Sales" value={inr(data.grand_total)} icon={TrendingUp} tone="primary" />
+                <StatCard testid="sales-order-count" label="Orders" value={data.order_count} icon={ShoppingBag} tone="indigo" />
               </div>
 
               {/* City + Client row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <SummaryTable
+                <DataTable
                   title="Sales by City" icon={MapPin} testid="sales-by-city"
                   rows={data.city_summary || []} emptyText="No sales in this period."
                   cols={[
@@ -366,7 +318,7 @@ const SalesReport = () => {
                     { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
                   ]}
                 />
-                <SummaryTable
+                <DataTable
                   title="Sales by Client" icon={Briefcase} testid="sales-by-client"
                   rows={data.client_summary || []} emptyText="No sales in this period."
                   cols={[
@@ -374,7 +326,7 @@ const SalesReport = () => {
                     { key: 'total', label: 'Total', align: 'right', render: (r) => inr(r.total) },
                   ]}
                 />
-                <SummaryTable
+                <DataTable
                   title="Sales by Customer Type" icon={Users} testid="sales-by-customer-type"
                   rows={data.customer_type_summary || []} emptyText="No sales in this period."
                   cols={[
@@ -386,7 +338,7 @@ const SalesReport = () => {
 
               {/* Site + Vendor row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <SummaryTable
+                <DataTable
                   title="Sales by Site" icon={Building2} testid="sales-by-site"
                   rows={data.site_summary || []} emptyText="No sales in this period."
                   cols={[
@@ -413,7 +365,7 @@ const SalesReport = () => {
                     </div>
                   );
                   return (
-                    <SummaryTable
+                    <DataTable
                       title="Sales by Vendor" icon={Store} testid="sales-by-vendor"
                       headerExtra={vendorToggle}
                       rows={vendorRows} emptyText="No sales in this period."

@@ -3,6 +3,9 @@ import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { Download, IndianRupee, ShoppingBag, TrendingUp, Store, Layers, Loader2 } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
+import { FilterBar, DateModeChips, DataTable, filterInputClass } from '../../components/ui/report-kit';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const inr = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -65,10 +68,10 @@ const AllOutletsReport = () => {
 
   const summary = data?.summary || {};
   const cards = [
-    { label: 'Total Sales', value: inr(summary.total_amount), icon: IndianRupee, color: 'text-primary bg-primary-light' },
-    { label: 'Total Orders', value: summary.total_orders || 0, icon: ShoppingBag, color: 'text-indigo-700 bg-indigo-50' },
-    { label: 'Paid', value: inr(summary.paid_amount), icon: TrendingUp, color: 'text-emerald-700 bg-emerald-50' },
-    { label: 'Avg Order', value: inr(summary.avg_order_value), icon: Layers, color: 'text-amber-700 bg-amber-50' },
+    { label: 'Total Sales', value: inr(summary.total_amount), icon: IndianRupee, tone: 'primary' },
+    { label: 'Total Orders', value: summary.total_orders || 0, icon: ShoppingBag, tone: 'indigo' },
+    { label: 'Paid', value: inr(summary.paid_amount), icon: TrendingUp, tone: 'green' },
+    { label: 'Avg Order', value: inr(summary.avg_order_value), icon: Layers, tone: 'amber' },
   ];
 
   return (
@@ -76,58 +79,61 @@ const AllOutletsReport = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8" data-testid="all-outlets-report-page">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h1 className="font-heading text-3xl sm:text-4xl tracking-tight font-semibold text-text-primary flex items-center gap-2">
-                <Store className="h-7 w-7 text-primary" /> Total Sales
-              </h1>
-              <p className="text-xs sm:text-sm text-text-muted mt-1">Combined sales across all your outlets — with vendor-wise and counter-wise breakdowns.</p>
-            </div>
-            <button
-              data-testid="download-xlsx-btn"
-              onClick={download}
-              disabled={downloading || loading}
-              className="flex items-center justify-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50"
-            >
-              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Excel
-            </button>
-          </div>
+          <PageHeader
+            title="Total Sales"
+            subtitle="Combined sales across all your outlets — with vendor-wise and counter-wise breakdowns."
+            icon={Store}
+            actions={
+              <button
+                data-testid="download-xlsx-btn"
+                onClick={download}
+                disabled={downloading || loading}
+                className="flex items-center justify-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover disabled:opacity-50"
+              >
+                {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Excel
+              </button>
+            }
+          />
 
           {/* Filters */}
-          <div className="bg-card border border-border-light rounded-2xl p-4 mb-6 flex flex-wrap items-end gap-3" data-testid="report-filters">
-            <div>
-              <label className="text-xs font-medium text-text-muted block mb-1">Filter by</label>
-              <select data-testid="report-mode" value={mode} onChange={(e) => setMode(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg bg-white text-sm">
-                <option value="month">Month</option>
-                <option value="range">Date range</option>
-                <option value="single">Single date</option>
-              </select>
+          <FilterBar testid="report-filters">
+            <DateModeChips
+              mode={mode}
+              onChange={setMode}
+              testidPrefix="report-mode"
+              modes={[
+                { k: 'month', label: 'Month' },
+                { k: 'range', label: 'Date range' },
+                { k: 'single', label: 'Single date' },
+              ]}
+            />
+            <div className="flex flex-wrap items-end gap-3 mt-4">
+              {mode === 'month' && (
+                <div>
+                  <label className="text-xs font-medium text-text-muted block mb-1">Month</label>
+                  <input data-testid="report-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={filterInputClass} />
+                </div>
+              )}
+              {mode === 'single' && (
+                <div>
+                  <label className="text-xs font-medium text-text-muted block mb-1">Date</label>
+                  <input data-testid="report-single" type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} className={filterInputClass} />
+                </div>
+              )}
+              {mode === 'range' && (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-text-muted block mb-1">From</label>
+                    <input data-testid="report-from" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={filterInputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-text-muted block mb-1">To</label>
+                    <input data-testid="report-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className={filterInputClass} />
+                  </div>
+                </>
+              )}
             </div>
-            {mode === 'month' && (
-              <div>
-                <label className="text-xs font-medium text-text-muted block mb-1">Month</label>
-                <input data-testid="report-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
-              </div>
-            )}
-            {mode === 'single' && (
-              <div>
-                <label className="text-xs font-medium text-text-muted block mb-1">Date</label>
-                <input data-testid="report-single" type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
-              </div>
-            )}
-            {mode === 'range' && (
-              <>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">From</label>
-                  <input data-testid="report-from" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">To</label>
-                  <input data-testid="report-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
-                </div>
-              </>
-            )}
-          </div>
+          </FilterBar>
 
           {error && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg mb-4">{error}</p>}
 
@@ -138,59 +144,45 @@ const AllOutletsReport = () => {
               {/* Summary cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8" data-testid="report-summary">
                 {cards.map((c) => (
-                  <div key={c.label} className="bg-card border border-border-light rounded-2xl p-4">
-                    <div className={`inline-flex p-2 rounded-lg mb-3 ${c.color}`}><c.icon className="h-5 w-5" /></div>
-                    <p className="text-2xl font-semibold text-text-primary">{c.value}</p>
-                    <p className="text-xs text-text-muted mt-1">{c.label}</p>
-                  </div>
+                  <StatCard key={c.label} label={c.label} value={c.value} icon={c.icon} tone={c.tone} />
                 ))}
               </div>
 
               {/* Vendor-wise */}
-              <div className="bg-card border border-border-light rounded-2xl overflow-hidden mb-8">
-                <div className="px-5 py-3 border-b border-border-light"><h2 className="font-heading text-lg font-semibold text-text-primary">By Outlet (Vendor-wise)</h2></div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm" data-testid="per-vendor-table">
-                    <thead className="bg-background text-text-muted text-xs uppercase">
-                      <tr><th className="text-left px-5 py-2.5">Outlet</th><th className="text-right px-5 py-2.5">Orders</th><th className="text-right px-5 py-2.5">Total Sales</th><th className="text-right px-5 py-2.5">Paid</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-light/60">
-                      {(data?.per_vendor || []).map((v) => (
-                        <tr key={v.vendor_id} data-testid={`per-vendor-row-${v.vendor_id}`}>
-                          <td className="px-5 py-2.5 font-medium text-text-primary">{v.outlet}</td>
-                          <td className="px-5 py-2.5 text-right">{v.orders}</td>
-                          <td className="px-5 py-2.5 text-right font-semibold">{inr(v.total_amount)}</td>
-                          <td className="px-5 py-2.5 text-right text-emerald-700">{inr(v.paid_amount)}</td>
-                        </tr>
-                      ))}
-                      {(data?.per_vendor || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-text-muted">No sales in this period.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="mb-8">
+                <DataTable
+                  title="By Outlet (Vendor-wise)"
+                  testid="per-vendor-table"
+                  rows={data?.per_vendor || []}
+                  emptyText="No sales in this period."
+                  minWidthClass="min-w-[520px]"
+                  rowKey={(v) => v.vendor_id}
+                  rowTestId={(v) => `per-vendor-row-${v.vendor_id}`}
+                  cols={[
+                    { key: 'outlet', label: 'Outlet', strong: true },
+                    { key: 'orders', label: 'Orders', align: 'right' },
+                    { key: 'total_amount', label: 'Total Sales', align: 'right', render: (r) => inr(r.total_amount) },
+                    { key: 'paid_amount', label: 'Paid', align: 'right', render: (r) => <span className="text-emerald-700">{inr(r.paid_amount)}</span> },
+                  ]}
+                />
               </div>
 
               {/* Counter-wise */}
-              <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-border-light"><h2 className="font-heading text-lg font-semibold text-text-primary">By Counter</h2></div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm" data-testid="per-counter-table">
-                    <thead className="bg-background text-text-muted text-xs uppercase">
-                      <tr><th className="text-left px-5 py-2.5">Outlet</th><th className="text-left px-5 py-2.5">Counter</th><th className="text-right px-5 py-2.5">Orders</th><th className="text-right px-5 py-2.5">Total Sales</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-light/60">
-                      {(data?.per_counter || []).map((c, i) => (
-                        <tr key={`${c.vendor_id}-${c.counter}-${i}`} data-testid={`per-counter-row-${i}`}>
-                          <td className="px-5 py-2.5 text-text-secondary">{c.outlet}</td>
-                          <td className="px-5 py-2.5 font-medium text-text-primary">{c.counter}</td>
-                          <td className="px-5 py-2.5 text-right">{c.orders}</td>
-                          <td className="px-5 py-2.5 text-right font-semibold">{inr(c.total_amount)}</td>
-                        </tr>
-                      ))}
-                      {(data?.per_counter || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-text-muted">No counter data in this period.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <DataTable
+                title="By Counter"
+                testid="per-counter-table"
+                rows={data?.per_counter || []}
+                emptyText="No counter data in this period."
+                minWidthClass="min-w-[520px]"
+                rowKey={(c, i) => `${c.vendor_id}-${c.counter}-${i}`}
+                rowTestId={(c, i) => `per-counter-row-${i}`}
+                cols={[
+                  { key: 'outlet', label: 'Outlet' },
+                  { key: 'counter', label: 'Counter', strong: true },
+                  { key: 'orders', label: 'Orders', align: 'right' },
+                  { key: 'total_amount', label: 'Total Sales', align: 'right', render: (r) => inr(r.total_amount) },
+                ]}
+              />
 
               {/* Payment breakdown */}
               <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="payment-breakdown">
@@ -207,27 +199,20 @@ const AllOutletsReport = () => {
                     {(data?.per_payment_status || []).length === 0 && <p className="text-text-muted text-sm">No data.</p>}
                   </div>
                 </div>
-                <div className="bg-card border border-border-light rounded-2xl overflow-hidden">
-                  <div className="px-5 py-3 border-b border-border-light"><h2 className="font-heading text-lg font-semibold text-text-primary">By Payment Method</h2></div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm" data-testid="per-payment-table">
-                      <thead className="bg-background text-text-muted text-xs uppercase">
-                        <tr><th className="text-left px-5 py-2.5">Method</th><th className="text-right px-5 py-2.5">Orders</th><th className="text-right px-5 py-2.5">Total</th><th className="text-right px-5 py-2.5">Paid</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-light/60">
-                        {(data?.per_payment_method || []).map((p, i) => (
-                          <tr key={`${p.method}-${i}`} data-testid={`per-payment-row-${i}`}>
-                            <td className="px-5 py-2.5 font-medium text-text-primary">{cap(p.method)}</td>
-                            <td className="px-5 py-2.5 text-right">{p.orders}</td>
-                            <td className="px-5 py-2.5 text-right font-semibold">{inr(p.total_amount)}</td>
-                            <td className="px-5 py-2.5 text-right text-emerald-700">{inr(p.paid_amount)}</td>
-                          </tr>
-                        ))}
-                        {(data?.per_payment_method || []).length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-text-muted">No payment data in this period.</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <DataTable
+                  title="By Payment Method"
+                  testid="per-payment-table"
+                  rows={data?.per_payment_method || []}
+                  emptyText="No payment data in this period."
+                  rowKey={(p, i) => `${p.method}-${i}`}
+                  rowTestId={(p, i) => `per-payment-row-${i}`}
+                  cols={[
+                    { key: 'method', label: 'Method', strong: true, render: (r) => cap(r.method) },
+                    { key: 'orders', label: 'Orders', align: 'right' },
+                    { key: 'total_amount', label: 'Total', align: 'right', render: (r) => inr(r.total_amount) },
+                    { key: 'paid_amount', label: 'Paid', align: 'right', render: (r) => <span className="text-emerald-700">{inr(r.paid_amount)}</span> },
+                  ]}
+                />
               </div>
             </>
           )}

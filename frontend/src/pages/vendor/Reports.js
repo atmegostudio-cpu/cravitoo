@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { Download, FileText, Filter, IndianRupee, ShoppingBag, TrendingUp, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Download, FileText, IndianRupee, ShoppingBag, TrendingUp, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
+import { FilterBar, DateModeChips, DataTable, FilterField, filterInputClass } from '../../components/ui/report-kit';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -106,91 +109,79 @@ export default function VendorReports() {
   const totalPages = Math.max(1, Math.ceil(total / size));
 
   const cards = summary ? [
-    { label: 'Total Orders',   value: summary.total_orders, icon: ShoppingBag,  color: 'text-indigo-700 bg-indigo-50 ring-indigo-200' },
-    { label: 'Total Sales',    value: fmt(summary.total_amount),   icon: IndianRupee, color: 'text-primary bg-primary-light ring-primary/30' },
-    { label: 'Paid',           value: fmt(summary.paid_amount),    icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50 ring-emerald-200' },
-    { label: 'Pending',        value: fmt(summary.pending_amount), icon: Clock,        color: 'text-amber-700 bg-amber-50 ring-amber-200' },
-    { label: 'Cancelled',      value: fmt(summary.cancelled_amount), icon: XCircle,    color: 'text-red-700 bg-red-50 ring-red-200' },
-    { label: 'Avg order',      value: fmt(summary.avg_order_value),  icon: TrendingUp, color: 'text-slate-700 bg-slate-50 ring-slate-200' },
+    { label: 'Total Orders',   value: summary.total_orders, icon: ShoppingBag,  tone: 'indigo' },
+    { label: 'Total Sales',    value: fmt(summary.total_amount),   icon: IndianRupee, tone: 'primary' },
+    { label: 'Paid',           value: fmt(summary.paid_amount),    icon: CheckCircle2, tone: 'green' },
+    { label: 'Pending',        value: fmt(summary.pending_amount), icon: Clock,        tone: 'amber' },
+    { label: 'Cancelled',      value: fmt(summary.cancelled_amount), icon: XCircle,    tone: 'red' },
+    { label: 'Avg order',      value: fmt(summary.avg_order_value),  icon: TrendingUp, tone: 'slate' },
   ] : [];
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8" data-testid="vendor-reports-page">
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-5 sm:mb-6">
-          <div className="min-w-0 flex-1">
-            <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-semibold text-text-primary flex items-center gap-2">
-              <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" /> Sales Report
-            </h1>
-            <p className="text-xs sm:text-sm text-text-muted mt-1">Track sales across all your counters — download combined or per-counter reports.</p>
-          </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button
-              data-testid="download-csv-all"
-              onClick={() => download('csv')}
-              disabled={!!downloading}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" /> {downloading === 'csv-all' ? 'Downloading…' : 'CSV'}
-            </button>
-            <button
-              data-testid="download-pdf-all"
-              onClick={() => download('pdf')}
-              disabled={!!downloading}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" /> {downloading === 'pdf-all' ? 'Downloading…' : 'PDF'}
-            </button>
-          </div>
-        </div>
+        <PageHeader
+          title="Sales Report"
+          subtitle="Track sales across all your counters — download combined or per-counter reports."
+          icon={FileText}
+          actions={
+            <div className="flex gap-2">
+              <button
+                data-testid="download-csv-all"
+                onClick={() => download('csv')}
+                disabled={!!downloading}
+                className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" /> {downloading === 'csv-all' ? 'Downloading…' : 'CSV'}
+              </button>
+              <button
+                data-testid="download-pdf-all"
+                onClick={() => download('pdf')}
+                disabled={!!downloading}
+                className="flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" /> {downloading === 'pdf-all' ? 'Downloading…' : 'PDF'}
+              </button>
+            </div>
+          }
+        />
 
         {/* Filters */}
-        <div className="bg-card border border-border-light rounded-2xl p-4 mb-5 sm:mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="h-4 w-4 text-text-muted" />
-            <span className="text-xs uppercase tracking-wider font-semibold text-text-muted">Filters</span>
-          </div>
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-text-secondary mb-1">Filter by</label>
-              <select data-testid="filter-mode" value={mode} onChange={(e) => { setMode(e.target.value); setPage(1); }}
-                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
-                <option value="single">Single date</option>
-                <option value="range">Date range</option>
-                <option value="month">Month</option>
-              </select>
-            </div>
+        <FilterBar>
+          <DateModeChips
+            mode={mode}
+            onChange={(k) => { setMode(k); setPage(1); }}
+            testidPrefix="filter-mode"
+            modes={[
+              { k: 'single', label: 'Single date' },
+              { k: 'range', label: 'Date range' },
+              { k: 'month', label: 'Month' },
+            ]}
+          />
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-3 mt-4">
             {mode === 'single' && (
-              <div>
-                <label className="block text-[11px] font-medium text-text-secondary mb-1">Date</label>
-                <input data-testid="filter-single" type="date" value={singleDate} onChange={(e) => { setSingleDate(e.target.value); setPage(1); }}
-                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-              </div>
+              <FilterField label="Date">
+                <input data-testid="filter-single" type="date" value={singleDate} onChange={(e) => { setSingleDate(e.target.value); setPage(1); }} className={filterInputClass} />
+              </FilterField>
             )}
             {mode === 'month' && (
-              <div>
-                <label className="block text-[11px] font-medium text-text-secondary mb-1">Month</label>
-                <input data-testid="filter-month" type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }}
-                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-              </div>
+              <FilterField label="Month">
+                <input data-testid="filter-month" type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }} className={filterInputClass} />
+              </FilterField>
             )}
             {mode === 'range' && (
               <>
-                <div>
-                  <label className="block text-[11px] font-medium text-text-secondary mb-1">From</label>
-                  <input data-testid="filter-from" type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                    className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-text-secondary mb-1">To</label>
-                  <input data-testid="filter-to" type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                    className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                </div>
-                <div className="col-span-2 flex flex-wrap gap-1">
+                <FilterField label="From">
+                  <input data-testid="filter-from" type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} className={filterInputClass} />
+                </FilterField>
+                <FilterField label="To">
+                  <input data-testid="filter-to" type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} className={filterInputClass} />
+                </FilterField>
+                <div className="col-span-2 flex flex-wrap gap-1 items-end">
                   {rangePresets.map(p => (
                     <button key={p.label} data-testid={`preset-${p.days}`} onClick={() => applyPreset(p.days)}
-                      className="text-xs px-2.5 py-1.5 bg-background border border-border-light rounded-lg hover:bg-primary-light hover:border-primary transition-colors">
+                      className="text-xs px-2.5 py-2 bg-background border border-border-light rounded-lg hover:bg-primary-light hover:border-primary transition-colors">
                       {p.label}
                     </button>
                   ))}
@@ -198,87 +189,59 @@ export default function VendorReports() {
               </>
             )}
             {counters.length > 0 && (
-              <div>
-                <label className="block text-[11px] font-medium text-text-secondary mb-1">Counter</label>
-                <select data-testid="filter-counter" value={counter} onChange={(e) => { setCounter(e.target.value); setPage(1); }}
-                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
+              <FilterField label="Counter">
+                <select data-testid="filter-counter" value={counter} onChange={(e) => { setCounter(e.target.value); setPage(1); }} className={filterInputClass}>
                   <option value="">All counters</option>
                   {counters.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-              </div>
+              </FilterField>
             )}
-            <div>
-              <label className="block text-[11px] font-medium text-text-secondary mb-1">Payment</label>
-              <select data-testid="filter-payment" value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }}
-                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
+            <FilterField label="Payment">
+              <select data-testid="filter-payment" value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }} className={filterInputClass}>
                 <option value="all">All</option>
                 <option value="paid">Paid</option>
                 <option value="pending">Pending</option>
                 <option value="failed">Failed</option>
               </select>
-            </div>
+            </FilterField>
           </div>
-        </div>
+        </FilterBar>
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5 sm:mb-6">
           {cards.map(c => (
-            <div key={c.label} data-testid={`kpi-${c.label.toLowerCase().replace(/ /g, '-')}`}
-              className={`rounded-xl p-4 ring-1 ${c.color.split(' ').filter(x => x.includes('ring')).join(' ')} bg-card`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`p-1.5 rounded-lg ${c.color.split(' ').filter(x => x.includes('bg')).join(' ')}`}>
-                  <c.icon className={`h-4 w-4 ${c.color.split(' ').filter(x => x.startsWith('text')).join(' ')}`} />
-                </div>
-                <p className="text-[10px] uppercase font-semibold tracking-wider text-text-muted">{c.label}</p>
-              </div>
-              <p className="font-heading text-xl font-semibold text-text-primary">{c.value}</p>
-            </div>
+            <StatCard key={c.label} testid={`kpi-${c.label.toLowerCase().replace(/ /g, '-')}`} label={c.label} value={c.value} icon={c.icon} tone={c.tone} />
           ))}
         </div>
 
         {/* Per-counter breakdown */}
         {perCounter.length > 1 && (
-          <div className="bg-card border border-border-light rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6" data-testid="per-counter-card">
-            <h2 className="font-heading text-base sm:text-lg font-semibold text-text-primary mb-3">Per-counter breakdown</h2>
-            <div className="-mx-4 sm:mx-0 overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead>
-                  <tr className="text-[11px] uppercase tracking-wider text-text-muted border-b border-border-light">
-                    <th className="text-left py-2">Counter</th>
-                    <th className="text-right">Orders</th>
-                    <th className="text-right">Total</th>
-                    <th className="text-right">Paid</th>
-                    <th className="text-right">Pending</th>
-                    <th className="text-right">Download</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {perCounter.map(pc => (
-                    <tr key={pc.counter} data-testid={`counter-row-${pc.counter}`} className="border-b border-border-light/50">
-                      <td className="py-3 font-medium text-text-primary">{pc.counter}</td>
-                      <td className="text-right">{pc.orders}</td>
-                      <td className="text-right font-semibold">{fmt(pc.total_amount)}</td>
-                      <td className="text-right text-emerald-700">{fmt(pc.paid_amount)}</td>
-                      <td className="text-right text-amber-700">{fmt(pc.pending_amount)}</td>
-                      <td className="text-right">
-                        <div className="inline-flex gap-1">
-                          {pc.counter !== '—' && (
-                            <>
-                              <button onClick={() => download('csv', pc.counter)} disabled={!!downloading}
-                                data-testid={`download-csv-${pc.counter}`}
-                                className="text-xs px-2 py-1 bg-background hover:bg-primary-light border border-border-light rounded">CSV</button>
-                              <button onClick={() => download('pdf', pc.counter)} disabled={!!downloading}
-                                data-testid={`download-pdf-${pc.counter}`}
-                                className="text-xs px-2 py-1 bg-background hover:bg-primary-light border border-border-light rounded">PDF</button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="mb-5 sm:mb-6">
+            <DataTable
+              title="Per-counter breakdown"
+              testid="per-counter-card"
+              rows={perCounter}
+              minWidthClass="min-w-[560px]"
+              rowKey={(pc) => pc.counter}
+              rowTestId={(pc) => `counter-row-${pc.counter}`}
+              cols={[
+                { key: 'counter', label: 'Counter', strong: true },
+                { key: 'orders', label: 'Orders', align: 'right' },
+                { key: 'total_amount', label: 'Total', align: 'right', render: (pc) => fmt(pc.total_amount) },
+                { key: 'paid', label: 'Paid', align: 'right', render: (pc) => <span className="text-emerald-700">{fmt(pc.paid_amount)}</span> },
+                { key: 'pending', label: 'Pending', align: 'right', render: (pc) => <span className="text-amber-700">{fmt(pc.pending_amount)}</span> },
+                {
+                  key: 'download', label: 'Download', render: (pc) => pc.counter !== '—' ? (
+                    <div className="inline-flex gap-1">
+                      <button onClick={() => download('csv', pc.counter)} disabled={!!downloading} data-testid={`download-csv-${pc.counter}`}
+                        className="text-xs px-2 py-1 bg-background hover:bg-primary-light border border-border-light rounded">CSV</button>
+                      <button onClick={() => download('pdf', pc.counter)} disabled={!!downloading} data-testid={`download-pdf-${pc.counter}`}
+                        className="text-xs px-2 py-1 bg-background hover:bg-primary-light border border-border-light rounded">PDF</button>
+                    </div>
+                  ) : null,
+                },
+              ]}
+            />
           </div>
         )}
 
