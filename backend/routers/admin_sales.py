@@ -278,6 +278,153 @@ def make_router(db, safe_objectid, get_current_user):
             "orders": rows,
         }
 
+    async def _gather_settlement(user, date, start, end, month, client_ids, city_ids, site_ids, vendor_ids, customer_types=None):
+        """Reconciliation view — per-gateway settlement + refunds/cancellations.
+        Unlike _gather (sales), this INCLUDES cancelled/refunded orders."""
+        allowed, meta = await _candidate_sites(user)
+        s, e = _parse_range(date, start, end, month)
+        effective = set(meta.keys())
+        if client_ids:
+            effective = {sid for sid in effective if meta[sid].get("company_id") in client_ids}
+        if city_ids:
+            effective = {sid for sid in effective if meta[sid].get("city_id") in city_ids}
+        if site_ids:
+            effective &= set(site_ids)
+        apply_site_filter = (allowed is not None) or bool(client_ids or city_ids or site_ids)
+        q = {"created_at": {"$gte": s, "$lt": e}}  # ALL statuses (incl cancelled)
+        if apply_site_filter:
+            q["site_id"] = {"$in": list(effective)}
+        if vendor_ids:
+            q["vendor_id"] = {"$in": vendor_ids}
+        orders = await db.orders.find(q).to_list(100000)
+
+        ct_filter = set(customer_types) if customer_types else None
+        GW = {
+            "razorpay": {"label": "Razorpay (Online)", "orders": 0, "gross": 0.0, "refunded": 0.0, "rcount": 0},
+            "offline":  {"label": "Offline / Cash",    "orders": 0, "gross": 0.0, "refunded": 0.0, "rcount": 0},
+        }
+        refunds = {"refunded": [0, 0.0], "refund_pending": [0, 0.0], "refund_failed": [0, 0.0]}
+        canc = {"total": [0, 0.0], "paid_cancelled": [0, 0.0], "unpaid_cancelled": [0, 0.0]}
+        by_actor = {}
+        gross = refunded = 0.0
+        for o in orders:
+            ct_label = o.get("customer_type") or "Corporate"
+            if ct_filter and ct_label not in ct_filter:
+                continue
+            amt = float(o.get("total_amount") or 0)
+            paid = (o.get("payment_status") == "paid")
+            method = (o.get("payment_method") or "").lower()
+            mode = (o.get("payment_mode") or "").upper()
+            gw = "razorpay" if (method == "razorpay" or mode == "RAZORPAY") else "offline"
+            rs = o.get("refund_status")
+            is_refunded = rs in ("refunded", "refunded_mock")
+            status = o.get("status")
+            if paid:
+                g = GW[gw]; g["orders"] += 1; g["gross"] += amt; gross += amt
+                if is_refunded:
+                    g["refunded"] += amt; g["rcount"] += 1; refunded += amt
+            if is_refunded:
+                refunds["refunded"][0] += 1; refunds["refunded"][1] += amt
+            elif rs == "refund_pending":
+                refunds["refund_pending"][0] += 1; refunds["refund_pending"][1] += amt
+            elif rs == "refund_failed":
+                refunds["refund_failed"][0] += 1; refunds["refund_failed"][1] += amt
+            if status == "cancelled":
+                canc["total"][0] += 1; canc["total"][1] += (amt if paid else 0.0)
+                if paid:
+                    canc["paid_cancelled"][0] += 1; canc["paid_cancelled"][1] += amt
+                else:
+                    canc["unpaid_cancelled"][0] += 1
+                actor = o.get("cancelled_by") or "unknown"
+                by_actor[actor] = by_actor.get(actor, 0) + 1
+        per_gateway = [{"gateway": k, "label": v["label"], "orders": v["orders"],
+                        "gross_amount": round(v["gross"], 2), "refunded_amount": round(v["refunded"], 2),
+                        "refunded_count": v["rcount"], "net_amount": round(v["gross"] - v["refunded"], 2)}
+                       for k, v in GW.items()]
+        return {
+            "range": {"start": s.isoformat(), "end": e.isoformat()},
+            "gross_amount": round(gross, 2),
+            "refunded_amount": round(refunded, 2),
+            "net_amount": round(gross - refunded, 2),
+            "per_gateway": per_gateway,
+            "refunds": {k: {"count": v[0], "amount": round(v[1], 2)} for k, v in refunds.items()},
+            "cancellations": {
+                "total": {"count": canc["total"][0], "amount": round(canc["total"][1], 2)},
+                "paid_cancelled": {"count": canc["paid_cancelled"][0], "amount": round(canc["paid_cancelled"][1], 2)},
+                "unpaid_cancelled": {"count": canc["unpaid_cancelled"][0], "amount": round(canc["unpaid_cancelled"][1], 2)},
+                "by_actor": [{"by": k, "count": v} for k, v in sorted(by_actor.items(), key=lambda x: -x[1])],
+            },
+        }
+
+    @r.get("/admin/settlement-report")
+    async def settlement_report(
+        date: Optional[str] = None,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        month: Optional[str] = None,
+        client_ids: Optional[str] = None,
+        city_ids: Optional[str] = None,
+        site_ids: Optional[str] = None,
+        vendor_ids: Optional[str] = None,
+        customer_types: Optional[str] = None,
+        format: str = Query("json"),
+        user: dict = Depends(get_current_user),
+    ):
+        data = await _gather_settlement(
+            user, date, start, end, month,
+            _split_ids(client_ids), _split_ids(city_ids),
+            _split_ids(site_ids), _split_ids(vendor_ids),
+            _split_ids(customer_types),
+        )
+        if format != "xlsx":
+            return data
+
+        import openpyxl
+        from openpyxl.styles import Font
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Settlement"
+        ws.append(["Gateway", "Paid Orders", "Gross (₹)", "Refunded (₹)", "Net Settled (₹)"])
+        for c in ws[1]:
+            c.font = Font(bold=True)
+        for g in data["per_gateway"]:
+            ws.append([g["label"], g["orders"], g["gross_amount"], g["refunded_amount"], g["net_amount"]])
+        ws.append(["TOTAL", "", data["gross_amount"], data["refunded_amount"], data["net_amount"]])
+        for cell in ws[ws.max_row]:
+            cell.font = Font(bold=True)
+        ws2 = wb.create_sheet("Refunds & Cancellations")
+        ws2.append(["Refund Status", "Count", "Amount (₹)"])
+        for c in ws2[1]:
+            c.font = Font(bold=True)
+        for k in ("refunded", "refund_pending", "refund_failed"):
+            row = data["refunds"][k]
+            ws2.append([k.replace("_", " ").title(), row["count"], row["amount"]])
+        ws2.append([])
+        hr = ws2.max_row + 1
+        ws2.append(["Cancellations", "Count", "Amount (₹)"])
+        for c in ws2[hr]:
+            c.font = Font(bold=True)
+        cz = data["cancellations"]
+        ws2.append(["Total cancelled", cz["total"]["count"], cz["total"]["amount"]])
+        ws2.append(["Paid then cancelled/refunded", cz["paid_cancelled"]["count"], cz["paid_cancelled"]["amount"]])
+        ws2.append(["Cancelled before payment", cz["unpaid_cancelled"]["count"], cz["unpaid_cancelled"]["amount"]])
+        ws2.append([])
+        hr2 = ws2.max_row + 1
+        ws2.append(["Cancelled By", "Count"])
+        for c in ws2[hr2]:
+            c.font = Font(bold=True)
+        for a in cz["by_actor"]:
+            ws2.append([a["by"], a["count"]])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"cravitoo-settlement-{datetime.now(timezone.utc).strftime('%Y%m%d')}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
     @r.get("/admin/sales-report")
     async def sales_report(
         date: Optional[str] = None,

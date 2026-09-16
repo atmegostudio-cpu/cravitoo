@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check, Wallet } from 'lucide-react';
+import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check, Wallet, Landmark, RotateCcw } from 'lucide-react';
 import { PageHeader } from '../../components/ui/page-header';
 import { StatCard } from '../../components/ui/stat-card';
 import { FilterBar, DateModeChips, DataTable, filterInputClass } from '../../components/ui/report-kit';
@@ -121,8 +121,10 @@ const SalesReport = () => {
   const [customerTypeIds, setCustomerTypeIds] = useState([]);
 
   const [data, setData] = useState(null);
+  const [settlement, setSettlement] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [settleDownloading, setSettleDownloading] = useState(false);
   const [error, setError] = useState('');
 
   // load filter catalog once
@@ -182,11 +184,15 @@ const SalesReport = () => {
     setLoading(true); setError('');
     try {
       const params = buildParams();
-      const { data } = await axios.get(`${API}/admin/sales-report?${params.toString()}`, { withCredentials: true });
-      setData(data);
+      const [salesRes, settleRes] = await Promise.all([
+        axios.get(`${API}/admin/sales-report?${params.toString()}`, { withCredentials: true }),
+        axios.get(`${API}/admin/settlement-report?${params.toString()}`, { withCredentials: true }).catch(() => null),
+      ]);
+      setData(salesRes.data);
+      setSettlement(settleRes ? settleRes.data : null);
     } catch (e) {
       setError(e?.response?.data?.detail || 'Failed to load sales report');
-      setData(null);
+      setData(null); setSettlement(null);
     } finally { setLoading(false); }
   }, [buildParams]);
 
@@ -208,6 +214,24 @@ const SalesReport = () => {
     } catch (e) {
       setError(e?.response?.data?.detail || 'Download failed');
     } finally { setDownloading(false); }
+  };
+
+  const downloadSettlement = async () => {
+    setSettleDownloading(true);
+    try {
+      const params = buildParams();
+      params.set('format', 'xlsx');
+      const resp = await axios.get(`${API}/admin/settlement-report?${params.toString()}`, { responseType: 'blob', withCredentials: true });
+      const blob = new Blob([resp.data], { type: resp.headers['content-type'] || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const period = mode === 'date' ? date : mode === 'month' ? month : `${start}_${end}`;
+      a.download = `cravitoo-settlement-${period}.xlsx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Settlement download failed');
+    } finally { setSettleDownloading(false); }
   };
 
   const anyFilter = clientIds.length || cityIds.length || siteIds.length || vendorIds.length || customerTypeIds.length;
@@ -420,6 +444,67 @@ const SalesReport = () => {
                   ]}
                 />
               </div>
+
+              {/* Settlement & reconciliation */}
+              {settlement && (
+                <div className="mt-8" data-testid="sales-settlement">
+                  <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                    <h2 className="font-heading text-xl font-semibold text-text-primary flex items-center gap-2">
+                      <Landmark className="h-5 w-5 text-primary" /> Settlement &amp; Reconciliation
+                    </h2>
+                    <button data-testid="sales-download-settlement-btn" onClick={downloadSettlement} disabled={settleDownloading}
+                      className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50">
+                      {settleDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />} Settlement Excel
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                    <StatCard testid="settle-gross" label="Gross Collected" value={inr(settlement.gross_amount)} icon={Wallet} tone="primary" />
+                    <StatCard testid="settle-refunded" label="Refunded" value={inr(settlement.refunded_amount)} icon={RotateCcw} tone="red" />
+                    <StatCard testid="settle-net" label="Net Settled" value={inr(settlement.net_amount)} icon={TrendingUp} tone="green" />
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <DataTable
+                      title="By Gateway" icon={Landmark} testid="settle-per-gateway"
+                      rows={settlement.per_gateway || []} emptyText="No settlement data in this period."
+                      rowKey={(g) => g.gateway} rowTestId={(g) => `settle-gateway-${g.gateway}`}
+                      cols={[
+                        { key: 'label', label: 'Gateway', strong: true },
+                        { key: 'orders', label: 'Paid', align: 'right' },
+                        { key: 'gross_amount', label: 'Gross', align: 'right', render: (r) => inr(r.gross_amount) },
+                        { key: 'refunded_amount', label: 'Refunded', align: 'right', render: (r) => <span className="text-red-600">{inr(r.refunded_amount)}</span> },
+                        { key: 'net_amount', label: 'Net', align: 'right', render: (r) => <span className="text-emerald-700">{inr(r.net_amount)}</span> },
+                      ]}
+                    />
+                    <div className="bg-card border border-border-light rounded-2xl p-5" data-testid="settle-refunds-cancellations">
+                      <h3 className="font-heading text-lg font-semibold text-text-primary mb-3">Refunds &amp; Cancellations</h3>
+                      <div className="space-y-2 text-sm">
+                        {[
+                          { k: 'refunded', label: 'Refunded', c: 'text-red-600' },
+                          { k: 'refund_pending', label: 'Refund pending', c: 'text-amber-600' },
+                          { k: 'refund_failed', label: 'Refund failed', c: 'text-red-700' },
+                        ].map((row) => (
+                          <div key={row.k} data-testid={`settle-refund-${row.k}`} className="flex items-center justify-between border-b border-border-light/60 pb-2">
+                            <span className="text-text-secondary">{row.label}</span>
+                            <span className="font-mono"><span className="text-text-muted mr-3">{settlement.refunds[row.k].count}</span><span className={row.c}>{inr(settlement.refunds[row.k].amount)}</span></span>
+                          </div>
+                        ))}
+                        <div data-testid="settle-cancel-total" className="flex items-center justify-between border-b border-border-light/60 pb-2">
+                          <span className="text-text-secondary">Cancelled orders</span>
+                          <span className="font-mono"><span className="text-text-muted mr-3">{settlement.cancellations.total.count}</span><span className="text-text-primary">{inr(settlement.cancellations.total.amount)}</span></span>
+                        </div>
+                        <p className="text-xs text-text-muted">Paid→cancelled {settlement.cancellations.paid_cancelled.count} · Before payment {settlement.cancellations.unpaid_cancelled.count}</p>
+                        {(settlement.cancellations.by_actor || []).length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {settlement.cancellations.by_actor.map((a) => (
+                              <span key={a.by} className="text-xs px-2 py-1 rounded-full bg-background border border-border-light text-text-secondary">{cap(a.by)}: {a.count}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : null}
         </div>
