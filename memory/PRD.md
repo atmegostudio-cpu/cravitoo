@@ -1,5 +1,17 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Reports Polish: unified header/filter/table styling (Pass 2) (COMPLETED ✅, needs deploy)
+
+**Requested**: Apply the same consistent header, filter bar and table styling to the Sales Report and vendor report pages so every report screen feels identical (UI-only, no data-logic change).
+**Implemented**: New shared report kit `components/ui/report-kit.jsx` — `FilterBar` (card + "Filters" overline), `DateModeChips` (pill date-mode selector), `DataTable` (uniform header/row rhythm, supports `rowKey`/`rowTestId` to preserve existing row testids), `FilterField`, `filterInputClass`. Extended `StatCard` with `red`/`slate` tones. Applied across all three report pages:
+- **Sales Report** (`reports/SalesReport.js`): PageHeader + FilterBar; local `SummaryTable` removed in favour of shared `DataTable` (5 breakdown tables); 2 summary cards → StatCard; date chips via DateModeChips (testids unchanged `sales-mode-*`).
+- **Vendor Sales Report** (`vendor/Reports.js`): PageHeader (with CSV/PDF actions) + FilterBar; date-mode SELECT replaced by pill chips (**new testids `filter-mode-{single|range|month}`**, old `filter-mode` select removed); 6 KPI ring-cards → StatCard; per-counter table → DataTable (with per-counter CSV/PDF render column, row testid `counter-row-{counter}`). Orders table + pagination unchanged.
+- **Total Sales / All Outlets** (`vendor/AllOutletsReport.js`): PageHeader + FilterBar; date-mode SELECT replaced by pill chips (**new testids `report-mode-{month|range|single}`**, old `report-mode` select removed); 4 summary cards → StatCard; vendor/counter/payment-method tables → DataTable (row testids preserved: `per-vendor-row-{id}`, `per-counter-row-{i}`, `per-payment-row-{i}`).
+**Verified**: testing_agent **iteration_77 = frontend 100%** — all three pages render identically (header + Filters card + StatCards + DataTables), pill chips switch inputs correctly, Excel/CSV/PDF downloads trigger, data populates (₹330/2 orders for operator), 0px horizontal overflow at 1920px and 390px. Compile clean.
+**Advisory (not a bug)**: Sales Report `MultiSelect` exposes testids with `-trigger`/`-panel`/`-wrap`/`-opt-{id}` suffixes (base `sales-filter-*` alone isn't in the DOM) — pre-existing and functional.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Jun 2026 — System-wide UI/UX consistency + navigation IA (Pass 1) (COMPLETED ✅, needs deploy)
 
 **Requested**: Improve look/feel/layout/organization across all panels (Master/Cravitoo Admin, Corporate Admin, Site Admin, Vendor/Multi-Vendor, Employee). Make menus, navigation, buttons, cards, filters, tables consistent & professional. NO functionality/data-logic changes — UI + organization only.

@@ -1,0 +1,21 @@
+{
+  "summary": "Frontend-only UI polish verification for the 3 report pages (Sales Report, Vendor Reports, All-Outlets Sales). All PageHeaders render with correct titles ('Sales Report', 'Sales Report', 'Total Sales'). All FilterBar cards render with the 'Filters' overline. New date-mode pill chips are wired correctly: sales-mode-{range,date,month} switch inputs (sales-start-input/sales-end-input, sales-date-input, sales-month-input); filter-mode-{single,range,month} switch inputs (filter-single, filter-from+filter-to+preset-7/preset-30, filter-month); report-mode-{month,range,single} switch inputs (report-month, report-from+report-to, report-single). Old dropdown testids ('filter-mode', 'report-mode') are correctly removed. StatCards render on all three pages (sales-grand-total, sales-order-count on Sales; six KPI cards on Vendor Reports; four summary cards inside report-summary on All-Outlets). DataTables render (sales-by-city/client/customer-type/site/vendor, per-vendor-table, per-counter-table, per-payment-table). Vendor group toggle vendor-group-{site,vendor} present on Sales. Excel/CSV/PDF download buttons present; Sales xlsx download triggered (cravitoo-sales-2026-08-17_2026-09-16.xlsx) and All-Outlets xlsx download triggered (cravitoo_all_outlets_sales_2026-09-16.xlsx). No horizontal overflow at desktop 1920px or mobile 390px on any of the three pages (0px overflow each). Data populated for the operator/master with data (Total ₹330, 2 orders).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Sales Report cascading multi-selects receive `testid` props ('sales-filter-client/city/site/vendor/customer-type') but those testids do not appear in the DOM (query_selector returns null for all five). The MultiSelect component likely does not forward the `testid` prop to its root/trigger. UX/data works, but automated selection of these filters via data-testid is currently impossible. Consider forwarding testid to the trigger button in MultiSelect."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "test_credentials": "Master Admin: admin@cravitoo.com / admin123; Vendor operator: tz_operator@cravitoo.com / Pass1234 — both worked.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 77 verified reports UI polish. per-counter-card + page-prev/page-next are conditionally rendered — the tz_operator seed only has 1 counter and 2 orders so those elements are correctly absent (spec: only show per-counter card if >1 counter, pagination if > page size). Not a bug. If future testing needs to validate those, use a seed with multiple counters and >20 orders. MultiSelect testids in Sales Report don't propagate to DOM — noted as a minor testability code-review item, not blocking."
+}
