@@ -1198,33 +1198,42 @@ def make_router(db, safe_objectid, get_current_user, create_notification, manage
 
     @r.post("/orders/{order_id}/refund")
     async def refund_order(order_id: str, user: dict = Depends(get_current_user)):
-        """Vendor or master_admin issues a refund (e.g. customer no-show, food unavailable)."""
-        if user["role"] not in ("vendor", "master_admin"):
-            raise HTTPException(status_code=403, detail="Only vendors or master admin can issue refunds")
+        """Vendor, master_admin, or Accounts/Finance (sub_admin w/ sales:view_all)
+        issues or RETRIES a refund (e.g. no-show, food unavailable, gateway retry)."""
+        role = user.get("role")
+        perms = user.get("permissions") or []
+        can_refund = role in ("vendor", "master_admin") or (role == "sub_admin" and "sales:view_all" in perms)
+        if not can_refund:
+            raise HTTPException(status_code=403, detail="Not allowed to issue refunds")
         order = await db.orders.find_one({"_id": safe_objectid(order_id, "Order")})
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        if user["role"] == "vendor" and order.get("vendor_id") != user.get("vendor_id"):
+        if role == "vendor" and order.get("vendor_id") != user.get("vendor_id"):
             raise HTTPException(status_code=403, detail="Not your order")
         if order.get("payment_status") != "paid":
             raise HTTPException(status_code=400, detail="Order is not paid — nothing to refund")
-        if order.get("refund_status") in ("refunded", "refunded_mock", "refund_pending"):
-            raise HTTPException(status_code=400, detail="Order already refunded or refund in progress")
+        if order.get("refund_status") in ("refunded", "refunded_mock"):
+            raise HTTPException(status_code=400, detail="Order already refunded")
 
-        refund_status = "refunded_mock"
-        if not RAZORPAY_MOCK_MODE:
+        method = (order.get("payment_method") or "").lower()
+        mode = (order.get("payment_mode") or "").upper()
+        is_online = (method == "razorpay") or (mode == "RAZORPAY")
+        if not is_online:
+            refund_status = "refunded"  # offline / cash — manual refund, no gateway
+        elif RAZORPAY_MOCK_MODE:
+            refund_status = "refunded_mock"
+        else:
+            refund_status = "refund_pending"
             try:
                 tx = await db.payment_transactions.find_one({"cravitoo_order_id": order_id})
-                pay_id = tx and tx.get("razorpay_payment_id")
+                pay_id = (tx and tx.get("razorpay_payment_id")) or order.get("razorpay_payment_id")
                 if pay_id:
                     client_rp = get_razorpay_client()
                     client_rp.payment.refund(pay_id, {"amount": int(order["total_amount"] * 100)})
                     refund_status = "refunded"
-                else:
-                    refund_status = "refund_pending"
             except Exception as e:
                 logger.error(f"Razorpay refund failed for order {order_id}: {e}")
-                raise HTTPException(status_code=500, detail="Refund failed at gateway")
+                refund_status = "refund_failed"
 
         await db.orders.update_one(
             {"_id": safe_objectid(order_id, "Order")},

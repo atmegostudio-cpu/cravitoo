@@ -425,6 +425,66 @@ def make_router(db, safe_objectid, get_current_user):
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
 
+    @r.get("/admin/refunds/pending")
+    async def refunds_pending(
+        date: Optional[str] = None,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        month: Optional[str] = None,
+        client_ids: Optional[str] = None,
+        city_ids: Optional[str] = None,
+        site_ids: Optional[str] = None,
+        vendor_ids: Optional[str] = None,
+        customer_types: Optional[str] = None,
+        user: dict = Depends(get_current_user),
+    ):
+        """Actionable refunds in scope+range: paid orders that were cancelled but
+        NOT yet successfully refunded (refund_status none / pending / failed)."""
+        allowed, meta = await _candidate_sites(user)
+        s, e = _parse_range(date, start, end, month)
+        cids, ciids, sids, vids = _split_ids(client_ids), _split_ids(city_ids), _split_ids(site_ids), _split_ids(vendor_ids)
+        cts = set(_split_ids(customer_types)) or None
+        effective = set(meta.keys())
+        if cids:
+            effective = {sid for sid in effective if meta[sid].get("company_id") in cids}
+        if ciids:
+            effective = {sid for sid in effective if meta[sid].get("city_id") in ciids}
+        if sids:
+            effective &= set(sids)
+        apply_site_filter = (allowed is not None) or bool(cids or ciids or sids)
+        q = {"created_at": {"$gte": s, "$lt": e}, "status": "cancelled",
+             "payment_status": "paid", "refund_status": {"$nin": ["refunded", "refunded_mock"]}}
+        if apply_site_filter:
+            q["site_id"] = {"$in": list(effective)}
+        if vids:
+            q["vendor_id"] = {"$in": vids}
+        orders = await db.orders.find(q).sort("created_at", -1).to_list(5000)
+        vend_names = {}
+        for vid in {o.get("vendor_id") for o in orders if o.get("vendor_id")}:
+            d = await db.vendors.find_one({"_id": safe_objectid(vid, "Vendor")}, {"name": 1})
+            if d:
+                vend_names[vid] = d.get("name")
+        items = []
+        for o in orders:
+            ct_label = o.get("customer_type") or "Corporate"
+            if cts and ct_label not in cts:
+                continue
+            method = (o.get("payment_method") or "").lower()
+            mode = (o.get("payment_mode") or "").upper()
+            gw = "Razorpay (Online)" if (method == "razorpay" or mode == "RAZORPAY") else "Offline / Cash"
+            ca = o.get("created_at")
+            items.append({
+                "order_id": str(o["_id"]),
+                "date": ca.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M") if ca else "",
+                "site": (meta.get(o.get("site_id")) or {}).get("name") or "—",
+                "vendor": vend_names.get(o.get("vendor_id"), o.get("vendor_id") or "—"),
+                "employee": o.get("employee_name") or o.get("employee_email") or "",
+                "amount": round(float(o.get("total_amount") or 0), 2),
+                "gateway": gw,
+                "refund_status": o.get("refund_status") or "none",
+            })
+        return {"count": len(items), "items": items}
+
     @r.get("/admin/sales-report")
     async def sales_report(
         date: Optional[str] = None,

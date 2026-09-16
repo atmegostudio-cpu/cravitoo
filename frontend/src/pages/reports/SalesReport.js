@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
+import { useAuth } from '../../context/AuthContext';
 import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check, Wallet, Landmark, RotateCcw } from 'lucide-react';
 import { PageHeader } from '../../components/ui/page-header';
 import { StatCard } from '../../components/ui/stat-card';
@@ -17,6 +18,12 @@ const PAY_CHIP = {
   unpaid: 'bg-red-50 text-red-700 border-red-200',
   refunded: 'bg-slate-50 text-slate-600 border-slate-200',
 };
+const REFUND_BADGE = {
+  none: 'bg-amber-50 text-amber-700 border-amber-200',
+  refund_pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  refund_failed: 'bg-red-50 text-red-700 border-red-200',
+};
+const REFUND_LABEL = { none: 'Needs refund', refund_pending: 'Refund pending', refund_failed: 'Refund failed' };
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -101,6 +108,8 @@ const MultiSelect = ({ label, icon: Icon, options = [], selected = [], onChange,
 };
 
 const SalesReport = () => {
+  const { user } = useAuth();
+  const canRefund = user?.role === 'master_admin' || (user?.role === 'sub_admin' && (user?.permissions || []).includes('sales:view_all'));
   const [mode, setMode] = useState('range'); // 'range' | 'date' | 'month'
   const [date, setDate] = useState(todayISO());
   const [start, setStart] = useState(() => {
@@ -122,6 +131,8 @@ const SalesReport = () => {
 
   const [data, setData] = useState(null);
   const [settlement, setSettlement] = useState(null);
+  const [refundList, setRefundList] = useState([]);
+  const [refunding, setRefunding] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [settleDownloading, setSettleDownloading] = useState(false);
@@ -184,15 +195,17 @@ const SalesReport = () => {
     setLoading(true); setError('');
     try {
       const params = buildParams();
-      const [salesRes, settleRes] = await Promise.all([
+      const [salesRes, settleRes, refundRes] = await Promise.all([
         axios.get(`${API}/admin/sales-report?${params.toString()}`, { withCredentials: true }),
         axios.get(`${API}/admin/settlement-report?${params.toString()}`, { withCredentials: true }).catch(() => null),
+        axios.get(`${API}/admin/refunds/pending?${params.toString()}`, { withCredentials: true }).catch(() => null),
       ]);
       setData(salesRes.data);
       setSettlement(settleRes ? settleRes.data : null);
+      setRefundList(refundRes ? (refundRes.data.items || []) : []);
     } catch (e) {
       setError(e?.response?.data?.detail || 'Failed to load sales report');
-      setData(null); setSettlement(null);
+      setData(null); setSettlement(null); setRefundList([]);
     } finally { setLoading(false); }
   }, [buildParams]);
 
@@ -235,6 +248,16 @@ const SalesReport = () => {
   };
 
   const anyFilter = clientIds.length || cityIds.length || siteIds.length || vendorIds.length || customerTypeIds.length;
+
+  const issueRefund = async (orderId) => {
+    setRefunding(orderId); setError('');
+    try {
+      await axios.post(`${API}/orders/${orderId}/refund`, {}, { withCredentials: true });
+      await load();
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Refund failed');
+    } finally { setRefunding(null); }
+  };
 
   return (
     <>
@@ -502,6 +525,43 @@ const SalesReport = () => {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Actionable refunds drill-down */}
+                  <div className="mt-6" data-testid="refund-pending-panel">
+                    <DataTable
+                      title={`Pending refunds (${refundList.length})`}
+                      icon={RotateCcw}
+                      testid="refund-pending-table"
+                      rows={refundList}
+                      emptyText="No pending refunds — everything is reconciled."
+                      rowKey={(o) => o.order_id}
+                      rowTestId={(o) => `refund-order-${o.order_id}`}
+                      minWidthClass="min-w-[680px]"
+                      cols={[
+                        { key: 'date', label: 'Date' },
+                        { key: 'site', label: 'Site' },
+                        { key: 'vendor', label: 'Vendor' },
+                        { key: 'amount', label: 'Amount', align: 'right', render: (r) => inr(r.amount) },
+                        { key: 'gateway', label: 'Gateway' },
+                        { key: 'status', label: 'Status', render: (r) => (
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${REFUND_BADGE[r.refund_status] || REFUND_BADGE.none}`}>
+                            {REFUND_LABEL[r.refund_status] || REFUND_LABEL.none}
+                          </span>
+                        ) },
+                        { key: 'action', label: '', render: (r) => canRefund ? (
+                          <button
+                            data-testid={`refund-action-${r.order_id}`}
+                            onClick={() => issueRefund(r.order_id)}
+                            disabled={refunding === r.order_id}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-50 inline-flex items-center gap-1"
+                          >
+                            {refunding === r.order_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                            {r.refund_status === 'none' ? 'Issue refund' : 'Retry'}
+                          </button>
+                        ) : <span className="text-xs text-text-muted">—</span> },
+                      ]}
+                    />
                   </div>
                 </div>
               )}
