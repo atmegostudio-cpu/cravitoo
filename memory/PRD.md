@@ -10,6 +10,9 @@
 - **Verified**: testing_agent **iteration_73 = 100% backend (9/9) + 100% frontend** — combined totals match curl (Sept: 2 orders/₹330; 2026: 10/₹2720), 3-sheet xlsx valid, 403 scope enforced, per-site tz correct. Test data reverted; tz_operator@cravitoo.com / Pass1234 kept.
 **Action needed**: Save to GitHub → Deploy.
 
+## Sep 2026 — Date-wise filters across all Sales reports (COMPLETED ✅, needs deploy)
+Added Single date / Date range / Month modes: Vendor Sales Report (`Reports.js`, filter-mode/single/month, params() computes from/to; CSV+PDF honor it), Multi-Vendor Total Sales (`AllOutletsReport.js`, added Single-date mode), and confirmed Admin Sales Report (`SalesReport.js`, used by Corporate/Site/Master) already had all three (backend `_parse_range` supports date/start+end/month). All filters drive both dashboard and Excel/CSV downloads; download filenames now reflect the selected period. Verified testing_agent iteration_75 = frontend 100% (all 3 modes on all 3 reports; downloads period-accurate; Master/Corp/Site scoping correct).
+
 ## Sep 2026 — Total Sales: Payment-Mode Breakdown (COMPLETED ✅, needs deploy)
 Added paid/pending/failed split + by-payment-method (UPI/card/cash/razorpay) to the multi-outlet Total Sales report: `_combined_report_data` returns `per_payment_status` + `per_payment_method`; Excel export gains a 'By Payment' sheet; UI shows status cards (pay-status-{status}) + a By-Payment-Method table (per-payment-table). Verified testing_agent iteration_74 = frontend 100% (paid ₹2600/9, pending ₹120/1, razorpay ₹2390; xlsx 4 sheets).
 

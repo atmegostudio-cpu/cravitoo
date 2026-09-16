@@ -227,7 +227,8 @@ const SalesReport = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cravitoo-sales-${todayISO()}.xlsx`;
+      const period = mode === 'date' ? date : mode === 'month' ? month : `${start}_${end}`;
+      a.download = `cravitoo-sales-${period}.xlsx`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     } catch (e) {
       setError(e?.response?.data?.detail || 'Download failed');

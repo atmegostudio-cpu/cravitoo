@@ -91,8 +91,9 @@ export default function VendorReports() {
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       const ext = format === 'pdf' ? 'pdf' : 'csv';
+      const period = mode === 'single' ? singleDate : mode === 'month' ? month : `${fromDate}_${toDate}`;
       a.href = url;
-      a.download = `cravitoo_sales_${fromDate}_${toDate}${forCounter ? '_' + forCounter.replace(/ /g,'_') : ''}.${ext}`;
+      a.download = `cravitoo_sales_${period}${forCounter ? '_' + forCounter.replace(/ /g,'_') : ''}.${ext}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {

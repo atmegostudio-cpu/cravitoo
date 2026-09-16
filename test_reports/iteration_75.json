@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only verification of date filter modes (Single / Range / Month) on Vendor Sales Report, Multi-Vendor Total Sales, and Admin Sales Report — including CSV/XLSX downloads for all three admin roles. All mode toggles reload the dashboard correctly, backends respond 200, downloads succeed, and file sizes differ between narrow (single-day) and wide (month/range) queries confirming the export honours the selected period. Master, Corporate, and Site admins all reach /reports/sales with correct scoping (Master ₹330, CorpA ₹210, SiteA ₹210).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Vendor Sales Report (/vendor/reports)", "issues": ["Downloaded CSV filename is built from fromDate/toDate state even when Single-date or Month mode is active (e.g. 'cravitoo_sales_2026-08-17_2026-09-16.csv' while a 2026-01-15 single-date CSV is being downloaded). File content is correct — only the filename label is misleading. Fix: build filename off params()/mode in download() so users can identify the file at a glance."]},
+      {"screen": "Admin Sales Report (/reports/sales)", "issues": ["Downloaded Excel filename is always today's date ('cravitoo-sales-2026-09-16.xlsx') regardless of the selected mode/period. Same cosmetic issue as vendor CSV — content is correct but filename doesn't reflect the queried period."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional cosmetic) Include the selected mode/period in downloaded filenames — vendor Reports.js download() and admin SalesReport.js Excel handler currently hard-code fromDate/toDate or today, hiding the true period from the user."
+  ],
+  "critical_code_review_comments": [
+    "Reports.js line 95: filename uses fromDate/toDate directly instead of computing from mode/singleDate/month — misleading in single/month mode.",
+    "AllOutletsReport.js line 58: correctly branches filename by mode — good pattern to mirror in Reports.js.",
+    "Backend vendor_reports._parse_date_range caps range at 366 days (line 66). Confirmed working — a 2-year manual range returns HTTP 400 cleanly. UI has no client-side guard so user sees console 400s + generic 'Download failed' toast; consider disabling the CSV button or showing a helpful message when the selected range exceeds 366d."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only task)", "frontend": "100% for the mode-filter feature (all 3 modes on all 3 reports reload summary+tables and downloads succeed with period-matching totals)"},
+  "test_credentials": "tz_operator@cravitoo.com / Pass1234 ; admin@cravitoo.com / admin123 ; audit_corpadmin_a@corpa.com / Audit#1234 ; audit_siteadmin_a@corpa.com / Audit#1234",
+  "seed_data_creation": "None (read-only verification)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Vendor operator's data lives in month 2026-09 (2 orders / ₹330). CorpA scope=₹210, CorpB=₹120. Single-date probes must target a date with actual orders (Sep 2026) to see non-zero totals; task hint of '₹330 on single day' didn't match the seeded orders here — single 2026-09-15 was ₹0 and month/range 2026-09 was ₹330, meaning the two seeded orders are on different Sep days. Vendor CSV backend enforces max 366-day range (HTTP 400 otherwise).",
+  "rca of the issue": "No functional bug found. Only cosmetic: download() functions in Vendor Reports.js and Admin SalesReport.js don't rebuild the filename from the currently-active mode/period, so the filename is stale/misleading. Fix is a one-line branch akin to AllOutletsReport.js line 58."
+}
