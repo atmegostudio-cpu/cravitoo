@@ -96,7 +96,7 @@ const getNavItems = (user) => {
       const perms = user?.permissions || [];
       const links = [{ path: '/sub-admin/dashboard', label: 'Home', icon: Home }];
       if (perms.includes('vendors:onboard')) links.push({ path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList });
-      if (perms.includes('sales:view')) links.push({ path: '/reports/sales', label: 'Sales', icon: BarChart3 });
+      if (perms.includes('sales:view') || perms.includes('sales:view_all')) links.push({ path: '/reports/sales', label: 'Sales', icon: BarChart3 });
       if (perms.includes('feedback:view')) links.push({ path: '/admin/feedback', label: 'Feedback', icon: MessageSquare });
       if (perms.includes('menu_requests:view')) links.push({ path: '/admin/menu-requests', label: 'Menu Requests', icon: FileText });
       return links;

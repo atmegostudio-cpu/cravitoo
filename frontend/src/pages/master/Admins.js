@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store, SlidersHorizontal, ListChecks, Layers, Eye } from 'lucide-react';
+import { ShieldCheck, Crown, MapPin, Plus, X, Trash2, UserCog, Mail, Store, SlidersHorizontal, ListChecks, Layers, Eye, Wallet } from 'lucide-react';
 import logger from '../../lib/logger';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -12,6 +12,7 @@ const ROLE_META = {
   site_admin: { label: 'Site Admin', icon: MapPin, color: 'text-blue-600', bg: 'bg-blue-50' },
   vendor_operator: { label: 'Vendor Operator', icon: Store, color: 'text-primary', bg: 'bg-primary/10' },
   sub_admin: { label: 'Sub-Admin', icon: SlidersHorizontal, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  accounts: { label: 'Accounts / Finance', icon: Wallet, color: 'text-teal-700', bg: 'bg-teal-50' },
 };
 
 const MasterAdmins = () => {
@@ -20,7 +21,7 @@ const MasterAdmins = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState('site_admin');
-  const [form, setForm] = useState({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
+  const [form, setForm] = useState({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], accountsAllSites: true, scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
   const [operators, setOperators] = useState([]);
   const [allVendors, setAllVendors] = useState([]);
   const [operatorInvite, setOperatorInvite] = useState(null);
@@ -82,9 +83,18 @@ const MasterAdmins = () => {
         if (!form.permissions.length) throw new Error('Select at least one permission');
         const { data } = await axios.post(`${API}/admin/sub-admins`, { email: form.email, name: form.name, permissions: form.permissions, scope: form.scope }, { withCredentials: true });
         setOperatorInvite({ email: data.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
+      } else if (role === 'accounts') {
+        const allSites = form.accountsAllSites !== false;
+        const scope = allSites ? { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } : form.scope;
+        if (!allSites && !(scope.client_ids.length || scope.city_ids.length || scope.site_ids.length || scope.vendor_ids.length)) {
+          throw new Error('Pick at least one client/city/site, or enable "All sites"');
+        }
+        const permissions = allSites ? ['sales:view_all'] : ['sales:view'];
+        const { data } = await axios.post(`${API}/admin/sub-admins`, { email: form.email, name: form.name, permissions, scope }, { withCredentials: true });
+        setOperatorInvite({ email: data.email, magic_url: data.magic_url, delivered: !!data.email_delivered });
       }
       setShowForm(false);
-      setForm({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
+      setForm({ email: '', password: '', name: '', site_id: '', assigned_sites: [], vendor_ids: [], permissions: [], accountsAllSites: true, scope: { client_ids: [], city_ids: [], site_ids: [], vendor_ids: [] } });
       await load();
     } catch (e) {
       const detail = e?.response?.data?.detail;
@@ -333,10 +343,11 @@ const MasterAdmins = () => {
         const navMap = [
           ['vendors:onboard', 'Vendor Onboarding'],
           ['sales:view', 'Sales'],
+          ['sales:view_all', 'Sales'],
           ['feedback:view', 'Feedback'],
           ['menu_requests:view', 'Menu Requests'],
         ];
-        const navLabels = ['Home', ...navMap.filter(([k]) => perms.includes(k)).map(([, l]) => l)];
+        const navLabels = ['Home', ...navMap.filter(([k]) => perms.includes(k)).map(([, l]) => l).filter((l, i, arr) => arr.indexOf(l) === i)];
         const nameList = (ids, list) => (ids || []).map((id) => list.find((x) => x.id === id)?.name || id);
         const effSites = sites.filter((s) =>
           (sc.site_ids || []).includes(s.id) ||
@@ -416,6 +427,7 @@ const MasterAdmins = () => {
                   <option value="super_admin">Super Admin</option>
                   <option value="vendor_operator">Vendor Operator (multi-outlet)</option>
                   <option value="sub_admin">Sub-Admin (custom permissions)</option>
+                  <option value="accounts">Accounts / Finance (sales-only)</option>
                   <option value="master_admin">Master Admin (must be @cravitoo.com)</option>
                 </select>
               </div>
@@ -429,7 +441,7 @@ const MasterAdmins = () => {
               </div>
               <div>
                 <label className="text-sm font-medium text-text-primary">Password</label>
-                <input data-testid="new-admin-password" type="password" required={!['vendor_operator', 'sub_admin'].includes(role)} disabled={['vendor_operator', 'sub_admin'].includes(role)} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={['vendor_operator', 'sub_admin'].includes(role) ? 'Set via email magic-link' : ''} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg disabled:bg-background disabled:text-text-muted" />
+                <input data-testid="new-admin-password" type="password" required={!['vendor_operator', 'sub_admin', 'accounts'].includes(role)} disabled={['vendor_operator', 'sub_admin', 'accounts'].includes(role)} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={['vendor_operator', 'sub_admin', 'accounts'].includes(role) ? 'Set via email magic-link' : ''} className="mt-1 w-full px-3 py-2 border border-border-light rounded-lg disabled:bg-background disabled:text-text-muted" />
               </div>
               {role === 'site_admin' && (
                 <div>
@@ -519,6 +531,45 @@ const MasterAdmins = () => {
                     <p className="mt-1 text-xs text-text-muted">Sales & onboarding access is limited to the sites resolved from this scope. They set their password via an emailed magic link.</p>
                   </div>
                 </>
+              )}
+              {role === 'accounts' && (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-800 flex items-start gap-2">
+                    <Wallet className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>Finance login — <strong>sales &amp; accounting only</strong>. They can view day / site / vendor-wise sales, payment reconciliation and Excel exports, with <strong>no access to the admin panel</strong>. Password is set via an emailed magic link.</span>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" data-testid="accounts-all-sites" checked={form.accountsAllSites !== false} onChange={(e) => setForm({ ...form, accountsAllSites: e.target.checked })} />
+                    <span className="font-medium">Access all sites (company-wide)</span>
+                  </label>
+                  {form.accountsAllSites === false && (
+                    <div>
+                      <p className="text-xs font-medium text-text-muted mb-1">Limit to specific clients / cities / sites</p>
+                      {[
+                        { key: 'client_ids', label: 'Clients', items: clients },
+                        { key: 'city_ids', label: 'Cities', items: cities },
+                        { key: 'site_ids', label: 'Sites', items: sites },
+                      ].map((grp) => (
+                        <div key={grp.key} className="mt-2">
+                          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1">{grp.label}</p>
+                          <div className="space-y-1 max-h-28 overflow-y-auto border border-border-light rounded-lg p-2">
+                            {grp.items.map((it) => (
+                              <label key={it.id} className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" data-testid={`accounts-scope-${grp.key}-${it.id}`} checked={form.scope[grp.key].includes(it.id)} onChange={(e) => {
+                                  const cur = form.scope[grp.key];
+                                  const next = e.target.checked ? [...cur, it.id] : cur.filter((x) => x !== it.id);
+                                  setForm({ ...form, scope: { ...form.scope, [grp.key]: next } });
+                                }} />
+                                {it.name}
+                              </label>
+                            ))}
+                            {grp.items.length === 0 && <p className="text-xs text-text-muted">None available.</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
               <div className="flex gap-3 pt-3 sticky bottom-0 bg-card -mx-6 px-6 pb-1 border-t border-border-light mt-2">
                 <button type="button" onClick={() => setShowForm(false)} className="flex-1 px-4 py-2.5 border border-border-light rounded-xl font-medium">Cancel</button>

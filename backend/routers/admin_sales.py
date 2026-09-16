@@ -59,7 +59,10 @@ def make_router(db, safe_objectid, get_current_user):
             sites = await db.sites.find({"company_id": cid}, {"_id": 1}).to_list(1000)
             return [str(s["_id"]) for s in sites]
         if role == "sub_admin":
-            if "sales:view" not in (user.get("permissions") or []):
+            perms = user.get("permissions") or []
+            if "sales:view_all" in perms:
+                return None  # company-wide finance / accounts — all sites
+            if "sales:view" not in perms:
                 raise HTTPException(status_code=403, detail="Not allowed")
             scope = user.get("scope") or {}
             sset = set(scope.get("site_ids") or [])
@@ -199,6 +202,7 @@ def make_router(db, safe_objectid, get_current_user):
         rows = []
         ct_filter = set(customer_types) if customer_types else None
         site_tot, city_tot, vend_tot, client_tot, ct_tot, grand = {}, {}, {}, {}, {}, 0.0
+        pay_status_tot, pay_method_tot = {}, {}
         for o in orders:
             # Non-corporate (manual) orders carry a customer_type; corporate
             # employee orders are bucketed as "Corporate".
@@ -208,6 +212,13 @@ def make_router(db, safe_objectid, get_current_user):
             amt = float(o.get("total_amount") or 0)
             grand += amt
             ct_tot[ct_label] = ct_tot.get(ct_label, 0.0) + amt
+            # payment reconciliation buckets (for accounting)
+            ps = o.get("payment_status") or "unknown"
+            pm = o.get("payment_method") or o.get("payment_mode") or "unknown"
+            a = pay_status_tot.setdefault(ps, [0, 0.0]); a[0] += 1; a[1] += amt
+            b = pay_method_tot.setdefault(pm, [0, 0.0, 0.0]); b[0] += 1; b[1] += amt
+            if ps == "paid":
+                b[2] += amt
             sid, vid = o.get("site_id"), o.get("vendor_id")
             site_name = (meta.get(sid) or {}).get("name") or (sid or "—")
             city_label = site_city_label(sid)
@@ -248,6 +259,10 @@ def make_router(db, safe_objectid, get_current_user):
                            "vendor": vend_names.get(k[1], k[1] or "—"),
                            "total": round(v, 2)}
                           for k, v in sorted(vend_tot.items(), key=lambda x: -x[1])]
+        per_payment_status = [{"status": k, "orders": v[0], "total_amount": round(v[1], 2)}
+                              for k, v in sorted(pay_status_tot.items(), key=lambda x: -x[1][1])]
+        per_payment_method = [{"method": k, "orders": v[0], "total_amount": round(v[1], 2), "paid_amount": round(v[2], 2)}
+                              for k, v in sorted(pay_method_tot.items(), key=lambda x: -x[1][1])]
 
         return {
             "range": {"start": s.isoformat(), "end": e.isoformat()},
@@ -258,6 +273,8 @@ def make_router(db, safe_objectid, get_current_user):
             "city_summary": city_summary,
             "site_summary": site_summary,
             "vendor_summary": vendor_summary,
+            "per_payment_status": per_payment_status,
+            "per_payment_method": per_payment_method,
             "orders": rows,
         }
 
@@ -332,6 +349,20 @@ def make_router(db, safe_objectid, get_current_user):
             c.font = Font(bold=True)
         for v in data["vendor_summary"]:
             ws3.append([v.get("city", "—"), v["site"], v["vendor"], v["total"]])
+        # Sheet 5: By Payment (reconciliation for accounting)
+        ws4 = wb.create_sheet("By Payment")
+        ws4.append(["Payment Status", "Orders", "Total (₹)"])
+        for c in ws4[1]:
+            c.font = Font(bold=True)
+        for row in data["per_payment_status"]:
+            ws4.append([row["status"], row["orders"], row["total_amount"]])
+        ws4.append([])
+        mrow = ws4.max_row + 1
+        ws4.append(["Payment Method", "Orders", "Total (₹)", "Paid (₹)"])
+        for c in ws4[mrow]:
+            c.font = Font(bold=True)
+        for row in data["per_payment_method"]:
+            ws4.append([row["method"], row["orders"], row["total_amount"], row["paid_amount"]])
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)

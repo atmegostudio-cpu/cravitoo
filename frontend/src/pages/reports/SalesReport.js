@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
-import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check } from 'lucide-react';
+import { BarChart3, FileSpreadsheet, Loader2, Store, Building2, TrendingUp, ShoppingBag, MapPin, Briefcase, Users, ChevronDown, X, Check, Wallet } from 'lucide-react';
 import { PageHeader } from '../../components/ui/page-header';
 import { StatCard } from '../../components/ui/stat-card';
 import { FilterBar, DateModeChips, DataTable, filterInputClass } from '../../components/ui/report-kit';
@@ -9,6 +9,14 @@ import { FilterBar, DateModeChips, DataTable, filterInputClass } from '../../com
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const cap = (s) => (s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—');
+const PAY_CHIP = {
+  paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  failed: 'bg-red-50 text-red-700 border-red-200',
+  unpaid: 'bg-red-50 text-red-700 border-red-200',
+  refunded: 'bg-slate-50 text-slate-600 border-slate-200',
+};
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -382,6 +390,35 @@ const SalesReport = () => {
                     />
                   );
                 })()}
+              </div>
+
+              {/* Payment reconciliation */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6" data-testid="sales-payment-breakdown">
+                <div className="bg-card border border-border-light rounded-2xl p-5">
+                  <h2 className="font-heading text-lg font-semibold text-text-primary mb-3">Paid vs Pending</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {(data.per_payment_status || []).map((p) => (
+                      <div key={p.status} data-testid={`sales-pay-status-${p.status}`} className={`flex-1 min-w-[130px] rounded-xl border px-4 py-3 ${PAY_CHIP[p.status] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                        <p className="text-xs font-medium uppercase tracking-wide">{cap(p.status)}</p>
+                        <p className="text-xl font-semibold mt-1">{inr(p.total_amount)}</p>
+                        <p className="text-[11px] opacity-80">{p.orders} order{p.orders === 1 ? '' : 's'}</p>
+                      </div>
+                    ))}
+                    {(data.per_payment_status || []).length === 0 && <p className="text-text-muted text-sm">No payment data in this period.</p>}
+                  </div>
+                </div>
+                <DataTable
+                  title="By Payment Method" icon={Wallet} testid="sales-per-payment-table"
+                  rows={data.per_payment_method || []} emptyText="No payment data in this period."
+                  rowKey={(p, i) => `${p.method}-${i}`}
+                  rowTestId={(p, i) => `sales-per-payment-row-${i}`}
+                  cols={[
+                    { key: 'method', label: 'Method', strong: true, render: (r) => cap(r.method) },
+                    { key: 'orders', label: 'Orders', align: 'right' },
+                    { key: 'total_amount', label: 'Total', align: 'right', render: (r) => inr(r.total_amount) },
+                    { key: 'paid_amount', label: 'Paid', align: 'right', render: (r) => <span className="text-emerald-700">{inr(r.paid_amount)}</span> },
+                  ]}
+                />
               </div>
             </>
           ) : null}

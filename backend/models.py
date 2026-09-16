@@ -372,6 +372,7 @@ class VendorOperatorCreate(BaseModel):
 SUB_ADMIN_PERMISSIONS = [
     {"key": "vendors:onboard", "label": "Onboard & prepare vendors (final approval stays with Master)", "module": "Vendor Onboarding"},
     {"key": "sales:view", "label": "View sales reports", "module": "Sales Reports"},
+    {"key": "sales:view_all", "label": "View sales for ALL sites (company-wide finance)", "module": "Sales Reports"},
     {"key": "sites:view", "label": "View sites", "module": "Sites"},
     {"key": "sites:manage", "label": "Edit site details", "module": "Sites"},
     {"key": "clients:view", "label": "View corporate clients", "module": "Clients"},

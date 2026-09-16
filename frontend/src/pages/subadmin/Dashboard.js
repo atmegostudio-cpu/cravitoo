@@ -6,6 +6,14 @@ import { ClipboardList, BarChart3, ShieldCheck, ArrowRight, Layers, MessageSquar
 
 const PERM_CARDS = [
   {
+    key: 'sales:view_all',
+    title: 'Sales & Accounting',
+    desc: 'Company-wide sales — day / site / vendor-wise totals, payment reconciliation and Excel exports.',
+    to: '/reports/sales',
+    icon: BarChart3,
+    accent: 'from-teal-500/15 to-teal-500/5 text-teal-700',
+  },
+  {
     key: 'vendors:onboard',
     title: 'Vendor Onboarding',
     desc: 'Review, onboard and approve vendors for your assigned sites.',
@@ -39,7 +47,8 @@ const PERM_CARDS = [
   },
 ];
 
-const scopeLine = (scope = {}) => {
+const scopeLine = (scope = {}, perms = []) => {
+  if (perms.includes('sales:view_all')) return 'All sites · company-wide (finance)';
   const parts = [];
   if (scope.client_ids?.length) parts.push(`${scope.client_ids.length} client(s)`);
   if (scope.city_ids?.length) parts.push(`${scope.city_ids.length} city(ies)`);
@@ -76,7 +85,7 @@ const SubAdminDashboard = () => {
           >
             <Layers className="h-4 w-4 text-emerald-700 flex-shrink-0" />
             <span className="font-medium text-text-primary">Assigned scope:</span>
-            <span>{scopeLine(user?.scope)}</span>
+            <span>{scopeLine(user?.scope, perms)}</span>
           </div>
 
           <h2 className="mt-10 mb-4 text-base md:text-lg font-heading font-semibold text-text-primary">Your tools</h2>
