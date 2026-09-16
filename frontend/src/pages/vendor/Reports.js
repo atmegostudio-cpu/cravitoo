@@ -23,6 +23,9 @@ export default function VendorReports() {
   const today = new Date();
   const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); });
   const [toDate, setToDate]     = useState(() => today.toISOString().slice(0,10));
+  const [mode, setMode]         = useState('range'); // 'single' | 'range' | 'month'
+  const [singleDate, setSingleDate] = useState(() => today.toISOString().slice(0,10));
+  const [month, setMonth]       = useState(() => today.toISOString().slice(0,7));
   const [counter, setCounter]   = useState('');
   const [paymentStatus, setPaymentStatus] = useState('all');
   const [counters, setCounters] = useState([]);
@@ -37,12 +40,13 @@ export default function VendorReports() {
 
   const params = useCallback(() => {
     const q = new URLSearchParams();
-    q.set('from', isoStart(fromDate));
-    q.set('to',   isoEnd(toDate));
+    if (mode === 'single') { q.set('from', isoStart(singleDate)); q.set('to', isoEnd(singleDate)); }
+    else if (mode === 'month') { const [y, m] = month.split('-').map(Number); q.set('from', isoStart(new Date(y, m - 1, 1))); q.set('to', isoEnd(new Date(y, m, 0))); }
+    else { q.set('from', isoStart(fromDate)); q.set('to', isoEnd(toDate)); }
     if (counter)       q.set('counter', counter);
     if (paymentStatus && paymentStatus !== 'all') q.set('payment_status', paymentStatus);
     return q;
-  }, [fromDate, toDate, counter, paymentStatus]);
+  }, [mode, singleDate, month, fromDate, toDate, counter, paymentStatus]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -148,23 +152,50 @@ export default function VendorReports() {
           </div>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-3">
             <div>
-              <label className="block text-[11px] font-medium text-text-secondary mb-1">From</label>
-              <input data-testid="filter-from" type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <label className="block text-[11px] font-medium text-text-secondary mb-1">Filter by</label>
+              <select data-testid="filter-mode" value={mode} onChange={(e) => { setMode(e.target.value); setPage(1); }}
+                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white">
+                <option value="single">Single date</option>
+                <option value="range">Date range</option>
+                <option value="month">Month</option>
+              </select>
             </div>
-            <div>
-              <label className="block text-[11px] font-medium text-text-secondary mb-1">To</label>
-              <input data-testid="filter-to" type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-            </div>
-            <div className="col-span-2 flex flex-wrap gap-1">
-              {rangePresets.map(p => (
-                <button key={p.label} data-testid={`preset-${p.days}`} onClick={() => applyPreset(p.days)}
-                  className="text-xs px-2.5 py-1.5 bg-background border border-border-light rounded-lg hover:bg-primary-light hover:border-primary transition-colors">
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            {mode === 'single' && (
+              <div>
+                <label className="block text-[11px] font-medium text-text-secondary mb-1">Date</label>
+                <input data-testid="filter-single" type="date" value={singleDate} onChange={(e) => { setSingleDate(e.target.value); setPage(1); }}
+                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              </div>
+            )}
+            {mode === 'month' && (
+              <div>
+                <label className="block text-[11px] font-medium text-text-secondary mb-1">Month</label>
+                <input data-testid="filter-month" type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }}
+                  className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              </div>
+            )}
+            {mode === 'range' && (
+              <>
+                <div>
+                  <label className="block text-[11px] font-medium text-text-secondary mb-1">From</label>
+                  <input data-testid="filter-from" type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+                    className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-text-secondary mb-1">To</label>
+                  <input data-testid="filter-to" type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+                    className="w-full px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div className="col-span-2 flex flex-wrap gap-1">
+                  {rangePresets.map(p => (
+                    <button key={p.label} data-testid={`preset-${p.days}`} onClick={() => applyPreset(p.days)}
+                      className="text-xs px-2.5 py-1.5 bg-background border border-border-light rounded-lg hover:bg-primary-light hover:border-primary transition-colors">
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {counters.length > 0 && (
               <div>
                 <label className="block text-[11px] font-medium text-text-secondary mb-1">Counter</label>

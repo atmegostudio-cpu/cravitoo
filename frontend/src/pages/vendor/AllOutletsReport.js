@@ -17,8 +17,9 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const AllOutletsReport = () => {
-  const [mode, setMode] = useState('month'); // 'month' | 'range'
+  const [mode, setMode] = useState('month'); // 'month' | 'range' | 'single'
   const [month, setMonth] = useState(currentMonth());
+  const [singleDate, setSingleDate] = useState(todayISO());
   const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); });
   const [toDate, setToDate] = useState(todayISO());
   const [data, setData] = useState(null);
@@ -29,9 +30,10 @@ const AllOutletsReport = () => {
   const query = useCallback(() => {
     const q = new URLSearchParams();
     if (mode === 'month') q.set('month', month);
+    else if (mode === 'single') { q.set('from', new Date(singleDate + 'T00:00:00').toISOString()); q.set('to', new Date(singleDate + 'T23:59:59').toISOString()); }
     else { q.set('from', new Date(fromDate + 'T00:00:00').toISOString()); q.set('to', new Date(toDate + 'T23:59:59').toISOString()); }
     return q;
-  }, [mode, month, fromDate, toDate]);
+  }, [mode, month, fromDate, toDate, singleDate]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -53,7 +55,7 @@ const AllOutletsReport = () => {
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cravitoo_all_outlets_sales_${mode === 'month' ? month : `${fromDate}_${toDate}`}.xlsx`;
+      a.download = `cravitoo_all_outlets_sales_${mode === 'month' ? month : mode === 'single' ? singleDate : `${fromDate}_${toDate}`}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
     } catch (e) {
@@ -98,14 +100,22 @@ const AllOutletsReport = () => {
               <select data-testid="report-mode" value={mode} onChange={(e) => setMode(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg bg-white text-sm">
                 <option value="month">Month</option>
                 <option value="range">Date range</option>
+                <option value="single">Single date</option>
               </select>
             </div>
-            {mode === 'month' ? (
+            {mode === 'month' && (
               <div>
                 <label className="text-xs font-medium text-text-muted block mb-1">Month</label>
                 <input data-testid="report-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
               </div>
-            ) : (
+            )}
+            {mode === 'single' && (
+              <div>
+                <label className="text-xs font-medium text-text-muted block mb-1">Date</label>
+                <input data-testid="report-single" type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} className="px-3 py-2 border border-border-light rounded-lg text-sm" />
+              </div>
+            )}
+            {mode === 'range' && (
               <>
                 <div>
                   <label className="text-xs font-medium text-text-muted block mb-1">From</label>
