@@ -3,6 +3,8 @@ import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import { TrendingUp, ShoppingBag, IndianRupee, Trophy, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -51,9 +53,7 @@ const VendorDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-          <h1 className="font-heading text-3xl sm:text-4xl lg:text-5xl tracking-tight sm:tracking-tighter font-semibold text-text-primary mb-6 sm:mb-8">
-            Vendor Dashboard
-          </h1>
+          <PageHeader title="Vendor Dashboard" subtitle="Your outlet performance at a glance" icon={ShoppingBag} />
 
           {overview && overview.outlets && overview.outlets.length > 1 && (
             <div data-testid="outlets-overview" className="mb-8 bg-card border border-border-light rounded-2xl p-5 sm:p-6">
@@ -136,36 +136,28 @@ const VendorDashboard = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-            <div data-testid="total-orders-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-primary-light rounded-xl p-3">
-                  <ShoppingBag className="h-6 w-6 text-primary" />
-                </div>
-                <TrendingUp className="h-5 w-5 text-green-500" />
-              </div>
-              <p className="text-3xl font-heading font-semibold text-text-primary mb-1">{analytics?.total_orders || 0}</p>
-              <p className="text-text-secondary text-sm">Total Orders</p>
-            </div>
-
-            <div data-testid="total-revenue-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-green-100 rounded-xl p-3">
-                  <IndianRupee className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
-              <p className="text-3xl font-heading font-semibold text-text-primary mb-1">₹{analytics?.total_revenue?.toFixed(2) || 0}</p>
-              <p className="text-text-secondary text-sm">Total Revenue</p>
-            </div>
-
-            <div data-testid="avg-order-card" className="bg-card border border-border-light rounded-2xl p-5 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-accent-light rounded-xl p-3">
-                  <TrendingUp className="h-6 w-6 text-accent-hover" />
-                </div>
-              </div>
-              <p className="text-3xl font-heading font-semibold text-text-primary mb-1">₹{analytics?.average_order_value?.toFixed(2) || 0}</p>
-              <p className="text-text-secondary text-sm">Avg Order Value</p>
-            </div>
+            <StatCard
+              testid="total-orders-card"
+              label="Total Orders"
+              value={analytics?.total_orders || 0}
+              icon={ShoppingBag}
+              tone="primary"
+              trend={<TrendingUp className="h-5 w-5 text-green-500" />}
+            />
+            <StatCard
+              testid="total-revenue-card"
+              label="Total Revenue"
+              value={`₹${analytics?.total_revenue?.toFixed(2) || 0}`}
+              icon={IndianRupee}
+              tone="green"
+            />
+            <StatCard
+              testid="avg-order-card"
+              label="Avg Order Value"
+              value={`₹${analytics?.average_order_value?.toFixed(2) || 0}`}
+              icon={TrendingUp}
+              tone="accent"
+            />
           </div>
 
           <div>

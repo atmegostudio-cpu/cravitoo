@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import VendorOrderNotifier from './VendorOrderNotifier';
 import NotificationBell from './NotificationBell';
-import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, UploadCloud, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, KeyRound, Trash2, Menu as MenuIcon, X } from 'lucide-react';
+import { Home, UtensilsCrossed, ShoppingBag, LogOut, BarChart3, Users, Heart, Calendar, QrCode, Award, Sparkles, CalendarDays, Building2, ShieldCheck, Crown, Store, MapPin, ClipboardList, Shield, MessageSquare, CalendarCheck, Megaphone, Mail, Receipt, Briefcase, KeyRound, Trash2, Menu as MenuIcon, X, ChevronDown, LayoutGrid, FileText } from 'lucide-react';
 
 const LOGO_URL = '/logo.png';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -38,13 +38,187 @@ const OutletSwitcher = () => {
   );
 };
 
+// ── Navigation config ─────────────────────────────────────────────────────
+// A role's nav is a flat list of entries. An entry is either a direct link
+// ({path,label,icon}) or a group ({group,icon,links:[...]}) rendered as a
+// dropdown on desktop and a labelled section in the mobile drawer.
+const getNavItems = (user) => {
+  switch (user?.role) {
+    case 'employee':
+      return [
+        { path: '/employee/dashboard', label: 'Home', icon: Home },
+        { path: '/employee/menu', label: 'Menu', icon: UtensilsCrossed },
+        { path: '/employee/reservations', label: 'Pre-order', icon: CalendarCheck },
+        { path: '/employee/orders', label: 'Orders', icon: ShoppingBag },
+        { path: '/employee/bulk-order', label: 'Team Order', icon: Users },
+        { path: '/employee/events', label: 'Events', icon: CalendarDays },
+        { path: '/employee/loyalty', label: 'Rewards', icon: Award },
+        { path: '/employee/feedback', label: 'Feedback', icon: MessageSquare },
+      ];
+    case 'vendor': {
+      const isOperator = (user?.assigned_vendors?.length || 0) > 1;
+      return [
+        { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
+        { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
+        ...(isOperator ? [{ path: '/vendor/all-orders', label: 'All Outlets', icon: Store }] : []),
+        ...(isOperator ? [{ path: '/vendor/all-outlets-sales', label: 'Total Sales', icon: BarChart3 }] : []),
+        { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
+        {
+          group: 'Menu', icon: UtensilsCrossed, links: [
+            { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
+            { path: '/vendor/menu-requests', label: 'Menu Requests', icon: FileText },
+            { path: '/vendor/ai-insights', label: 'AI Insights', icon: Sparkles },
+          ],
+        },
+        {
+          group: 'More', icon: LayoutGrid, links: [
+            { path: '/vendor/feedback', label: 'Feedback', icon: MessageSquare },
+            { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },
+            { path: '/vendor/verify-pickup', label: 'Pickup', icon: QrCode },
+          ],
+        },
+      ];
+    }
+    case 'corporate_admin':
+      return [
+        { path: '/admin/dashboard', label: 'Dashboard', icon: BarChart3 },
+        { path: '/admin/employees', label: 'Employees', icon: Users },
+        { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
+        { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
+        { path: '/admin/bulk-pre-order', label: 'Bulk Pre-Order', icon: ClipboardList },
+        { path: '/admin/events', label: 'Events', icon: CalendarDays },
+      ];
+    case 'super_admin':
+      return [
+        { path: '/super-admin/dashboard', label: 'Dashboard', icon: Home },
+      ];
+    case 'sub_admin': {
+      const perms = user?.permissions || [];
+      const links = [{ path: '/sub-admin/dashboard', label: 'Home', icon: Home }];
+      if (perms.includes('vendors:onboard')) links.push({ path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList });
+      if (perms.includes('sales:view')) links.push({ path: '/reports/sales', label: 'Sales', icon: BarChart3 });
+      if (perms.includes('feedback:view')) links.push({ path: '/admin/feedback', label: 'Feedback', icon: MessageSquare });
+      if (perms.includes('menu_requests:view')) links.push({ path: '/admin/menu-requests', label: 'Menu Requests', icon: FileText });
+      return links;
+    }
+    case 'master_admin':
+      return [
+        { path: '/master/dashboard', label: 'Dashboard', icon: Crown },
+        {
+          group: 'Network', icon: Building2, links: [
+            { path: '/master/cities', label: 'Cities', icon: MapPin },
+            { path: '/master/sites', label: 'Sites', icon: Building2 },
+            { path: '/master/vendors', label: 'Vendors', icon: Store },
+            { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
+            { path: '/master/customer-types', label: 'Customer Types', icon: Users },
+          ],
+        },
+        {
+          group: 'Operations', icon: ClipboardList, links: [
+            { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
+            { path: '/admin/menu-requests', label: 'Menu Requests', icon: FileText },
+            { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
+          ],
+        },
+        {
+          group: 'Insights', icon: BarChart3, links: [
+            { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
+            { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
+            { path: '/master/billing', label: 'Billing', icon: Receipt },
+          ],
+        },
+        {
+          group: 'System', icon: ShieldCheck, links: [
+            { path: '/master/allowed-domains', label: 'Domains', icon: Mail },
+            { path: '/master/broadcasts', label: 'Announce', icon: Megaphone },
+            { path: '/master/admins', label: 'Admins', icon: ShieldCheck },
+            { path: '/master/reset', label: 'Reset', icon: Trash2 },
+          ],
+        },
+      ];
+    case 'site_admin':
+      return [
+        { path: '/site-admin/dashboard', label: 'Dashboard', icon: BarChart3 },
+        { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
+        { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
+        { path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList },
+        { path: '/admin/menu-requests', label: 'Menu Requests', icon: FileText },
+      ];
+    case 'city_admin':
+      return [
+        { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
+      ];
+    default:
+      return [];
+  }
+};
+
+const slug = (s) => s.toLowerCase().replace(/ /g, '-');
+
+// ── Desktop dropdown for a nav group ────────────────────────────────────────
+const NavDropdown = ({ group, icon: Icon, links }) => {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const active = links.some((l) => location.pathname === l.path);
+
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        data-testid={`nav-group-${slug(group)}`}
+        aria-expanded={open}
+        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all duration-200 ${
+          active || open ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-background'
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        <span className="font-medium text-sm">{group}</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          data-testid={`nav-group-panel-${slug(group)}`}
+          className="nav-pop-in absolute left-0 mt-2 w-60 rounded-2xl border border-border-light bg-card shadow-xl p-1.5 z-[70]"
+        >
+          {links.map((l) => {
+            const LinkIcon = l.icon;
+            const isActive = location.pathname === l.path;
+            return (
+              <Link
+                key={l.path}
+                to={l.path}
+                data-testid={`nav-${slug(l.label)}`}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+                  isActive ? 'bg-primary text-white' : 'text-text-secondary hover:bg-background hover:text-text-primary'
+                }`}
+              >
+                <LinkIcon className="h-4 w-4 flex-shrink-0" />
+                <span className="font-medium">{l.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Navbar = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close the mobile drawer whenever the route changes.
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? 'hidden' : '';
@@ -56,95 +230,12 @@ const Navbar = () => {
     navigate('/login');
   };
 
-  const getNavLinks = () => {
-    switch (user?.role) {
-      case 'employee':
-        return [
-          { path: '/employee/dashboard', label: 'Home', icon: Home },
-          { path: '/employee/menu', label: 'Menu', icon: UtensilsCrossed },
-          { path: '/employee/reservations', label: 'Pre-order', icon: CalendarCheck },
-          { path: '/employee/orders', label: 'Orders', icon: ShoppingBag },
-          { path: '/employee/bulk-order', label: 'Team Order', icon: Users },
-          { path: '/employee/events', label: 'Events', icon: CalendarDays },
-          { path: '/employee/loyalty', label: 'Rewards', icon: Award },
-          { path: '/employee/feedback', label: 'Feedback', icon: MessageSquare },
-        ];
-      case 'vendor':
-        return [
-          { path: '/vendor/dashboard', label: 'Dashboard', icon: Home },
-          { path: '/vendor/orders', label: 'Orders', icon: ShoppingBag },
-          ...((user?.assigned_vendors?.length > 1) ? [{ path: '/vendor/all-orders', label: 'All Outlets', icon: Store }] : []),
-          ...((user?.assigned_vendors?.length > 1) ? [{ path: '/vendor/all-outlets-sales', label: 'Total Sales', icon: BarChart3 }] : []),
-          { path: '/vendor/manual-order', label: 'Manual Order', icon: ClipboardList },
-          { path: '/vendor/feedback', label: 'Feedback', icon: MessageSquare },
-          { path: '/vendor/reservations', label: 'Reservations', icon: CalendarCheck },
-          { path: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
-          { path: '/vendor/menu-requests', label: 'Menu Requests', icon: MessageSquare },
-          { path: '/vendor/ai-insights', label: 'AI Insights', icon: Sparkles },
-          { path: '/vendor/verify-pickup', label: 'Pickup', icon: QrCode },
-        ];
-      case 'corporate_admin':
-        return [
-          { path: '/admin/dashboard', label: 'Dashboard', icon: BarChart3 },
-          { path: '/admin/employees', label: 'Employees', icon: Users },
-          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
-          { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
-          { path: '/admin/bulk-pre-order', label: 'Bulk Pre-Order', icon: ClipboardList },
-          { path: '/admin/events', label: 'Events', icon: CalendarDays },
-        ];
-      case 'super_admin':
-        return [
-          { path: '/super-admin/dashboard', label: 'Dashboard', icon: Home },
-        ];
-      case 'sub_admin': {
-        const perms = user?.permissions || [];
-        const links = [{ path: '/sub-admin/dashboard', label: 'Home', icon: Home }];
-        if (perms.includes('vendors:onboard')) links.push({ path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList });
-        if (perms.includes('sales:view')) links.push({ path: '/reports/sales', label: 'Sales', icon: BarChart3 });
-        if (perms.includes('feedback:view')) links.push({ path: '/admin/feedback', label: 'Feedback', icon: MessageSquare });
-        if (perms.includes('menu_requests:view')) links.push({ path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare });
-        return links;
-      }
-      case 'master_admin':
-        return [
-          { path: '/master/dashboard', label: 'Dashboard', icon: Crown },
-          { path: '/master/cities', label: 'Cities', icon: MapPin },
-          { path: '/master/sites', label: 'Sites', icon: Building2 },
-          { path: '/master/vendors', label: 'Vendors', icon: Store },
-          { path: '/master/corporate-clients', label: 'Clients', icon: Briefcase },
-          { path: '/master/customer-types', label: 'Customer Types', icon: Users },
-          { path: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
-          { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
-          { path: '/master/billing', label: 'Billing', icon: Receipt },
-          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
-          { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
-          { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
-          { path: '/master/allowed-domains', label: 'Domains', icon: Mail },
-          { path: '/master/broadcasts', label: 'Announce', icon: Megaphone },
-          { path: '/master/admins', label: 'Admins', icon: ShieldCheck },
-          { path: '/master/reset', label: 'Reset', icon: Trash2 },
-        ];
-      case 'site_admin':
-        return [
-          { path: '/site-admin/dashboard', label: 'Dashboard', icon: BarChart3 },
-          { path: '/reports/sales', label: 'Sales', icon: BarChart3 },
-          { path: '/admin/reservations', label: 'Reservations', icon: CalendarCheck },
-          { path: '/onboarding', label: 'Vendor Onboarding', icon: ClipboardList },
-          { path: '/admin/menu-requests', label: 'Menu Requests', icon: MessageSquare },
-        ];
-      case 'city_admin':
-        return [
-          { path: '/onboarding', label: 'Onboarding', icon: ClipboardList },
-        ];
-      default:
-        return [];
-    }
-  };
+  const items = getNavItems(user);
 
   return (
     <nav className="sticky top-0 z-50 glass border-b border-border-light px-4 sm:px-6 py-3 sm:py-4">
       <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
-        <div className="flex items-center space-x-4 sm:space-x-6 flex-wrap">
+        <div className="flex items-center gap-4 sm:gap-6 min-w-0">
           <button
             onClick={() => setMobileOpen(true)}
             className="md:hidden p-2 -ml-2 rounded-lg text-text-secondary hover:bg-background"
@@ -153,27 +244,28 @@ const Navbar = () => {
           >
             <MenuIcon className="h-6 w-6" />
           </button>
-          <Link to="/" className="flex items-center space-x-2 flex-shrink-0">
+          <Link to="/" className="flex items-center flex-shrink-0">
             <img src={LOGO_URL} alt="Cravitoo" className="h-9 sm:h-10 w-auto object-contain" />
           </Link>
-          
-          <div className="hidden md:flex items-center space-x-1 flex-wrap">
-            {getNavLinks().map((link) => {
-              const Icon = link.icon;
-              const isActive = location.pathname === link.path;
+
+          <div className="hidden md:flex items-center gap-0.5">
+            {items.map((item) => {
+              if (item.group) {
+                return <NavDropdown key={item.group} group={item.group} icon={item.icon} links={item.links} />;
+              }
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
               return (
                 <Link
-                  key={link.path}
-                  to={link.path}
-                  data-testid={`nav-${link.label.toLowerCase().replace(' ', '-')}`}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? 'bg-primary text-white'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-background'
+                  key={item.path}
+                  to={item.path}
+                  data-testid={`nav-${slug(item.label)}`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 ${
+                    isActive ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary hover:bg-background'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
-                  <span className="font-medium text-sm">{link.label}</span>
+                  <span className="font-medium text-sm">{item.label}</span>
                 </Link>
               );
             })}
@@ -198,7 +290,7 @@ const Navbar = () => {
             <button
               data-testid="switch-to-employee-btn"
               onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: true }, { withCredentials: true }); window.location.href = '/employee/dashboard'; } catch { /* ignore */ } }}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg px-3 py-1.5 hover:bg-primary/5"
+              className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg px-3 py-1.5 hover:bg-primary/5"
             >
               Switch to Employee
             </button>
@@ -232,9 +324,9 @@ const Navbar = () => {
             <Shield className="h-4 w-4" />
           </Link>
           {user?.role === 'vendor' && <VendorOrderNotifier />}
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-medium text-text-primary">{user?.name}</p>
-            <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')}</p>
+          <div className="text-right hidden sm:block pl-1">
+            <p className="text-sm font-medium text-text-primary leading-tight">{user?.name}</p>
+            <p className="text-xs text-text-muted capitalize leading-tight">{user?.role?.replace('_', ' ')}</p>
           </div>
           <button
             onClick={handleLogout}
@@ -262,8 +354,7 @@ const Navbar = () => {
         </div>
       )}
 
-      {/* Mobile slide-in drawer — rendered via portal so backdrop-filter on <nav>
-          doesn't clip fixed-positioning to the navbar's own bounds. */}
+      {/* Mobile slide-in drawer */}
       {mobileOpen && createPortal(
         <div className="md:hidden fixed inset-0 z-[60]" data-testid="mobile-menu-drawer">
           <button
@@ -288,41 +379,74 @@ const Navbar = () => {
               <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')}</p>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
-              {getNavLinks().map((link) => {
-                const Icon = link.icon;
-                const isActive = location.pathname === link.path;
+              {items.map((item) => {
+                if (item.group) {
+                  return (
+                    <div key={item.group} className="mt-2">
+                      <p className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">{item.group}</p>
+                      {item.links.map((l) => {
+                        const Icon = l.icon;
+                        const isActive = location.pathname === l.path;
+                        return (
+                          <Link
+                            key={l.path}
+                            to={l.path}
+                            data-testid={`mobile-nav-${slug(l.label)}`}
+                            className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+                              isActive ? 'bg-primary-light text-primary' : 'text-text-secondary hover:bg-background'
+                            }`}
+                          >
+                            <Icon className="h-5 w-5" />
+                            {l.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
                 return (
                   <Link
-                    key={link.path}
-                    to={link.path}
-                    data-testid={`mobile-nav-${link.label.toLowerCase().replace(/ /g, '-')}`}
+                    key={item.path}
+                    to={item.path}
+                    data-testid={`mobile-nav-${slug(item.label)}`}
                     className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-primary-light text-primary'
-                        : 'text-text-secondary hover:bg-background'
+                      isActive ? 'bg-primary-light text-primary' : 'text-text-secondary hover:bg-background'
                     }`}
                   >
                     <Icon className="h-5 w-5" />
-                    {link.label}
+                    {item.label}
                   </Link>
                 );
               })}
-              {user?.role === 'employee' && (
-                <>
-                  <Link to="/employee/preferences" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
-                    <Heart className="h-5 w-5" /> Preferences
-                  </Link>
-                  <Link to="/employee/subscriptions" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
-                    <Calendar className="h-5 w-5" /> Meal Plans
-                  </Link>
-                </>
-              )}
-              <Link to="/settings/security" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
-                <KeyRound className="h-5 w-5" /> Change Password
-              </Link>
-              <Link to="/settings/data" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
-                <Shield className="h-5 w-5" /> Data & Privacy
-              </Link>
+
+              <div className="mt-2 border-t border-border-light pt-2">
+                {user?.role === 'corporate_admin' && (
+                  <button
+                    onClick={async () => { try { await axios.post(`${API}/auth/employee-mode`, { on: true }, { withCredentials: true }); window.location.href = '/employee/dashboard'; } catch { /* ignore */ } }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-primary hover:bg-primary/5"
+                  >
+                    <Users className="h-5 w-5" /> Switch to Employee
+                  </button>
+                )}
+                {user?.role === 'employee' && (
+                  <>
+                    <Link to="/employee/preferences" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
+                      <Heart className="h-5 w-5" /> Preferences
+                    </Link>
+                    <Link to="/employee/subscriptions" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
+                      <Calendar className="h-5 w-5" /> Meal Plans
+                    </Link>
+                  </>
+                )}
+                <Link to="/settings/security" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
+                  <KeyRound className="h-5 w-5" /> Change Password
+                </Link>
+                <Link to="/settings/data" className="flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-background">
+                  <Shield className="h-5 w-5" /> Data & Privacy
+                </Link>
+              </div>
             </div>
             <button
               onClick={handleLogout}

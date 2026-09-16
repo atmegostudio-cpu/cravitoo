@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../../components/Navbar';
 import ExportButtons from '../../components/ExportButtons';
-import { TrendingUp, Users, IndianRupee } from 'lucide-react';
+import { TrendingUp, Users, IndianRupee, BarChart3 } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -47,39 +49,36 @@ const CorporateAdminDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex flex-wrap justify-between items-start gap-4 mb-8">
-            <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
-              Corporate Dashboard
-            </h1>
-            <div className="bg-card border border-border-light rounded-2xl p-3 space-y-2">
-              <p className="text-xs text-text-muted">Reservations (last 30 days)</p>
-              <ExportButtons endpoint="/exports/reservations" filename="cravitoo-reservations" testidPrefix="corp-reservations" />
-              <p className="text-xs text-text-muted pt-2 border-t border-border-light">Orders (last 30 days)</p>
-              <ExportButtons endpoint="/exports/orders" filename="cravitoo-orders" testidPrefix="corp-orders" />
-            </div>
-          </div>
+          <PageHeader
+            title="Corporate Dashboard"
+            subtitle="Your team's ordering at a glance"
+            icon={BarChart3}
+            actions={
+              <div className="bg-card border border-border-light rounded-2xl p-3 space-y-2">
+                <p className="text-xs text-text-muted">Reservations (last 30 days)</p>
+                <ExportButtons endpoint="/exports/reservations" filename="cravitoo-reservations" testidPrefix="corp-reservations" />
+                <p className="text-xs text-text-muted pt-2 border-t border-border-light">Orders (last 30 days)</p>
+                <ExportButtons endpoint="/exports/orders" filename="cravitoo-orders" testidPrefix="corp-orders" />
+              </div>
+            }
+          />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div data-testid="corporate-total-orders" className="bg-card border border-border-light rounded-2xl p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-primary-light rounded-xl p-3">
-                  <Users className="h-8 w-8 text-primary" />
-                </div>
-                <TrendingUp className="h-6 w-6 text-green-500" />
-              </div>
-              <p className="text-4xl font-heading font-semibold text-text-primary mb-2">{analytics?.total_orders || 0}</p>
-              <p className="text-text-secondary">Total Employee Orders</p>
-            </div>
-
-            <div data-testid="corporate-total-spend" className="bg-card border border-border-light rounded-2xl p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-green-100 rounded-xl p-3">
-                  <IndianRupee className="h-8 w-8 text-green-600" />
-                </div>
-              </div>
-              <p className="text-4xl font-heading font-semibold text-text-primary mb-2">₹{analytics?.total_spend?.toFixed(2) || 0}</p>
-              <p className="text-text-secondary">Total Spending</p>
-            </div>
+            <StatCard
+              testid="corporate-total-orders"
+              label="Total Employee Orders"
+              value={analytics?.total_orders || 0}
+              icon={Users}
+              tone="primary"
+              trend={<TrendingUp className="h-5 w-5 text-green-500" />}
+            />
+            <StatCard
+              testid="corporate-total-spend"
+              label="Total Spending"
+              value={`₹${analytics?.total_spend?.toFixed(2) || 0}`}
+              icon={IndianRupee}
+              tone="green"
+            />
           </div>
 
           <div className="mt-8" data-testid="corporate-today-section">

@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import { Sparkles, TrendingUp, ShoppingBag, Clock } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -75,34 +77,28 @@ const EmployeeDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-          <div className="mb-8">
-            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl tracking-tighter font-semibold text-text-primary mb-2">
-              Welcome back, {user?.name}!
-            </h1>
-            <p className="text-text-secondary text-lg">What would you like to eat today?</p>
-          </div>
+          <PageHeader
+            title={`Welcome back, ${user?.name}!`}
+            subtitle="What would you like to eat today?"
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div data-testid="stat-card-orders" className="bg-card border border-border-light rounded-2xl p-6 hover:shadow-md transition-all duration-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-primary-light rounded-xl p-3">
-                  <ShoppingBag className="h-6 w-6 text-primary" />
-                </div>
-                <TrendingUp className="h-5 w-5 text-green-500" />
-              </div>
-              <p className="text-3xl font-heading font-semibold text-text-primary mb-1">{recentOrders.length}</p>
-              <p className="text-text-secondary text-sm">Recent Orders</p>
-            </div>
+            <StatCard
+              testid="stat-card-orders"
+              label="Recent Orders"
+              value={recentOrders.length}
+              icon={ShoppingBag}
+              tone="primary"
+              trend={<TrendingUp className="h-5 w-5 text-green-500" />}
+            />
 
-            <div data-testid="stat-card-vendors" className="bg-card border border-border-light rounded-2xl p-6 hover:shadow-md transition-all duration-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="bg-accent-light rounded-xl p-3">
-                  <Sparkles className="h-6 w-6 text-accent-hover" />
-                </div>
-              </div>
-              <p className="text-3xl font-heading font-semibold text-text-primary mb-1">{vendors.length}</p>
-              <p className="text-text-secondary text-sm">Available Vendors</p>
-            </div>
+            <StatCard
+              testid="stat-card-vendors"
+              label="Available Vendors"
+              value={vendors.length}
+              icon={Sparkles}
+              tone="accent"
+            />
 
             <div data-testid="stat-card-recommendations" className="bg-gradient-to-br from-primary-light to-accent-light border border-primary/20 rounded-2xl p-6 hover:shadow-md transition-all duration-200">
               <div className="flex items-center justify-between mb-4">

@@ -52,3 +52,43 @@
   background: rgba(31, 41, 55, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* Consistent brand selection colour */
+::selection {
+  background: rgba(255, 90, 31, 0.18);
+  color: var(--text-primary);
+}
+
+/* Subtle, consistent scrollbars across all panels */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+  background-clip: padding-box;
+}
+
+/* Shared dropdown / popover entrance */
+@keyframes navPopIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.nav-pop-in {
+  animation: navPopIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-pop-in { animation: none; }
+}

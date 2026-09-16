@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import { Building2, ShoppingBag, IndianRupee, Users, Store, ArrowRight } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -57,10 +59,10 @@ const SiteAdminDashboard = () => {
   }
 
   const stats = [
-    { label: 'Total Orders', value: report?.total_orders || 0, icon: ShoppingBag, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Paid Orders', value: report?.paid_orders || 0, icon: ShoppingBag, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Revenue', value: `₹${(report?.total_revenue || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: 'text-primary', bg: 'bg-primary-light' },
-    { label: 'Employees', value: report?.employees || 0, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Total Orders', value: report?.total_orders || 0, icon: ShoppingBag, tone: 'green' },
+    { label: 'Paid Orders', value: report?.paid_orders || 0, icon: ShoppingBag, tone: 'blue' },
+    { label: 'Revenue', value: `₹${(report?.total_revenue || 0).toLocaleString('en-IN')}`, icon: IndianRupee, tone: 'primary' },
+    { label: 'Employees', value: report?.employees || 0, icon: Users, tone: 'purple' },
   ];
 
   return (
@@ -68,36 +70,32 @@ const SiteAdminDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-start gap-4 mb-8 flex-wrap">
-            <div className="bg-primary-light rounded-2xl p-4">
-              <Building2 className="h-8 w-8 text-primary" />
-            </div>
-            <div className="flex-1">
-              <h1 className="font-heading text-3xl sm:text-4xl tracking-tighter font-semibold text-text-primary">{site.name}</h1>
-              <p className="text-text-secondary mt-1">{site.address}, {site.city}</p>
-            </div>
-            <button
-              data-testid="manage-site-btn"
-              onClick={() => navigate(`/site-admin/site/${site.id}`)}
-              className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover"
-            >
-              Manage Site <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
+          <PageHeader
+            title={site.name}
+            subtitle={`${site.address}, ${site.city}`}
+            icon={Building2}
+            actions={
+              <button
+                data-testid="manage-site-btn"
+                onClick={() => navigate(`/site-admin/site/${site.id}`)}
+                className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-hover transition-all duration-200"
+              >
+                Manage Site <ArrowRight className="h-4 w-4" />
+              </button>
+            }
+          />
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            {stats.map((s) => {
-              const Icon = s.icon;
-              return (
-                <div key={s.label} data-testid={`siteadmin-stat-${s.label.toLowerCase().replace(' ', '-')}`} className="bg-card border border-border-light rounded-2xl p-5">
-                  <div className={`${s.bg} rounded-xl p-2.5 w-fit mb-3`}>
-                    <Icon className={`h-5 w-5 ${s.color}`} />
-                  </div>
-                  <p className="text-2xl font-heading font-semibold text-text-primary">{s.value}</p>
-                  <p className="text-text-secondary text-xs mt-1">{s.label}</p>
-                </div>
-              );
-            })}
+            {stats.map((s) => (
+              <StatCard
+                key={s.label}
+                testid={`siteadmin-stat-${s.label.toLowerCase().replace(' ', '-')}`}
+                label={s.label}
+                value={s.value}
+                icon={s.icon}
+                tone={s.tone}
+              />
+            ))}
           </div>
 
           <div className="bg-card border border-border-light rounded-2xl p-6">

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2, Sparkles, Wallet, ScanLine, Clock, CheckCircle2, XCircle, PackageCheck } from 'lucide-react';
+import { Building2, Store, Users, ShoppingBag, IndianRupee, TrendingUp, Activity, Mail, Loader2, AlertTriangle, Trash2, Sparkles, Wallet, ScanLine, Clock, CheckCircle2, XCircle, PackageCheck, Crown } from 'lucide-react';
 import logger from '../../lib/logger';
+import { PageHeader } from '../../components/ui/page-header';
+import { StatCard } from '../../components/ui/stat-card';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -127,12 +129,12 @@ const MasterDashboard = () => {
   }
 
   const stats = [
-    { label: 'Total Sites', value: data?.total_sites || 0, icon: Building2, bg: 'bg-blue-100', color: 'text-blue-600' },
-    { label: 'Active Vendors', value: data?.total_vendors || 0, icon: Store, bg: 'bg-primary-light', color: 'text-primary' },
-    { label: 'Total Users', value: data?.total_users || 0, icon: Users, bg: 'bg-purple-100', color: 'text-purple-600' },
-    { label: 'Employees', value: data?.total_employees || 0, icon: Users, bg: 'bg-indigo-100', color: 'text-indigo-600' },
-    { label: 'Total Orders', value: data?.total_orders || 0, icon: ShoppingBag, bg: 'bg-emerald-100', color: 'text-emerald-600' },
-    { label: 'Paid Orders', value: data?.paid_orders || 0, icon: Activity, bg: 'bg-teal-100', color: 'text-teal-600' },
+    { label: 'Total Sites', value: data?.total_sites || 0, icon: Building2, tone: 'blue' },
+    { label: 'Active Vendors', value: data?.total_vendors || 0, icon: Store, tone: 'primary' },
+    { label: 'Total Users', value: data?.total_users || 0, icon: Users, tone: 'purple' },
+    { label: 'Employees', value: data?.total_employees || 0, icon: Users, tone: 'indigo' },
+    { label: 'Total Orders', value: data?.total_orders || 0, icon: ShoppingBag, tone: 'green' },
+    { label: 'Paid Orders', value: data?.paid_orders || 0, icon: Activity, tone: 'teal' },
   ];
 
   return (
@@ -140,21 +142,20 @@ const MasterDashboard = () => {
       <Navbar />
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-            <div>
-              <h1 className="font-heading text-4xl sm:text-5xl tracking-tighter font-semibold text-text-primary">
-                Master Dashboard
-              </h1>
-              <p className="text-text-secondary mt-2">Platform-wide control of Cravitoo</p>
-            </div>
-            <div className="bg-gradient-to-r from-primary to-orange-600 text-white rounded-2xl px-6 py-4 flex items-center gap-3" data-testid="total-revenue-card">
-              <IndianRupee className="h-8 w-8" />
-              <div>
-                <p className="text-xs opacity-90">Total Revenue</p>
-                <p className="font-heading text-2xl font-semibold">₹{(data?.total_revenue || 0).toLocaleString('en-IN')}</p>
+          <PageHeader
+            title="Master Dashboard"
+            subtitle="Platform-wide control of Cravitoo"
+            icon={Crown}
+            actions={
+              <div className="bg-gradient-to-r from-primary to-orange-600 text-white rounded-2xl px-6 py-4 flex items-center gap-3" data-testid="total-revenue-card">
+                <IndianRupee className="h-8 w-8" />
+                <div>
+                  <p className="text-xs opacity-90">Total Revenue</p>
+                  <p className="font-heading text-2xl font-semibold">₹{(data?.total_revenue || 0).toLocaleString('en-IN')}</p>
+                </div>
               </div>
-            </div>
-          </div>
+            }
+          />
 
           {/* One-click data-hygiene toolbar */}
           <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="data-hygiene-toolbar">
@@ -323,18 +324,16 @@ const MasterDashboard = () => {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-            {stats.map((s) => {
-              const Icon = s.icon;
-              return (
-                <div key={s.label} data-testid={`stat-${s.label.toLowerCase().replace(/ /g, '-')}`} className="bg-card border border-border-light rounded-2xl p-5">
-                  <div className={`${s.bg} rounded-xl p-2.5 w-fit mb-3`}>
-                    <Icon className={`h-5 w-5 ${s.color}`} />
-                  </div>
-                  <p className="text-2xl font-heading font-semibold text-text-primary">{s.value}</p>
-                  <p className="text-text-secondary text-xs mt-1">{s.label}</p>
-                </div>
-              );
-            })}
+            {stats.map((s) => (
+              <StatCard
+                key={s.label}
+                testid={`stat-${s.label.toLowerCase().replace(/ /g, '-')}`}
+                label={s.label}
+                value={s.value}
+                icon={s.icon}
+                tone={s.tone}
+              />
+            ))}
           </div>
 
           {reconciliation && (
