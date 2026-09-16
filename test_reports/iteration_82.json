@@ -1,0 +1,25 @@
+{
+  "summary": "Re-tested iteration_81 vendor navbar overlap bug. Verified overlap fix using bounding-box intersection of all [data-testid] elements inside <nav> for VENDOR/EMPLOYEE/ADMIN across 1920, 1440, 1280, 1200, 1024, 390. VENDOR now shows the full horizontal nav at 1280 (>=xl) with ZERO overlaps and no horizontal overflow; at 1200/1024/390 the vendor horizontal nav is hidden and the hamburger + drawer render (drawer opens with grouped links). EMPLOYEE and ADMIN pass with no overlap/overflow at 1920 and 1280; employee 'More' dropdown opens with Team Order/Events/Rewards/Feedback; admin grouped nav (network/operations/insights/system) opens cleanly. Mobile 390 has no horizontal overflow for all three roles.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Minor, out of scope) Employee 'More' dropdown showed 4 items (Team Order/Events/Rewards/Feedback) — no 'Pre-order' testid was found; verify whether Pre-order is gated by plan/permission for audit_emp_a or if the nav-preorder testid is missing.",
+    "(Minor) Admin logout via drawer at 390px did not navigate to /login after clicking [data-testid=logout-button] (URL remained /master/dashboard). Desktop logout was not attempted in this pass; investigate drawer logout handler."
+  ],
+  "critical_code_review_comments": [
+    "Role-based breakpoint switch (vendor uses xl, others use lg) is a clean fix; consider adding a small integration snapshot test for nav bounding boxes to prevent regressions.",
+    "OutletSwitcher max-w-[128px] can truncate outlet names — ensure the underlying <select> shows full names on open (native behavior handles this)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100% on the overlap re-test scope"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Overlap detection: query all [data-testid] inside <nav>, compute rect intersections, ignore ('outlet-switcher','outlet-switcher-select') pair (nested) and any parent-child DOM nesting. Vendor breakpoint is xl (1280), others lg (1024). Credentials confirmed working: tz_operator@cravitoo.com/Pass1234, audit_emp_a@corpa.com/Audit#1234, admin@cravitoo.com/admin123. Note: session persists across navigations — clear cookies + localStorage before switching users.",
+  "rca of the issue": "Previous overlap at vendor 1280 was caused by heavy right cluster (outlet switcher + alerts pill + role + bell + logout) competing with full horizontal nav at lg. Fix: raise vendor desktop nav breakpoint from lg to xl (hidden xl:flex) and hide employee-only extras (nav-change-password/nav-data-privacy) until xl. At 1280 the vendor horizontal nav now renders with no rect intersections; below 1280 vendor falls to the mobile hamburger + drawer."
+}

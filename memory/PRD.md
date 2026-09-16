@@ -1,5 +1,17 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — Bug fix: Vendor & Employee navbar overlap (COMPLETED ✅, needs deploy)
+
+**Reported**: On Vendor & Employee dashboards the top-nav items overlapped the right-side controls (Vendor: 'Menu' group over the outlet switcher; Employee: 'Feedback'/'Plans' overlapping).
+**Root cause**: desktop nav showed from `md` (768px) with too many top-level items; the left nav cluster didn't shrink so it visually overflowed into the right controls.
+**Fix** (`components/Navbar.js`, layout-only):
+- Grouped secondary links into dropdowns: **Employee** → Home/Menu/Orders + **More**{Pre-order,Team Order,Events,Rewards,Feedback}; **Vendor** → Dashboard/Orders + **Outlets**{All Outlets,Total Sales} (operators) + **Menu** + **More**{Manual Order,Feedback,Reservations,Pickup}.
+- Role-based desktop breakpoint: **vendor nav shows from `xl` (1280)**, others from `lg` (1024); below that the hamburger drawer is used. Right-controls cluster is `flex-shrink-0`; nav wrapper `min-w-0`; nav padding tightened px-3→px-2.5; outlet-switcher max-w 150→128px; employee Preferences/Plans + change-password/data icons moved to `xl` only.
+**Verified**: testing_agent **iteration_82 = frontend 100%** — bounding-box intersection check shows ZERO overlaps and no horizontal overflow for vendor/employee/admin at 1920/1440/1280/1200/1024/390; dropdowns open; vendor drawer works below xl. (iteration_81 fixed employee but vendor still overlapped at 1280 → resolved here.)
+**Minor/unrelated (not this bug)**: a 390px drawer-logout timing note (logout logic untouched) — monitor separately.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Jun 2026 — Refund from Settlement (issue/retry + watch pending clear) (COMPLETED ✅, needs deploy)
 
 **Requested**: From the Settlement view, let a finance/admin user issue or retry a refund straight from the row and watch refund-pending clear.
