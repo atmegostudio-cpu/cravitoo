@@ -1,5 +1,19 @@
 # Cravitoo - Product Requirements Document
 
+## Jun 2026 — System-wide UI/UX consistency + navigation IA (Pass 1) (COMPLETED ✅, needs deploy)
+
+**Requested**: Improve look/feel/layout/organization across all panels (Master/Cravitoo Admin, Corporate Admin, Site Admin, Vendor/Multi-Vendor, Employee). Make menus, navigation, buttons, cards, filters, tables consistent & professional. NO functionality/data-logic changes — UI + organization only.
+**Assessment**: The design system was already coherent (orange `#FF5A1F`, Outfit/Work Sans, glass navbar, CSS vars). The two biggest inconsistencies were (1) an overloaded FLAT top navbar — Master Admin had 16 wrapping links; (2) slightly varying page headers/stat tiles per dashboard.
+**Implemented (all presentational)**:
+- **Grouped dropdown navigation** (`components/Navbar.js` rewritten): `getNavItems(user)` returns a flat list where each entry is a direct link OR a group `{group,icon,links}`. Desktop renders groups as `NavDropdown` (click-to-open, click-outside + route-change close, active highlight). Master nav now = `Dashboard` + 4 dropdowns: **Network** (Cities/Sites/Vendors/Clients/Customer Types), **Operations** (Onboarding/Menu Requests/Reservations), **Insights** (Sales/Feedback/Billing), **System** (Domains/Announce/Admins/Reset). Vendor nav gained **Menu** (Menu/Menu Requests/AI Insights) + **More** (Feedback/Reservations/Pickup) groups; operators keep flat All Outlets/Total Sales. Employee/Corporate/Site/Sub-admin stay flat. Mobile drawer renders the same groups as labelled sections. Testids: `nav-group-{slug}`, `nav-group-panel-{slug}`, `nav-{label-slug}`, `mobile-nav-{label-slug}` (all preserved).
+- **Shared primitives**: `components/ui/page-header.jsx` (`PageHeader` — icon + title + subtitle + actions) and `components/ui/stat-card.jsx` (`StatCard` — tone-colored icon, value, label, hint, trend) applied to Master/Corporate/Site/Vendor/Employee dashboards. All existing stat-card data-testids preserved.
+- **Global CSS polish** (`index.css`): brand `::selection`, consistent thin scrollbars, `.nav-pop-in` dropdown entrance (respects prefers-reduced-motion).
+**Verified**: testing_agent **iteration_76 = frontend 100%** — grouped nav opens/closes/navigates on desktop + mobile 390px, all 5 role dashboards render with preserved testids, no horizontal overflow, logout works. Compile clean.
+**Advisory (not bugs)**: pre-existing `total-revenue-card` testid is shared by master & vendor dashboards (left as-is to avoid breaking tests); Navbar.js ~470 lines could be split later.
+**Backlog (Pass 2)**: adopt PageHeader/StatCard + a shared FilterBar/DataTable primitive across the remaining inner pages (Sales Report, master Sites/Vendors/Clients, vendor Reports, feedback inbox) for full table/filter consistency.
+**Action needed**: Save to GitHub → Deploy.
+
+
 ## Sep 2026 — Multi-Vendor Total Sales report + report timezone + city auto-tz (COMPLETED ✅, needs deploy)
 
 **Requested**: (1) a combined **Total Sales** report in the multi-outlet operator panel — all vendors/counters in one place, vendor-wise + counter-wise breakdowns, date/month filters, Excel download; (2) show Sales Report times in each site's local timezone (table + CSV); (3) auto-suggest a site's timezone from its city.
